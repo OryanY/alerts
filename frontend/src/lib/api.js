@@ -1,5 +1,4 @@
-// src/lib/api.js - Enhanced API with error handling, caching, and retry logic
-
+// src/lib/api.js
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000/api';
 
 export class APIError extends Error {
@@ -11,109 +10,104 @@ export class APIError extends Error {
   }
 }
 
-// Simple in-memory cache
-const cache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const memCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 min
+const persistKey = (url) => `cache:${url}`;
+
+const shouldRetry = (status) => {
+  if (!status) return true; // network/abort/timeouts
+  if (status === 408 || status === 429) return true;
+  // retry only 5xx
+  return status >= 500 && status <= 599;
+};
 
 export const apiRequest = async (url, options = {}) => {
-  const { retries = 3, timeout = 10000, useCache = true } = options;
-  
-  // Check cache first
-  if (useCache && cache.has(url)) {
-    const cached = cache.get(url);
-    if (Date.now() - cached.timestamp < CACHE_DURATION) {
-      return cached.data;
+  const { retries = 3, timeout = 10000, useCache = true, persistCache = true } = options;
+
+  const now = Date.now();
+  // in-memory cache
+  if (useCache && memCache.has(url)) {
+    const c = memCache.get(url);
+    if (now - c.timestamp < CACHE_DURATION) return c.data;
+  }
+  // sessionStorage cache
+  if (useCache && persistCache && typeof sessionStorage !== 'undefined') {
+    const raw = sessionStorage.getItem(persistKey(url));
+    if (raw) {
+      try {
+        const { timestamp, data } = JSON.parse(raw);
+        if (now - timestamp < CACHE_DURATION) return data;
+      } catch {}
     }
   }
 
-  // Retry logic with exponential backoff
+  let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      const id = setTimeout(() => controller.abort(), timeout);
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(id);
 
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new APIError(
-          `HTTP ${response.status}: ${response.statusText}`,
-          response.status,
-          url
-        );
+      if (!res.ok) {
+        const err = new APIError(`HTTP ${res.status}: ${res.statusText}`, res.status, url);
+        if (attempt === retries || !shouldRetry(res.status)) throw err;
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 250)));
+        continue;
       }
 
-      const data = await response.json();
-      
-      // Cache successful responses
+      const data = await res.json();
       if (useCache) {
-        cache.set(url, { data, timestamp: Date.now() });
+        const entry = { data, timestamp: now };
+        memCache.set(url, entry);
+        if (persistCache && typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(persistKey(url), JSON.stringify(entry));
+        }
       }
-
       return data;
-    } catch (error) {
-      if (attempt === retries) {
-        throw error instanceof APIError ? error : new APIError(error.message, 0, url);
-      }
-      
-      // Exponential backoff: wait 1s, 2s, 4s between retries
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+    } catch (e) {
+      lastErr = e;
+      if (attempt === retries || (e instanceof APIError && !shouldRetry(e.status))) throw e;
+      await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 250)));
     }
   }
+  throw lastErr || new APIError('Unknown network error', 0, url);
 };
 
+const clean = (obj) =>
+  Object.fromEntries(Object.entries(obj || {}).filter(([_, v]) => v !== '' && v != null));
+
 export const fetchAlerts = async (params) => {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(([_, value]) => value !== '' && value != null)
-  );
-  const url = `${API_BASE}/alerts?${new URLSearchParams(cleanParams)}`;
+  const url = `${API_BASE}/alerts?${new URLSearchParams(clean(params))}`;
   return apiRequest(url);
 };
 
 export const fetchOverview = async (params) => {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(([_, value]) => value !== '' && value != null)
-  );
-  const url = `${API_BASE}/stats/overview?${new URLSearchParams(cleanParams)}`;
+  const url = `${API_BASE}/stats/overview?${new URLSearchParams(clean(params))}`;
   return apiRequest(url);
 };
 
 export const fetchByPanel = async (params) => {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(([_, value]) => value !== '' && value != null)
-  );
-  const url = `${API_BASE}/stats/by-panel?${new URLSearchParams(cleanParams)}`;
+  const url = `${API_BASE}/stats/by-panel?${new URLSearchParams(clean(params))}`;
   return apiRequest(url);
 };
 
 export const fetchByApplication = async (params) => {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(([_, value]) => value !== '' && value != null)
-  );
-  const url = `${API_BASE}/stats/by-application?${new URLSearchParams(cleanParams)}`;
+  const url = `${API_BASE}/stats/by-application?${new URLSearchParams(clean(params))}`;
   return apiRequest(url);
 };
 
 export const exportAlerts = async (params, format = 'csv') => {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(([_, value]) => value !== '' && value != null)
-  );
-  cleanParams.format = format;
-  const url = `${API_BASE}/alerts/export?${new URLSearchParams(cleanParams)}`;
-  
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new APIError(`Export failed: ${response.statusText}`, response.status, url);
-  }
-  
-  return response.blob();
+  const qp = clean({ ...params, format });
+  const url = `${API_BASE}/alerts/export?${new URLSearchParams(qp)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new APIError(`Export failed: ${res.statusText}`, res.status, url);
+  return res.blob();
 };
 
-// Clear cache utility
 export const clearCache = () => {
-  cache.clear();
+  memCache.clear();
+  if (typeof sessionStorage !== 'undefined') {
+    Object.keys(sessionStorage).forEach((k) => { if (k.startsWith('cache:')) sessionStorage.removeItem(k); });
+  }
 };
