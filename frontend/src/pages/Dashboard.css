@@ -1,0 +1,14 @@
+.page-header { margin-bottom: 24px; }
+.stats { margin-bottom: 20px; }
+
+.loading {
+  min-height: 400px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+
+.pagination {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 18px; padding: 18px 0;
+}
+.pager { display: flex; align-items: center; gap: 10px; }
+.muted { font-size: 0.95rem; color: #666; }

@@ -1,0 +1,19 @@
+.filters { padding: 20px; margin-bottom: 30px; }
+.filters-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+}
+.filters-title { margin: 0; }
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.form-group { display: flex; flex-direction: column; }
+.form-group label { font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #374151; }
+
+.filters-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
