@@ -1,17 +1,22 @@
 import React from 'react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 
-export const useDurationBands = (cfg) => {
-  const bands = cfg.bands || DEFAULT_CLIENT_CFG.bands;
+export const useDurationBands = (cfg = DEFAULT_CLIENT_CFG) => {
+  // Guard כפול: גם פרמטר ברירת מחדל וגם בדיקה שזה אובייקט עם bands תקין
+  const safeCfg = (cfg && typeof cfg === 'object') ? cfg : DEFAULT_CLIENT_CFG;
+  const bands = (Array.isArray(safeCfg.bands) && safeCfg.bands.length)
+    ? safeCfg.bands
+    : DEFAULT_CLIENT_CFG.bands;
 
   const colorByDuration = (s) => {
+    if (!Number.isFinite(s)) return '#6B7280';
     for (const b of bands) if (s >= b.min && s <= b.max) return b.color;
     return '#6B7280';
   };
 
   const Legend = () => (
     <div style={{ display:'flex', gap:12, flexWrap:'wrap', fontSize:12, marginTop:8 }}>
-      {bands.map(b => (
+      {(bands || []).map(b => (
         <span key={b.key} style={{
           display:'inline-flex', alignItems:'center', gap:6,
           padding:'2px 8px', borderRadius:12, background:`${b.color}20`,
