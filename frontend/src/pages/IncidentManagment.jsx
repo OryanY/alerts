@@ -8,6 +8,7 @@ const IncidentManagement = () => {
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [dropdowns, setDropdowns] = useState({ u_monitor_identifier: [], u_impact_technology: [] });
   
   // Form data for system mappings
   const [mappingFormData, setMappingFormData] = useState({
@@ -17,8 +18,9 @@ const IncidentManagement = () => {
     u_site: '',
     u_network: '',
     u_impact_technology: '',
+    connection_string: '',
     assignment_group: '',
-    u_monitor_identifier: 'from_grafana'
+    u_monitor_identifier: 'עלה בניטור'
   });
 
   // Form data for incident rules
@@ -36,13 +38,20 @@ const IncidentManagement = () => {
     },
     incident_overrides: {
       short_description: '',
-      description: '',
-      priority: '',
-      urgency: ''
+      description: ''
     },
     enabled: true,
     priority_order: 1
   });
+
+  // Helper: current mapping selected in rule form
+  const selectedMapping = React.useMemo(() => {
+    try {
+      return mappings.find(m => String(m._id) === String(ruleFormData.system_mapping_id));
+    } catch {
+      return undefined;
+    }
+  }, [mappings, ruleFormData.system_mapping_id]);
 
   const API_BASE = '/api/incidents';
 
@@ -242,8 +251,9 @@ const IncidentManagement = () => {
       u_site: '',
       u_network: '',
       u_impact_technology: '',
+      connection_string: '',
       assignment_group: '',
-      u_monitor_identifier: 'from_grafana'
+      u_monitor_identifier: 'עלה בניטור'
     });
     
     setRuleFormData({
@@ -260,9 +270,7 @@ const IncidentManagement = () => {
       },
       incident_overrides: {
         short_description: '',
-        description: '',
-        priority: '',
-        urgency: ''
+        description: ''
       },
       enabled: true,
       priority_order: 1
@@ -280,8 +288,9 @@ const IncidentManagement = () => {
       u_site: mapping.u_site || '',
       u_network: mapping.u_network || '',
       u_impact_technology: mapping.u_impact_technology || '',
+      connection_string: mapping.connection_string || '',
       assignment_group: mapping.assignment_group || '',
-      u_monitor_identifier: mapping.u_monitor_identifier || 'from_grafana'
+      u_monitor_identifier: mapping.u_monitor_identifier || 'עלה בניטור'
     });
     setEditingItem(mapping);
     setActiveTab('mappings');
@@ -303,10 +312,9 @@ const IncidentManagement = () => {
         network: rule.conditions?.network || ''
       },
       incident_overrides: {
+        ...(rule.incident_overrides || {}),
         short_description: rule.incident_overrides?.short_description || '',
-        description: rule.incident_overrides?.description || '',
-        priority: rule.incident_overrides?.priority || '',
-        urgency: rule.incident_overrides?.urgency || ''
+        description: rule.incident_overrides?.description || ''
       },
       enabled: rule.enabled !== false,
       priority_order: rule.priority_order || 1
@@ -334,6 +342,24 @@ const IncidentManagement = () => {
   useEffect(() => {
     fetchMappings();
     fetchRules();
+    // Load dropdown options for mapping fields
+    const loadDropdowns = async () => {
+      try {
+        const [monRes, impRes] = await Promise.all([
+          fetch(`${API_BASE}/dropdown-options/u_monitor_identifier`),
+          fetch(`${API_BASE}/dropdown-options/u_impact_technology`)
+        ]);
+        const [mon, imp] = await Promise.all([monRes.json(), impRes.json()]);
+        setDropdowns({
+          u_monitor_identifier: mon?.data || [],
+          u_impact_technology: imp?.data || []
+        });
+      } catch (e) {
+        // Non-fatal; keep inputs usable as text if fetch fails (but we're using selects)
+        console.warn('Failed to load dropdown options', e);
+      }
+    };
+    loadDropdowns();
   }, []);
 
   const styles = {
@@ -692,6 +718,11 @@ const IncidentManagement = () => {
                   required
                   placeholder="e.g., eck"
                 />
+                <datalist id="impact-tech-list">
+                  {dropdowns.u_impact_technology.map((opt) => (
+                    <option key={`impact-${opt}`} value={opt} />
+                  ))}
+                </datalist>
               </div>
               
               <div style={styles.formGroup}>
@@ -705,6 +736,11 @@ const IncidentManagement = () => {
                   required
                   placeholder="e.g., Elastic - eck"
                 />
+                <datalist id="monitor-id-list">
+                  {dropdowns.u_monitor_identifier.map((opt) => (
+                    <option key={`mon-${opt}`} value={opt} />
+                  ))}
+                </datalist>
               </div>
               
               <div style={styles.formGroup}>
@@ -751,6 +787,7 @@ const IncidentManagement = () => {
                 <input
                   type="text"
                   name="u_impact_technology"
+                  list="impact-tech-list"
                   value={mappingFormData.u_impact_technology}
                   onChange={(e) => setMappingFormData(prev => ({...prev, u_impact_technology: e.target.value}))}
                   style={styles.formInput}
@@ -771,16 +808,18 @@ const IncidentManagement = () => {
                   placeholder="e.g., צוות מאגרים"
                 />
               </div>
-              
+            
+
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>Monitor Identifier</label>
                 <input
                   type="text"
                   name="u_monitor_identifier"
+                  list="monitor-id-list"
                   value={mappingFormData.u_monitor_identifier}
                   onChange={(e) => setMappingFormData(prev => ({...prev, u_monitor_identifier: e.target.value}))}
                   style={styles.formInput}
-                  placeholder="from_grafana"
+                  placeholder="'עלה בניטור'"
                 />
               </div>
             </div>
@@ -949,7 +988,7 @@ const IncidentManagement = () => {
               </div>
             </div>
 
-            {/* Incident Overrides Section */}
+            {/* Incident Overrides Section (allow overrides for mapping fields except service_offering, business_service, grafana_name, enabled) */}
             <div style={{...styles.overridesSection, marginBottom: '20px'}}>
               <h4 style={styles.sectionTitle}>Incident Field Overrides (optional)</h4>
               <div style={styles.formGrid}>
@@ -968,42 +1007,64 @@ const IncidentManagement = () => {
                   <small style={styles.tagInput}>Use {} for variables: application, object_name, node_name, message, network, time_created, operator</small>
                 </div>
 
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Priority</label>
-                  <select
-                    value={ruleFormData.incident_overrides.priority}
-                    onChange={(e) => setRuleFormData(prev => ({
-                      ...prev,
-                      incident_overrides: {...prev.incident_overrides, priority: e.target.value}
-                    }))}
-                    style={styles.formInput}
-                  >
-                    <option value="">Use system default</option>
-                    <option value="1">1 - Critical</option>
-                    <option value="2">2 - High</option>
-                    <option value="3">3 - Medium</option>
-                    <option value="4">4 - Low</option>
-                  </select>
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Urgency</label>
-                  <select
-                    value={ruleFormData.incident_overrides.urgency}
-                    onChange={(e) => setRuleFormData(prev => ({
-                      ...prev,
-                      incident_overrides: {...prev.incident_overrides, urgency: e.target.value}
-                    }))}
-                    style={styles.formInput}
-                  >
-                    <option value="">Use system default</option>
-                    <option value="1">1 - High</option>
-                    <option value="2">2 - Medium</option>
-                    <option value="3">3 - Low</option>
-                  </select>
-                </div>
-              </div>
-
+            {(() => {
+                  // Exclude system fields that shouldn't be overridden
+                  const exclude = new Set(['_id','grafana_name','service_offering','business_service','enabled','created_at','updated_at']);
+                  const k2label = (k) => k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                  
+                  if (!selectedMapping) {
+                    return (
+                      <div style={{...styles.formGroup, gridColumn: '1 / -1'}}>
+                        <div style={{textAlign: 'center', color: '#666', fontStyle: 'italic'}}>
+                          Select a system mapping to see available field overrides
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  const keys = Object.keys(selectedMapping).filter(k => !exclude.has(k));
+                  
+                  return keys.map((k) => (
+                    <div key={k} style={styles.formGroup}>
+                      <label style={styles.formLabel}>
+                        {k2label(k)} Override
+                        {['service_offering', 'business_service'].includes(k) && 
+                          <span style={{color: '#dc3545', fontSize: '12px'}}> (Core Field - Use Carefully)</span>
+                        }
+                      </label>
+                      {(k === 'u_impact_technology' || k === 'u_monitor_identifier') ? (
+                        <select
+                          value={ruleFormData.incident_overrides[k] ?? ''}
+                          onChange={(e) => setRuleFormData(prev => ({
+                            ...prev,
+                            incident_overrides: { ...prev.incident_overrides, [k]: e.target.value }
+                          }))}
+                          style={styles.formInput}
+                        >
+                          <option value="">Select {k2label(k).toLowerCase()}</option>
+                          {(k === 'u_impact_technology' ? dropdowns.u_impact_technology : dropdowns.u_monitor_identifier).map((opt) => (
+                            <option key={`${k}-${opt}`} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={ruleFormData.incident_overrides[k] ?? ''}
+                          onChange={(e) => setRuleFormData(prev => ({
+                            ...prev,
+                            incident_overrides: { ...prev.incident_overrides, [k]: e.target.value }
+                          }))}
+                          style={styles.formInput}
+                          placeholder={`Override ${k2label(k).toLowerCase()}...`}
+                        />
+                      )}
+                      <small style={styles.tagInput}>
+                        Base mapping value: <strong>{selectedMapping[k] != null ? String(selectedMapping[k]) : '—'}</strong>
+                      </small>
+                    </div>
+                  ));
+                })()}
+              
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>Description Template</label>
                 <textarea
@@ -1043,6 +1104,7 @@ Please investigate and take appropriate action.`}
                 {editingItem ? 'Update Rule' : 'Create Rule'}
               </button>
             </div>
+                    </div>  
           </form>
         </div>
       )}
@@ -1120,6 +1182,8 @@ Please investigate and take appropriate action.`}
                       <div style={{fontWeight: 'bold', color: '#495057', marginBottom: '2px'}}>Impact Technology:</div>
                       <div style={{color: '#6c757d'}}>{mapping.u_impact_technology}</div>
                     </div>
+
+    
                   </div>
 
                   {mapping.created_at && (
@@ -1248,18 +1312,16 @@ Please investigate and take appropriate action.`}
                           <span style={styles.conditionValue}>{rule.incident_overrides.short_description}</span>
                         </div>
                       )}
-                      {rule.incident_overrides.priority && (
-                        <div style={styles.conditionItem}>
-                          <span style={styles.conditionLabel}>Priority: </span>
-                          <span style={styles.conditionValue}>{rule.incident_overrides.priority}</span>
-                        </div>
-                      )}
-                      {rule.incident_overrides.urgency && (
-                        <div style={styles.conditionItem}>
-                          <span style={styles.conditionLabel}>Urgency: </span>
-                          <span style={styles.conditionValue}>{rule.incident_overrides.urgency}</span>
-                        </div>
-                      )}
+                  {/* Show mapping overrides (dynamic, skipping templates) */}
+                  {Object.entries(rule.incident_overrides || {})
+                    .filter(([k]) => !['short_description','description'].includes(k))
+                    .filter(([k]) => !['_id','grafana_name','service_offering','business_service','enabled','created_at','updated_at'].includes(k))
+                    .map(([k, v]) => (
+                      <div key={k} style={styles.conditionItem}>
+                        <span style={styles.conditionLabel}>{k.replace(/_/g,' ')}: </span>
+                        <span style={styles.conditionValue}>{String(v)}</span>
+                      </div>
+                    ))}
                       {rule.incident_overrides.description && (
                         <div style={styles.conditionItem}>
                           <span style={styles.conditionLabel}>Description template: </span>

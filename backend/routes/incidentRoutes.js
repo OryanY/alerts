@@ -25,7 +25,8 @@ const systemMappingSchema = Joi.object({
   u_site: Joi.string().required().trim(),
   u_network: Joi.string().required().trim(),
   u_impact_technology: Joi.string().required().trim(),
-  u_monitor_identifier: Joi.string().default('from_grafana'),
+  u_monitor_identifier: Joi.string().default('עלה בניטור'),
+  connection_string: Joi.string().required().trim(),
   assignment_group: Joi.string().required().trim(),
 }).unknown(true);
 
@@ -49,9 +50,7 @@ const incidentRuleSchema = Joi.object({
   incident_overrides: Joi.object({
     short_description: Joi.string().optional(),
     description: Joi.string().optional(),
-    priority: Joi.string().optional(),
-    urgency: Joi.string().optional(),
-    // Allow any additional fields
+    // Priority and urgency removed from backend
   }).unknown(true).optional(),
   
   enabled: Joi.boolean().default(true),
@@ -222,6 +221,27 @@ router.delete('/system-mappings/:id', async (req, res) => {
       });
     }
     handleError(res, error, 'Error deleting system mapping');
+  }
+});
+
+// ================== DROPDOWN OPTIONS FOR SYSTEM MAPPINGS ==================
+
+// Expose distinct values for select fields in the UI
+router.get('/dropdown-options/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const allowed = new Set(['u_monitor_identifier', 'u_impact_technology']);
+    if (!allowed.has(field)) {
+      return res.status(400).json({
+        error: 'Invalid field parameter',
+        valid_fields: Array.from(allowed)
+      });
+    }
+
+    const values = await incidentService.getDistinctValues(field);
+    res.json({ success: true, data: values });
+  } catch (error) {
+    handleError(res, error, 'Error fetching dropdown options');
   }
 });
 

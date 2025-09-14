@@ -14,6 +14,19 @@ class IncidentService {
     this.systemMappingsCollection = db.collection(mongoConfig.collections.systemMappings);
     this.incidentRulesCollection = db.collection('incident_rules'); // New collection
   }
+  _sanitizeIncidentOverrides(overrides) {
+    if (!overrides || typeof overrides !== 'object') return overrides;
+    // Disallow overriding core identity/enablement fields
+    const forbidden = new Set(['priority', 'urgency', 'grafana_name', 'service_offering', 'business_service', 'enabled']);
+    const cleaned = {};
+    for (const [k, v] of Object.entries(overrides)) {
+      if (forbidden.has(k)) continue;
+      if (v === undefined || v === null) continue;
+      if (typeof v === 'string' && v.trim() === '') continue;
+      cleaned[k] = v;
+    }
+    return cleaned;
+  }
 
   // ================== SYSTEM MAPPINGS (existing methods) ==================
   
@@ -165,15 +178,18 @@ class IncidentService {
         throw new Error('System mapping not found');
       }
 
+      const cleanedOverrides = this._sanitizeIncidentOverrides(ruleData.incident_overrides);
+
       const result = await this.incidentRulesCollection.insertOne({
         ...ruleData,
         system_mapping_id: mappingId,
         grafana_name: mapping.grafana_name, // Store for quick lookup
+        ...(cleanedOverrides !== undefined ? { incident_overrides: cleanedOverrides } : {}),
         created_at: new Date(),
         updated_at: new Date()
       });
 
-      return { _id: result.insertedId, ...ruleData };
+      return { _id: result.insertedId, ...ruleData, ...(cleanedOverrides !== undefined ? { incident_overrides: cleanedOverrides } : {}) };
     } catch (error) {
       console.error('Error creating incident rule:', error);
       throw error;
@@ -196,6 +212,9 @@ class IncidentService {
         }
         updateData.system_mapping_id = mappingId;
         updateData.grafana_name = mapping.grafana_name;
+      }
+      if (updateData.incident_overrides) {
+        updateData.incident_overrides = this._sanitizeIncidentOverrides(updateData.incident_overrides);
       }
       
       const result = await this.incidentRulesCollection.updateOne(
@@ -375,7 +394,8 @@ class IncidentService {
         
         // Apply rule overrides with template replacement
         if (matchingRule.incident_overrides) {
-          Object.entries(matchingRule.incident_overrides).forEach(([key, value]) => {
+          const overrides = this._sanitizeIncidentOverrides(matchingRule.incident_overrides);
+          Object.entries(overrides).forEach(([key, value]) => {
             incidentData[key] = this._replaceTemplateVariables(value, alertData);
           });
         }

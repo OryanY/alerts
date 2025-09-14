@@ -154,7 +154,7 @@ export const useShareableUrl = () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Alert Stats Dashboard',
+          title: 'Dashboard',
           url: url
         });
       } catch (e) {
