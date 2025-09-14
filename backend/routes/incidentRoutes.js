@@ -26,7 +26,6 @@ const systemMappingSchema = Joi.object({
   u_network: Joi.string().required().trim(),
   u_impact_technology: Joi.string().required().trim(),
   u_monitor_identifier: Joi.string().default('עלה בניטור'),
-  connection_string: Joi.string().required().trim(),
   assignment_group: Joi.string().required().trim(),
 }).unknown(true);
 
@@ -221,27 +220,6 @@ router.delete('/system-mappings/:id', async (req, res) => {
       });
     }
     handleError(res, error, 'Error deleting system mapping');
-  }
-});
-
-// ================== DROPDOWN OPTIONS FOR SYSTEM MAPPINGS ==================
-
-// Expose distinct values for select fields in the UI
-router.get('/dropdown-options/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const allowed = new Set(['u_monitor_identifier', 'u_impact_technology']);
-    if (!allowed.has(field)) {
-      return res.status(400).json({
-        error: 'Invalid field parameter',
-        valid_fields: Array.from(allowed)
-      });
-    }
-
-    const values = await incidentService.getDistinctValues(field);
-    res.json({ success: true, data: values });
-  } catch (error) {
-    handleError(res, error, 'Error fetching dropdown options');
   }
 });
 

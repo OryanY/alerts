@@ -30,23 +30,42 @@ const SettingsPage = () => {
   };
 
   const updateLocalConfig = (path, value) => {
-    setLocalConfig(prev => {
-      const updated = { ...prev };
+    // Safely update nested paths without mutating arrays into plain objects
+    setLocalConfig((prev) => {
       const keys = path.split('.');
-      let current = updated;
-      
+
+      // Clone root appropriately
+      const updated = Array.isArray(prev) ? [...prev] : { ...prev };
+      let cursor = updated;
+
       for (let i = 0; i < keys.length - 1; i++) {
-        current[keys[i]] = { ...current[keys[i]] };
-        current = current[keys[i]];
+        const k = keys[i];
+        const nextK = keys[i + 1];
+        const isNextIndex = String(Number(nextK)) === nextK;
+
+        const curVal = cursor[k];
+        let newVal;
+
+        if (curVal === undefined || curVal === null) {
+          // Create container based on the next key type
+          newVal = isNextIndex ? [] : {};
+        } else {
+          // Preserve arrays vs objects when cloning
+          newVal = Array.isArray(curVal) ? [...curVal] : { ...curVal };
+        }
+
+        cursor[k] = newVal;
+        cursor = cursor[k];
       }
-      
-      current[keys[keys.length - 1]] = value;
+
+      const lastKey = keys[keys.length - 1];
+      cursor[lastKey] = value;
       return updated;
     });
   };
 
   const LabeledInput = ({ label, value, onChange, type = 'number', min, max, placeholder, description }) => (
-    <div style={{ display: 'grid', gap: 6 }}>
+    <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
       <label style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
         {label}
         {description && (
@@ -68,11 +87,11 @@ const SettingsPage = () => {
   );
 
   const ColorInput = ({ label, value, onChange }) => (
-    <div style={{ display: 'grid', gap: 6 }}>
+    <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
       <label style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
         {label}
       </label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <input
           type="color"
           value={value}
@@ -83,7 +102,7 @@ const SettingsPage = () => {
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          style={{ ...S.input, flex: 1 }}
+          style={{ ...S.input, flex: 1, minWidth: 0 }}
           placeholder="#000000"
         />
       </div>

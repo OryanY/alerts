@@ -14,6 +14,65 @@ class IncidentService {
     this.systemMappingsCollection = db.collection(mongoConfig.collections.systemMappings);
     this.incidentRulesCollection = db.collection('incident_rules'); // New collection
   }
+
+   _buildIncidentData(systemMapping, ruleOverrides = {}, alertData) {
+    // Define required fields that must always be present
+    const requiredFields = ['assignment_group', 'service_offering', 'business_service'];
+    
+    // System fields that should never be copied to incidents
+    const excludeFields = new Set(['_id', 'grafana_name', 'created_at', 'updated_at']);
+    
+    const incidentData = {};
+    
+    // 1. Add required fields (from overrides or mapping)
+    requiredFields.forEach(field => {
+      const value = ruleOverrides[field] || systemMapping[field];
+      if (!value) {
+        throw new Error(`Required field '${field}' is missing from both mapping and rule overrides`);
+      }
+      incidentData[field] = value;
+    });
+    
+    // 2. Auto-inherit all other fields from system mapping (if they have values)
+    Object.entries(systemMapping).forEach(([key, value]) => {
+      if (!excludeFields.has(key) && !requiredFields.includes(key)) {
+        // Only include if value exists and is not empty
+        if (value != null && String(value).trim() !== '') {
+          incidentData[key] = value;
+        }
+      }
+    });
+    
+    // 3. Apply rule overrides (can override inherited fields)
+    if (ruleOverrides) {
+      Object.entries(ruleOverrides).forEach(([key, value]) => {
+        if (!excludeFields.has(key) && value != null && String(value).trim() !== '') {
+          incidentData[key] = this._replaceTemplateVariables(value, alertData);
+        }
+      });
+    }
+    
+    // 4. Add default description fields if not overridden
+    if (!incidentData.short_description) {
+      incidentData.short_description = `Alert: ${alertData.object_name} - ${alertData.application}`;
+    }
+    
+    if (!incidentData.description) {
+      incidentData.description = `Alert Details:
+Application: ${alertData.application}
+Object: ${alertData.object_name}
+Node: ${alertData.node_name}
+Network: ${alertData.network || 'N/A'}
+Message: ${alertData.message}
+Time Created: ${alertData.time_created}
+Operator: ${alertData.operator}`;
+    }
+    
+    return incidentData;
+  }
+
+
+
   _sanitizeIncidentOverrides(overrides) {
     if (!overrides || typeof overrides !== 'object') return overrides;
     // Disallow overriding core identity/enablement fields
@@ -340,7 +399,7 @@ class IncidentService {
   }
 
   // Enhanced incident creation with rule support
-  async createIncidentFromAlert(alertData) {
+   async createIncidentFromAlert(alertData) {
     try {
       const { application } = alertData;
       
@@ -370,41 +429,16 @@ class IncidentService {
         
         console.log(`Using incident rule: ${matchingRule.rule_name}`);
         
-        // Start with base system mapping
-        incidentData = {
-          assignment_group: systemMapping.assignment_group,
-          service_offering: systemMapping.service_offering,
-          business_service: systemMapping.business_service,
-          u_site: systemMapping.u_site,
-          u_network: systemMapping.u_network,
-          u_impact_technology: systemMapping.u_impact_technology,
-          u_monitor_identifier: systemMapping.u_monitor_identifier,
-          
-          // Default incident fields
-          short_description: `Alert: ${alertData.object_name} - ${alertData.application}`,
-          description: `Alert Details:
-          Application: ${alertData.application}
-          Object: ${alertData.object_name}
-          Node: ${alertData.node_name}
-          Network: ${alertData.network || 'N/A'}
-          Message: ${alertData.message}
-          Time Created: ${alertData.time_created}
-          Operator: ${alertData.operator}`,
-        };
+        // Build incident with smart field inheritance
+        const cleanedOverrides = this._sanitizeIncidentOverrides(matchingRule.incident_overrides);
+        incidentData = this._buildIncidentData(systemMapping, cleanedOverrides, alertData);
         
-        // Apply rule overrides with template replacement
-        if (matchingRule.incident_overrides) {
-          const overrides = this._sanitizeIncidentOverrides(matchingRule.incident_overrides);
-          Object.entries(overrides).forEach(([key, value]) => {
-            incidentData[key] = this._replaceTemplateVariables(value, alertData);
-          });
-        }
-        
+        // Add rule metadata
         incidentData.matched_rule_id = matchingRule._id;
         incidentData.matched_rule_name = matchingRule.rule_name;
         
       } else {
-        // Fallback to basic system mapping (existing behavior)
+        // Fallback to basic system mapping
         systemMapping = await this.getMappingByApplication(application);
         
         if (!systemMapping) {
@@ -413,25 +447,8 @@ class IncidentService {
         
         console.log(`Using basic system mapping for: ${application}`);
         
-        incidentData = {
-          assignment_group: systemMapping.assignment_group,
-          service_offering: systemMapping.service_offering,
-          business_service: systemMapping.business_service,
-          u_site: systemMapping.u_site,
-          u_network: systemMapping.u_network,
-          u_impact_technology: systemMapping.u_impact_technology,
-          u_monitor_identifier: systemMapping.u_monitor_identifier,
-          
-          short_description: `Alert: ${alertData.object_name} - ${alertData.application}`,
-          description: `Alert Details:
-Application: ${alertData.application}
-Object: ${alertData.object_name}
-Node: ${alertData.node_name}
-Network: ${alertData.network || 'N/A'}
-Message: ${alertData.message}
-Time Created: ${alertData.time_created}
-Operator: ${alertData.operator}`,
-        };
+        // Build incident with smart field inheritance (no overrides)
+        incidentData = this._buildIncidentData(systemMapping, {}, alertData);
       }
       
       // Add common metadata

@@ -20,7 +20,16 @@ export const S = {
   pill: (color) => ({
     background:`${color}20`, color, padding:'4px 8px', borderRadius:12, fontSize:11, fontWeight:600
   }),
-  input: { padding:'8px 12px', border:'1px solid #D1D5DB', borderRadius:6, fontSize:14 },
+  input: {
+    padding:'8px 12px',
+    border:'1px solid #D1D5DB',
+    borderRadius:6,
+    fontSize:14,
+    width:'100%',
+    maxWidth:'100%',
+    minWidth:0,
+    boxSizing:'border-box'
+  },
   select: { padding:'8px 12px', border:'1px solid #D1D5DB', borderRadius:6, fontSize:14 },
   tableHeadCell: { padding:12, textAlign:'left', cursor:'pointer', fontWeight:600, borderBottom:'2px solid #E5E7EB' },
   tableCell: { padding:12 },

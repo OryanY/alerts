@@ -18,7 +18,6 @@ const IncidentManagement = () => {
     u_site: '',
     u_network: '',
     u_impact_technology: '',
-    connection_string: '',
     assignment_group: '',
     u_monitor_identifier: 'עלה בניטור'
   });
@@ -251,7 +250,6 @@ const IncidentManagement = () => {
       u_site: '',
       u_network: '',
       u_impact_technology: '',
-      connection_string: '',
       assignment_group: '',
       u_monitor_identifier: 'עלה בניטור'
     });
@@ -288,7 +286,6 @@ const IncidentManagement = () => {
       u_site: mapping.u_site || '',
       u_network: mapping.u_network || '',
       u_impact_technology: mapping.u_impact_technology || '',
-      connection_string: mapping.connection_string || '',
       assignment_group: mapping.assignment_group || '',
       u_monitor_identifier: mapping.u_monitor_identifier || 'עלה בניטור'
     });
