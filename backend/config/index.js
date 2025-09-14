@@ -46,7 +46,8 @@ const mongoConfig = {
   uri: `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}:${mongoPort}/${mongoDb}?authSource=${mongoAuthDb}`,
   database: mongoDb,
   collections: {
-    systemMappings: 'system_mappings'
+    systemMappings: 'system_mappings',
+    incidentRules: 'incident_rules'
   }
 };
 
