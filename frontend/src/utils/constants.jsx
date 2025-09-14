@@ -1,0 +1,18 @@
+// ===== Config =====
+export const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000/api';
+export const JERUSALEM_TZ = 'Asia/Jerusalem';
+
+// ===== Default client config (overridable via UI) =====
+export const DEFAULT_CLIENT_CFG = {
+  dayStart: 8,
+  dayEnd: 22,
+  nightStart: 22,
+  nightEnd: 8,
+  falseWakeupThreshold: 120,
+  bands: [
+    { key: 'short', label: 'Short',   min: 0,   max: 59,  color: '#10B981' },
+    { key: 'medium',label: 'Medium ', min: 60,  max: 299, color: '#F59E0B' },
+    { key: 'long',  label: 'Long ',   min: 300, max: 899, color: '#EF4444' },
+    { key: 'xl',    label: 'Very Long', min: 900, max: 1e9, color: '#DC2626' },
+  ],
+};
