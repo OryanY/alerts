@@ -1,573 +1,1031 @@
-'use strict';
+// server.js — Full API with client-overridable thresholds (Jerusalem-only display logic on FE, DB in UTC)
 
-/**
- * Express + MS SQL Server Alert Analytics API
- *
- * Endpoints:
- *  GET  /health
- *  GET  /api/alerts                     — list with filters + pagination (ROW_NUMBER CTE)
- *  GET  /api/alerts/export              — export CSV/JSON (full, with upper cap)
- *  GET  /api/stats/overview             — totals/avg/min/max/short/medium/long
- *  GET  /api/stats/by-panel             — top panels
- *  GET  /api/stats/by-application       — top applications
- *  GET  /api/filters/:field             — distinct values (allow-listed)
- */
-
+require('dotenv').config();
 const express = require('express');
 const sql = require('mssql');
 const cors = require('cors');
-require('dotenv').config();
+const helmet = require('helmet');
+const compression = require('compression');
+const Joi = require('joi');
+const { DateTime } = require('luxon');
 
-// ---------- App & Config ----------
+// ======= APP & PORT =======
 const app = express();
-// Default to 5000 to match a common CRA frontend default
-const PORT = Number(process.env.PORT) || 5000;
+const PORT = process.env.PORT || 5000;
 
-app.set('trust proxy', true);
-app.use(cors());               // adjust origin/credentials if needed
-app.use(express.json());
-
-// ---------- DB Config ----------
-const dbConfig = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER || 'localhost',
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined, // optional
-  options: {
-    encrypt: process.env.DB_ENCRYPT === 'true' || true,       // Azure/modern SQL defaults
-    trustServerCertificate: process.env.DB_TRUST_CERT === 'true' || true, // dev/local
+// ======= CONFIGURATION (defaults; can be overridden per-request via query params) =======
+const CONFIG = {
+  cache: { ttl: 300, maxEntries: 1000 },
+  duration: {
+    short: 30,        // legacy defaults (kept for backward compatibility)
+    medium: 300,
+    falseWakeupThreshold: 120,
   },
-  pool: {
-    max: Number(process.env.DB_POOL_MAX || 10),
-    min: Number(process.env.DB_POOL_MIN || 0),
-    idleTimeoutMillis: Number(process.env.DB_POOL_IDLE || 30000),
+  cors: {
+    origin: process.env.NODE_ENV === 'production'
+      ? (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
+      : true,
+    credentials: true,
   },
+  shifts: { dayStart: 8, dayEnd: 22, nightStart: 22, nightEnd: 8 },
+  tz: { IL_WIN: 'Israel Standard Time', IANA: 'Asia/Jerusalem' }
 };
 
-// Table name via env so you can switch dev/prod easily.
-// e.g. DB_TABLE=[dbo].[historicalAlerts]
-const TABLE = process.env.DB_TABLE || '[dbo].[historicalAlerts]';
+// ======= DATABASE CONFIG =======
+const dbConfig = {
+  user: process.env.SQL_USER,
+  password: process.env.SQL_PASSWORD,
+  server: process.env.SQL_SERVER,
+  database: process.env.SQL_DATABASE,
+  options: {
+    encrypt: String(process.env.SQL_ENCRYPT || 'false') === 'true',
+    trustServerCertificate: String(process.env.SQL_TRUST_SERVER_CERT || 'false') === 'true',
+    requestTimeout: 30000,
+    enableArithAbort: true,
+  },
+  pool: {
+    max: Number(process.env.DB_POOL_MAX || 20),
+    min: Number(process.env.DB_POOL_MIN || 2),
+    idleTimeoutMillis: Number(process.env.DB_POOL_IDLE || 30000),
+    acquireTimeoutMillis: 60000,
+  }
+};
 
-// Basic env sanity logs (don’t crash, just warn)
-['DB_USER', 'DB_PASSWORD', 'DB_SERVER', 'DB_NAME'].forEach((key) => {
-  if (!process.env[key]) console.error(`⚠ Missing required env: ${key}`);
-});
-
-// ---------- DB Connection Pool ----------
+// ======= GLOBALS =======
 let pool;
-let poolReady = false;
+let server;
+const cache = new Map();
 
-sql
-  .connect(dbConfig)
-  .then((p) => {
-    pool = p;
-    poolReady = true;
-    console.log('✅ Connected to SQL Server');
-  })
-  .catch((err) => {
-    console.error('❌ Database connection failed:', err);
-  });
+// ======= TIMEZONE STRATEGY =======
+// DB timestamps are UTC. Input dates are interpreted as Asia/Jerusalem for range slicing.
+// SQL-side: convert UTC to IL for grouping/derived fields.
+const IL_TZ_SQL = CONFIG.tz.IL_WIN;
+const SQL_IL_DT_OFFSET = `(time_fired AT TIME ZONE 'UTC' AT TIME ZONE '${IL_TZ_SQL}')`;
+const SQL_IL_HOUR = `DATEPART(HOUR, ${SQL_IL_DT_OFFSET})`;
+const SQL_IL_DATE = `CAST(${SQL_IL_DT_OFFSET} AS DATE)`;
 
-// Block requests until pool is ready
+// ======= MIDDLEWARE =======
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(cors(CONFIG.cors));
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Simple request logging
 app.use((req, res, next) => {
-  if (!poolReady) return res.status(503).json({ error: 'DB not ready' });
-  return next();
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    console.log(`${req.method} ${req.path} - ${res.statusCode} - ${ms}ms`);
+  });
+  next();
 });
 
-// ---------- Helpers ----------
-const isProd = process.env.NODE_ENV === 'production';
-const dbg = (...args) => { if (!isProd) console.log(...args); };
+// ======= VALIDATION =======
+const customDateValidator = Joi.alternatives().try(
+  Joi.date().iso(),
+  Joi.string().pattern(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/)
+    .custom((value, helpers) => {
+      const dt = DateTime.fromISO(value, { zone: CONFIG.tz.IANA });
+      if (!dt.isValid) return helpers.error('any.invalid');
+      return value;
+    })
+);
 
-// Escape LIKE special chars (\ % _), use ESCAPE clause
-function sanitizeLike(val) {
-  if (typeof val !== 'string') return val;
-  return val.replace(/[\\%_]/g, (m) => '\\' + m);
-}
+// Thresholds that can be overridden by FE
+const thresholdSchema = {
+  day_start: Joi.number().integer().min(0).max(23),
+  day_end: Joi.number().integer().min(0).max(23),
+  night_start: Joi.number().integer().min(0).max(23),
+  night_end: Joi.number().integer().min(0).max(23),
+  false_wakeup_threshold: Joi.number().integer().min(0),
+  dur_short_max: Joi.number().integer().min(0),
+  dur_medium_max: Joi.number().integer().min(0),
+};
 
-/**
- * Build WHERE clause + param inputs based on query filters
- * Supports: text LIKE fields, duration min/max (duration_sec),
- *           date range (start_date/end_date on [time_fired]).
- */
-
-function buildFilters(q) {
-  const where = [];
-  const inputs = [];
-
-  const like = (name, valRaw) => {
-    const val = sanitizeLike(String(valRaw));
-    where.push(`[${name}] LIKE @${name} ESCAPE '\\'`);
-    inputs.push({ name, type: sql.NVarChar, value: `%${val}%` });
-  };
-
-  const cmpNumber = (column, paramName, value, op) => {
-    where.push(`[${column}] ${op} @${paramName}`);
-    inputs.push({ name: paramName, type: sql.Int, value });
-  };
-
-  const cmpDate = (column, paramName, value, op) => {
-    where.push(`[${column}] ${op} @${paramName}`);
-    inputs.push({ name: paramName, type: sql.DateTime2, value });
-  };
-
-  // LIKE filters for text fields
-  if (q.panel_title) like('panel_title', q.panel_title);
-  if (q.application) like('application', q.application);
-  if (q.node_name)   like('node_name',   q.node_name);
-  if (q.network)     like('network',     q.network);
-  if (q.object)      like('object',      q.object);
-  if (q.operator)    like('operator',    q.operator);
-
-  // Duration range (seconds) - FIXED LOGIC
-  const minDur = (q.min_duration !== undefined && q.min_duration !== '')
-    ? parseInt(q.min_duration, 10)
-    : null;
-  const maxDur = (q.max_duration !== undefined && q.max_duration !== '')
-    ? parseInt(q.max_duration, 10)
-    : null;
-
-  // Handle duration filtering correctly
-  if (minDur !== null && !Number.isNaN(minDur) && maxDur !== null && !Number.isNaN(maxDur)) {
-    // Both min and max specified
-    where.push(`[duration_sec] BETWEEN @min_duration AND @max_duration`);
-    inputs.push({ name: 'min_duration', type: sql.Int, value: Math.max(0, minDur) });
-    inputs.push({ name: 'max_duration', type: sql.Int, value: Math.max(0, maxDur) });
-  } else if (minDur !== null && !Number.isNaN(minDur)) {
-    // Only min specified - THIS IS YOUR CASE
-    where.push(`[duration_sec] >= @min_duration`);
-    inputs.push({ name: 'min_duration', type: sql.Int, value: Math.max(0, minDur) });
-  } else if (maxDur !== null && !Number.isNaN(maxDur)) {
-    // Only max specified
-    where.push(`[duration_sec] <= @max_duration`);
-    inputs.push({ name: 'max_duration', type: sql.Int, value: Math.max(0, maxDur) });
-  }
-
-  // Date range on time_fired (ISO in, Date out)
-  const startDate = q.start_date ? new Date(q.start_date) : null;
-  const endDate   = q.end_date   ? new Date(q.end_date)   : null;
-
-  const validStart = startDate && !Number.isNaN(startDate.getTime()) ? startDate : null;
-  const validEnd   = endDate   && !Number.isNaN(endDate.getTime())   ? endDate   : null;
-
-  if (validStart && validEnd) {
-    where.push(`[time_fired] BETWEEN @start_date AND @end_date`);
-    inputs.push({ name: 'start_date', type: sql.DateTime2, value: validStart });
-    inputs.push({ name: 'end_date',   type: sql.DateTime2, value: validEnd });
-  } else if (validStart) {
-    where.push(`[time_fired] >= @start_date`);
-    inputs.push({ name: 'start_date', type: sql.DateTime2, value: validStart });
-  } else if (validEnd) {
-    where.push(`[time_fired] <= @end_date`);
-    inputs.push({ name: 'end_date', type: sql.DateTime2, value: validEnd });
-  }
-
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
-  // Debug logging
-  dbg('Generated WHERE:', whereSql);
-  dbg('Parameters:', inputs.map(i => ({ name: i.name, value: i.value, type: i.type?.name })));
-
-  return { whereSql, inputs };
-}
-
-function applyInputs(request, inputs) {
-  inputs.forEach((i) => request.input(i.name, i.type, i.value));
-}
-
-// explicit columns for performance & stability
-const COLUMNS = [
-  '[incident_id]',
-  '[panel_title]',
-  '[application]',
-  '[node_name]',
-  '[network]',
-  '[object]',
-  '[history_id]',
-  '[message]',
-  '[operator]',
-  '[key_field]',
-  '[time_fired]',
-  '[time_resolved]',
-  '[duration_sec]',
-  '[source_time_created]',
-].join(', ');
-
-// Input validation
-function validateRangeInputs(q) {
-  const errors = [];
-
-  const have = (v) => v !== undefined && v !== null && v !== '';
-
-  if (have(q.min_duration)) {
-    const n = parseInt(q.min_duration, 10);
-    if (Number.isNaN(n)) errors.push('min_duration must be an integer');
-    else if (n < 0) errors.push('min_duration cannot be negative');
-  }
-
-  if (have(q.max_duration)) {
-    const n = parseInt(q.max_duration, 10);
-    if (Number.isNaN(n)) errors.push('max_duration must be an integer');
-    else if (n < 0) errors.push('max_duration cannot be negative');
-  }
-
-  if (have(q.min_duration) && have(q.max_duration)) {
-    const a = parseInt(q.min_duration, 10);
-    const b = parseInt(q.max_duration, 10);
-    if (!Number.isNaN(a) && !Number.isNaN(b) && a > b) {
-      errors.push('min_duration cannot be greater than max_duration');
+const alertsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1),
+  limit: Joi.number().integer().min(1).max(1000).default(100),
+  panel_title: Joi.string().max(255).trim(),
+  application: Joi.string().max(255).trim(),
+  node_name: Joi.string().max(255).trim(),
+  network: Joi.string().max(255).trim(),
+  object: Joi.string().max(255).trim(),
+  operator: Joi.string().max(255).trim(),
+  min_duration: Joi.number().integer().min(0),
+  max_duration: Joi.number().integer().min(0),
+  start_date: customDateValidator,
+  end_date: customDateValidator,
+  sort_by: Joi.string().valid('time_fired', 'duration_sec', 'panel_title').default('time_fired'),
+  sort_order: Joi.string().valid('ASC', 'DESC').default('DESC'),
+  ...thresholdSchema
+}).custom((value, helpers) => {
+  if (value.start_date && value.end_date) {
+    const start = DateTime.fromISO(String(value.start_date), { zone: CONFIG.tz.IANA });
+    const end = DateTime.fromISO(String(value.end_date), { zone: CONFIG.tz.IANA });
+    if (start.isValid && end.isValid && start > end) {
+      return helpers.error('custom.invalidDateRange', { message: 'start_date must be <= end_date' });
     }
   }
+  return value;
+});
 
-  if (have(q.start_date)) {
-    const d = new Date(q.start_date);
-    if (!d || Number.isNaN(d.getTime())) errors.push('start_date is invalid');
-  }
-  if (have(q.end_date)) {
-    const d = new Date(q.end_date);
-    if (!d || Number.isNaN(d.getTime())) errors.push('end_date is invalid');
-  }
-  if (have(q.start_date) && have(q.end_date)) {
-    const s = new Date(q.start_date);
-    const e = new Date(q.end_date);
-    if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && s > e) {
-      errors.push('start_date cannot be after end_date');
+const statsQuerySchema = Joi.object({
+  start_date: customDateValidator,
+  end_date: customDateValidator,
+  limit: Joi.number().integer().min(1).max(100),
+  ...thresholdSchema
+}).custom((value, helpers) => {
+  if (value.start_date && value.end_date) {
+    const start = DateTime.fromISO(String(value.start_date), { zone: CONFIG.tz.IANA });
+    const end = DateTime.fromISO(String(value.end_date), { zone: CONFIG.tz.IANA });
+    if (start.isValid && end.isValid && start > end) {
+      return helpers.error('custom.invalidDateRange', { message: 'start_date must be <= end_date' });
     }
   }
+  return value;
+});
 
-  return errors;
+const recentAlertsSchema = Joi.object({
+  hours: Joi.number().integer().min(1).max(168).default(24),
+  limit: Joi.number().integer().min(1).max(100).default(15),
+  ...thresholdSchema
+});
+
+// ======= UTILS =======
+function buildCacheKey(prefix, params) {
+  return `${prefix}:${JSON.stringify(params)}`;
+}
+function getFromCache(key) {
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.timestamp < CONFIG.cache.ttl * 1000) return cached.data;
+  cache.delete(key);
+  return null;
+}
+function setCache(key, data) {
+  cache.set(key, { data, timestamp: Date.now() });
+  if (cache.size > CONFIG.cache.maxEntries) {
+    const firstKey = cache.keys().next().value;
+    cache.delete(firstKey);
+  }
 }
 
-// ---------- Routes ----------
+// Bind FE overrides (or use defaults) to SQL params
+function bindThresholdParamsToRequest(request, query) {
+  const dayStart   = Number.isFinite(+query.day_start) ? +query.day_start : CONFIG.shifts.dayStart;
+  const dayEnd     = Number.isFinite(+query.day_end) ? +query.day_end : CONFIG.shifts.dayEnd;
+  const nightStart = Number.isFinite(+query.night_start) ? +query.night_start : CONFIG.shifts.nightStart;
+  const nightEnd   = Number.isFinite(+query.night_end) ? +query.night_end : CONFIG.shifts.nightEnd;
+
+  const durShortMax  = Number.isFinite(+query.dur_short_max) ? +query.dur_short_max : CONFIG.duration.short;
+  const durMediumMax = Number.isFinite(+query.dur_medium_max) ? +query.dur_medium_max : CONFIG.duration.medium;
+  const falseWakeupTh= Number.isFinite(+query.false_wakeup_threshold) ? +query.false_wakeup_threshold : CONFIG.duration.falseWakeupThreshold;
+
+  request.input('day_start', sql.Int, dayStart);
+  request.input('day_end', sql.Int, dayEnd);
+  request.input('night_start', sql.Int, nightStart);
+  request.input('night_end', sql.Int, nightEnd);
+  request.input('dur_short_max', sql.Int, durShortMax);
+  request.input('dur_medium_max', sql.Int, durMediumMax);
+  request.input('false_wakeup_th', sql.Int, falseWakeupTh);
+
+  return { dayStart, dayEnd, nightStart, nightEnd, durShortMax, durMediumMax, falseWakeupTh };
+}
+
+// IL local date range → UTC JS Dates
+function toUtcRangeFromIL(startRaw, endRaw) {
+  if (!(startRaw && endRaw)) return null;
+
+  const parseToILDateTime = (raw) => {
+    const str = raw instanceof Date ? raw.toISOString() : String(raw).trim();
+    const hasTZ = /[zZ]|[+\-]\d{2}:\d{2}$/.test(str);
+    if (hasTZ) {
+      const dt = DateTime.fromISO(str, { setZone: true });
+      return dt.isValid ? dt : null;
+    } else {
+      const dt = DateTime.fromISO(str, { zone: CONFIG.tz.IANA });
+      return dt.isValid ? dt : null;
+    }
+  };
+
+  const startDT = parseToILDateTime(startRaw);
+  const endDT = parseToILDateTime(endRaw);
+  if (!startDT || !endDT) return null;
+
+  const endStr = endRaw instanceof Date ? endRaw.toISOString() : String(endRaw).trim();
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(endStr);
+  const finalEndDT = isDateOnly ? endDT.endOf('day') : endDT;
+
+  return { utcStart: startDT.toUTC().toJSDate(), utcEnd: finalEndDT.toUTC().toJSDate() };
+}
+function addUtcDateFilter(request, params) {
+  const range = toUtcRangeFromIL(params.start_date, params.end_date);
+  if (!range) return '';
+  request.input('utc_start', sql.DateTime2, range.utcStart);
+  request.input('utc_end', sql.DateTime2, range.utcEnd);
+  return ' AND time_fired BETWEEN @utc_start AND @utc_end';
+}
+
+function validateRequest(schema) {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req.query);
+    if (error) {
+      return res.status(400).json({
+        error: 'Validation error',
+        details: error.details.map(d => d.message)
+      });
+    }
+    req.validatedQuery = value;
+    next();
+  };
+}
+
+async function handleError(res, error, message = 'Internal server error') {
+  console.error(`${message}:`, error);
+  res.status(500).json({
+    error: message,
+    ...(process.env.NODE_ENV === 'development' && { details: error.message })
+  });
+}
+
+function buildSelectList() {
+  // Uses @day_start/@day_end and @dur_short_max/@dur_medium_max bound per request
+  return `
+    incident_id AS id,
+    panel_title, application, node_name, network, object, operator,
+    time_fired                                AS time_fired_utc,
+    ${SQL_IL_DT_OFFSET}                       AS time_fired_il,
+    ${SQL_IL_HOUR}                            AS il_hour,
+    CASE WHEN ${SQL_IL_HOUR} >= @day_start AND ${SQL_IL_HOUR} < @day_end
+      THEN 'Day' ELSE 'Night' END             AS il_shift,
+    time_resolved, duration_sec, message, key_field, history_id,
+    CASE
+      WHEN duration_sec <= @dur_short_max  THEN 'short'
+      WHEN duration_sec <= @dur_medium_max THEN 'medium'
+      ELSE 'long'
+    END AS duration_category
+  `;
+}
+
+function createStandardResponse(data, pagination = null, meta = {}) {
+  return {
+    data,
+    pagination,
+    meta: { timezone: CONFIG.tz.IANA, cached: false, ...meta }
+  };
+}
+
+function buildFilterConditions(params, request) {
+  let conditions = '';
+  const filters = [
+    { param: 'panel_title', column: 'panel_title', type: sql.NVarChar },
+    { param: 'application', column: 'application', type: sql.NVarChar },
+    { param: 'node_name', column: 'node_name', type: sql.NVarChar },
+    { param: 'network', column: 'network', type: sql.NVarChar },
+    { param: 'object', column: 'object', type: sql.NVarChar },
+    { param: 'operator', column: 'operator', type: sql.NVarChar },
+  ];
+  filters.forEach(f => {
+    if (params[f.param]) {
+      conditions += ` AND ${f.column} LIKE @${f.param}`;
+      request.input(f.param, f.type, `${params[f.param]}%`);
+    }
+  });
+  if (params.min_duration !== undefined) {
+    conditions += ` AND duration_sec >= @min_duration`;
+    request.input('min_duration', sql.Int, params.min_duration);
+  }
+  if (params.max_duration !== undefined) {
+    conditions += ` AND duration_sec <= @max_duration`;
+    request.input('max_duration', sql.Int, params.max_duration);
+  }
+  return conditions;
+}
+
+// ======= DB START =======
+async function initializeDatabase() {
+  try {
+    pool = await new sql.ConnectionPool(dbConfig).connect();
+    console.log('✅ Connected to SQL Server.');
+    const result = await pool.request().query(`SELECT COUNT(*) as total_records FROM dbo.historicalAlerts`);
+    console.log(`📊 Database contains ${result.recordset[0].total_records} historical alerts`);
+  } catch (err) {
+    console.error('❌ Failed to connect to SQL Server:', err);
+    process.exit(1);
+  }
+}
+
+// ======= ROUTES =======
+
+// Config (server defaults)
+app.get('/api/config', (req, res) => {
+  res.json(createStandardResponse({
+    shifts: CONFIG.shifts,
+    duration: CONFIG.duration,
+    timezone: CONFIG.tz,
+    cache: { ttl: CONFIG.cache.ttl },
+    version: '4.0.0-client-overrides'
+  }));
+});
 
 // Health
-app.get('/health', (req, res) => {
-  res.json({ ok: true, db: poolReady, table: TABLE });
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.request().query('SELECT 1');
+    res.json(createStandardResponse({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      timezone: CONFIG.tz.IANA,
+      config: CONFIG.shifts
+    }));
+  } catch (error) {
+    res.status(503).json({ data: { status: 'unhealthy', error: error.message }, meta: { timezone: CONFIG.tz.IANA } });
+  }
 });
 
-// Alerts with filters + pagination (ROW_NUMBER)
-app.get('/api/alerts', async (req, res) => {
+// Alerts (list)
+app.get('/api/alerts', validateRequest(alertsQuerySchema), async (req, res) => {
   try {
-    dbg('Received query params:', req.query);
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('alerts', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
 
-    const errors = validateRangeInputs(req.query);
-    if (errors.length) {
-      return res.status(400).json({ error: 'Invalid input parameters', details: errors });
-    }
-
-    const {
-      page = '1',
-      limit = '100',
-      panel_title,
-      application,
-      node_name,
-      network,
-      object,
-      operator,
-      min_duration,
-      max_duration,
-      start_date,
-      end_date,
-    } = req.query;
-
-    const { whereSql, inputs } = buildFilters({
-      panel_title,
-      application,
-      node_name,
-      network,
-      object,
-      operator,
-      min_duration,
-      max_duration,
-      start_date,
-      end_date,
-    });
-
-    const pageNum  = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 100));
-    const offsetNum = (pageNum - 1) * limitNum;
-
-    // --- ROW_NUMBER CTE pagination ---
-    const dataSql = `
-      WITH cte AS (
-        SELECT
-          ${COLUMNS},
-          ROW_NUMBER() OVER (ORDER BY [time_fired] DESC, [history_id] DESC) AS rn
-        FROM ${TABLE}
-        ${whereSql}
-      )
-      SELECT ${COLUMNS}
-      FROM cte
-      WHERE rn BETWEEN (@offset + 1) AND (@offset + @limit)
-      ORDER BY rn;
-    `;
+    const validSortColumns = ['time_fired', 'duration_sec', 'panel_title'];
+    const sortBy = validSortColumns.includes(params.sort_by) ? params.sort_by : 'time_fired';
+    const sortOrder = params.sort_order === 'ASC' ? 'ASC' : 'DESC';
 
     const dataReq = pool.request();
-    applyInputs(dataReq, inputs);
-    dataReq.input('offset', sql.Int, offsetNum);
-    dataReq.input('limit', sql.Int, limitNum);
+    // Bind overrides
+    bindThresholdParamsToRequest(dataReq, params);
 
-    const rowsRes = await dataReq.query(dataSql);
+    let where = ' WHERE 1=1 ';
+    where += buildFilterConditions(params, dataReq);
+    where += addUtcDateFilter(dataReq, params);
 
-    const countSql = `
-      SELECT COUNT(1) AS total
-      FROM ${TABLE}
-      ${whereSql};
-    `;
-    const countReq = pool.request();
-    applyInputs(countReq, inputs);
-    const countRes = await countReq.query(countSql);
-    const total = countRes.recordset[0]?.total ?? 0;
+    let dataSql;
+    let pagination = null;
 
-    dbg(`Query returned ${rowsRes.recordset.length} row(s), total: ${total}`);
+    if (params.page && params.limit) {
+      dataReq.input('offset', sql.Int, (params.page - 1) * params.limit);
+      dataReq.input('limit', sql.Int, params.limit + 1);
+      dataSql = `
+        SELECT ${buildSelectList()}
+        FROM dbo.historicalAlerts
+        ${where}
+        ORDER BY ${sortBy} ${sortOrder}
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+      `;
+      const dataResult = await dataReq.query(dataSql);
+      const hasMore = dataResult.recordset.length > params.limit;
+      const alerts = hasMore ? dataResult.recordset.slice(0, -1) : dataResult.recordset;
 
-    return res.json({
-      alerts: rowsRes.recordset,
-      total,
-      page: pageNum,
-      totalPages: Math.max(1, Math.ceil(total / limitNum)),
-      appliedFilters: {
-        where: whereSql,
-        parameters: inputs.map(i => i.name),
-      },
-    });
-  } catch (err) {
-    console.error('Error fetching alerts:', err);
-    return res.status(500).json({ error: 'Internal server error', details: err.message });
+      pagination = { page: params.page, limit: params.limit, hasNext: hasMore, hasPrev: params.page > 1 };
+      const response = createStandardResponse(alerts, pagination, { filters: params });
+      setCache(cacheKey, response);
+      return res.json(response);
+    } else {
+      dataReq.input('limit', sql.Int, params.limit);
+      dataSql = `
+        SELECT TOP (@limit) ${buildSelectList()}
+        FROM dbo.historicalAlerts
+        ${where}
+        ORDER BY ${sortBy} ${sortOrder};
+      `;
+      const dataResult = await dataReq.query(dataSql);
+      const response = createStandardResponse(dataResult.recordset, null, { filters: params });
+      setCache(cacheKey, response);
+      return res.json(response);
+    }
+  } catch (error) {
+    await handleError(res, error, 'Error fetching alerts');
   }
 });
 
-// Export alerts (CSV / JSON) with upper cap
-app.get('/api/alerts/export', async (req, res) => {
+// Executive KPIs
+app.get('/api/stats/executive-kpis', validateRequest(statsQuerySchema), async (req, res) => {
   try {
-    const {
-      panel_title,
-      application,
-      node_name,
-      network,
-      object,
-      operator,
-      min_duration,
-      max_duration,
-      start_date,
-      end_date,
-      format = 'csv',
-      limit = '200000', // upper bound; tune for your infra
-    } = req.query;
-
-    const errors = validateRangeInputs(req.query);
-    if (errors.length) {
-      return res.status(400).json({ error: 'Invalid input parameters', details: errors });
-    }
-
-    const { whereSql, inputs } = buildFilters({
-      panel_title,
-      application,
-      node_name,
-      network,
-      object,
-      operator,
-      min_duration,
-      max_duration,
-      start_date,
-      end_date,
-    });
-
-    const cap = Math.min(1_000_000, Math.max(1, parseInt(limit, 10) || 200_000));
-
-    const sqlText = `
-      SELECT TOP (@cap)
-        ${COLUMNS}
-      FROM ${TABLE}
-      ${whereSql}
-      ORDER BY [time_fired] DESC, [history_id] DESC;
-    `;
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('executive_kpis', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
 
     const request = pool.request();
-    applyInputs(request, inputs);
-    request.input('cap', sql.Int, cap);
+    bindThresholdParamsToRequest(request, params);
 
-    const result = await request.query(sqlText);
-    const rows = result.recordset || [];
-    const filenameBase = `alerts_${Date.now()}`;
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
 
-    if (String(format).toLowerCase() === 'json') {
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="${filenameBase}.json"`);
-      // Stream JSON array
-      res.write('[');
-      for (let i = 0; i < rows.length; i++) {
-        if (i) res.write(',');
-        res.write(JSON.stringify(rows[i]));
-      }
-      res.write(']');
-      return res.end();
-    }
-
-    // Default CSV
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filenameBase}.csv"`);
-
-    const headers = COLUMNS.split(',').map(s => s.trim().replace(/^\[|\]$/g, '')); // strip [col]
-    res.write(headers.join(',') + '\n');
-
-    const esc = (v) => {
-      if (v == null) return '';
-      const s = String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-
-    for (const row of rows) {
-      const line = headers.map((h) => esc(row[h])).join(',');
-      res.write(line + '\n');
-    }
-    return res.end();
-  } catch (err) {
-    console.error('Error exporting alerts:', err);
-    return res.status(500).json({ error: 'Internal server error', details: err.message });
-  }
-});
-
-// Stats: overview (range-aware)
-app.get('/api/stats/overview', async (req, res) => {
-  try {
-    const errors = validateRangeInputs(req.query);
-    if (errors.length) {
-      return res.status(400).json({ error: 'Invalid date/duration range', details: errors });
-    }
-
-    // We honor only time range + duration filters here (you can extend to text filters if desired)
-    const { whereSql, inputs } = buildFilters({
-      start_date: req.query.start_date,
-      end_date: req.query.end_date,
-      min_duration: req.query.min_duration,
-      max_duration: req.query.max_duration,
-    });
-
-    const sqlText = `
+    const query = `
+      WITH AlertStats AS (
+        SELECT 
+          COUNT(*) as total_alerts,
+          COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as noise_alerts,
+          COUNT(CASE WHEN ${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end THEN 1 END) as night_alerts,
+          COUNT(CASE 
+            WHEN (${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end) 
+             AND duration_sec > @false_wakeup_th THEN 1 
+          END) as true_wakeups,
+          COUNT(CASE 
+            WHEN (${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end) 
+             AND duration_sec <= @false_wakeup_th THEN 1 
+          END) as false_wakeups
+        FROM dbo.historicalAlerts
+        ${where}
+      )
       SELECT 
-        COUNT(*) AS total_alerts,
-        AVG(CAST([duration_sec] AS FLOAT)) AS avg_duration,
-        MIN([duration_sec]) AS min_duration,
-        MAX([duration_sec]) AS max_duration,
-        COUNT(CASE WHEN [duration_sec] <= 30 THEN 1 END) AS short_alerts,
-        COUNT(CASE WHEN [duration_sec] > 30 AND [duration_sec] <= 300 THEN 1 END) AS medium_alerts,
-        COUNT(CASE WHEN [duration_sec] > 300 THEN 1 END) AS long_alerts
-      FROM ${TABLE}
-      ${whereSql};
+        total_alerts,
+        noise_alerts,
+        night_alerts,
+        true_wakeups,
+        false_wakeups,
+        CASE WHEN total_alerts > 0 THEN ROUND( (total_alerts - noise_alerts) * 100.0 / total_alerts, 1) ELSE 0 END as signal_to_noise_ratio,
+        CASE WHEN (true_wakeups + false_wakeups) > 0 THEN ROUND(false_wakeups * 100.0 / (true_wakeups + false_wakeups), 1) ELSE 0 END as false_wakeup_rate
+      FROM AlertStats;
     `;
-
-    const request = pool.request();
-    applyInputs(request, inputs);
-    const result = await request.query(sqlText);
-
-    return res.json(result.recordset[0] || {});
-  } catch (err) {
-    console.error('Error fetching overview stats:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset[0], null, {
+      date_range: params.start_date && params.end_date ? { start: params.start_date, end: params.end_date } : null
+    });
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching executive KPIs');
   }
 });
 
-// Stats: by panel (top N)
-app.get('/api/stats/by-panel', async (req, res) => {
+// Recent alerts (last X hours, UTC-based window)
+app.get('/api/stats/recent-alerts', validateRequest(recentAlertsSchema), async (req, res) => {
   try {
-    const { start_date, end_date, min_duration, max_duration, limit = '10' } = req.query;
-
-    const { whereSql, inputs } = buildFilters({ start_date, end_date, min_duration, max_duration });
-    const top = Math.min(1000, Math.max(1, parseInt(limit, 10) || 10));
-
-    const sqlText = `
-      SELECT TOP (@limit)
-        [panel_title],
-        COUNT(*) AS alert_count,
-        AVG(CAST([duration_sec] AS FLOAT)) AS avg_duration
-      FROM ${TABLE}
-      ${whereSql}
-      GROUP BY [panel_title]
-      ORDER BY alert_count DESC;
-    `;
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('recent_alerts', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
 
     const request = pool.request();
-    applyInputs(request, inputs);
-    request.input('limit', sql.Int, top);
+    bindThresholdParamsToRequest(request, params);
+    request.input('hours', sql.Int, params.hours);
+    request.input('limit', sql.Int, params.limit);
 
-    const result = await request.query(sqlText);
-    return res.json(result.recordset);
-  } catch (err) {
-    console.error('Error fetching panel stats:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    const query = `
+      SELECT TOP (@limit) ${buildSelectList()}
+      FROM dbo.historicalAlerts
+      WHERE time_fired >= DATEADD(HOUR, -@hours, GETUTCDATE())
+      ORDER BY time_fired DESC
+    `;
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching recent alerts');
   }
 });
 
-// Stats: by application (top N)
-app.get('/api/stats/by-application', async (req, res) => {
+// Weekend vs Weekday
+app.get('/api/stats/weekend-weekday', validateRequest(statsQuerySchema), async (req, res) => {
   try {
-    const { start_date, end_date, min_duration, max_duration, limit = '10' } = req.query;
-
-    const { whereSql, inputs } = buildFilters({ start_date, end_date, min_duration, max_duration });
-    const top = Math.min(1000, Math.max(1, parseInt(limit, 10) || 10));
-
-    const sqlText = `
-      SELECT TOP (@limit)
-        [application],
-        COUNT(*) AS alert_count,
-        AVG(CAST([duration_sec] AS FLOAT)) AS avg_duration
-      FROM ${TABLE}
-      ${whereSql}
-      GROUP BY [application]
-      ORDER BY alert_count DESC;
-    `;
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('weekend_weekday', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
 
     const request = pool.request();
-    applyInputs(request, inputs);
-    request.input('limit', sql.Int, top);
+    bindThresholdParamsToRequest(request, params);
 
-    const result = await request.query(sqlText);
-    return res.json(result.recordset);
-  } catch (err) {
-    console.error('Error fetching application stats:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT 
+        CASE DATENAME(WEEKDAY, ${SQL_IL_DT_OFFSET})
+          WHEN 'Friday'   THEN 'Weekend'
+          WHEN 'Saturday' THEN 'Weekend'
+          WHEN N'שישי'   THEN 'Weekend'
+          WHEN N'שבת'    THEN 'Weekend'
+          ELSE 'Weekdays'
+        END as period,
+        COUNT(*) as alert_count,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+        COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as short_alerts,
+        COUNT(CASE WHEN duration_sec > @dur_medium_max THEN 1 END) as long_alerts,
+        COUNT(CASE WHEN ${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end THEN 1 END) as night_alerts
+      FROM dbo.historicalAlerts
+      ${where}
+      GROUP BY CASE DATENAME(WEEKDAY, ${SQL_IL_DT_OFFSET})
+        WHEN 'Friday'   THEN 'Weekend'
+        WHEN 'Saturday' THEN 'Weekend'
+        WHEN N'שישי'   THEN 'Weekend'
+        WHEN N'שבת'    THEN 'Weekend'
+        ELSE 'Weekdays'
+      END
+      ORDER BY period DESC
+    `;
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching weekend/weekday stats');
   }
 });
 
-// Distinct values for filters (allow-list)
-app.get('/api/filters/:field', async (req, res) => {
+// Duration histogram (using client bands: short <= @dur_short_max; medium <= @dur_medium_max; long > @dur_medium_max)
+app.get('/api/stats/duration-histogram', validateRequest(statsQuerySchema), async (req, res) => {
   try {
-    const allowed = [
-      'panel_title',
-      'application',
-      'node_name',
-      'network',
-      'object',
-      'operator',
-    ];
-    const { field } = req.params;
-    if (!allowed.includes(field)) {
-      return res.status(400).json({ error: 'Invalid field' });
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('duration_histogram', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT '<=short' as duration_range, COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as count, 1 as sort_order
+      FROM dbo.historicalAlerts ${where}
+      UNION ALL
+      SELECT 'short..medium', COUNT(CASE WHEN duration_sec > @dur_short_max AND duration_sec <= @dur_medium_max THEN 1 END), 2
+      FROM dbo.historicalAlerts ${where}
+      UNION ALL
+      SELECT '>medium', COUNT(CASE WHEN duration_sec > @dur_medium_max THEN 1 END), 3
+      FROM dbo.historicalAlerts ${where}
+      ORDER BY sort_order
+    `;
+    const result = await request.query(query);
+    const data = result.recordset.map(r => ({ range: r.duration_range, count: r.count }));
+    const response = createStandardResponse(data);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching duration histogram');
+  }
+});
+
+// Hourly heatmap
+app.get('/api/stats/hourly-heatmap', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('hourly_heatmap', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT 
+        ${SQL_IL_HOUR} as hour,
+        COUNT(*) as count,
+        CASE WHEN ${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end THEN 1 ELSE 0 END as is_night
+      FROM dbo.historicalAlerts
+      ${where}
+      GROUP BY ${SQL_IL_HOUR}
+      ORDER BY hour
+    `;
+    const result = await request.query(query);
+
+    const fullHours = Array.from({ length: 24 }, (_, i) => {
+      const existing = result.recordset.find(r => r.hour === i);
+      return {
+        hour: i,
+        hour_display: `${String(i).padStart(2,'0')}:00`,
+        count: existing ? existing.count : 0,
+        is_night: i >= (params.night_start ?? CONFIG.shifts.nightStart) || i < (params.night_end ?? CONFIG.shifts.nightEnd)
+      };
+    });
+
+    const response = createStandardResponse(fullHours);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching hourly heatmap');
+  }
+});
+
+// Shift analysis
+app.get('/api/stats/shift-analysis', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('stats_shift', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT 
+        CASE WHEN ${SQL_IL_HOUR} >= @day_start AND ${SQL_IL_HOUR} < @day_end THEN 'Day' ELSE 'Night' END as shift,
+        COUNT(*) as alert_count,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+        MIN(duration_sec) as min_duration,
+        MAX(duration_sec) as max_duration,
+        COUNT(CASE WHEN duration_sec <= @false_wakeup_th THEN 1 END) as false_wakeups,
+        COUNT(CASE WHEN duration_sec > @false_wakeup_th THEN 1 END) as true_alerts,
+        COUNT(DISTINCT panel_title) as unique_panels,
+        COUNT(DISTINCT operator) as unique_operators,
+        CASE WHEN COUNT(*) > 0 THEN ROUND(COUNT(CASE WHEN duration_sec <= @false_wakeup_th THEN 1 END) * 100.0 / COUNT(*), 1) ELSE 0 END as false_wakeup_rate
+      FROM dbo.historicalAlerts
+      ${where}
+      GROUP BY CASE WHEN ${SQL_IL_HOUR} >= @day_start AND ${SQL_IL_HOUR} < @day_end THEN 'Day' ELSE 'Night' END
+      ORDER BY shift
+    `;
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching shift analysis');
+  }
+});
+
+// Overview
+app.get('/api/stats/overview', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('stats_overview', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT 
+        COUNT(*) as total_alerts,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+        MIN(duration_sec) as min_duration,
+        MAX(duration_sec) as max_duration,
+        COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as short_alerts,
+        COUNT(CASE WHEN duration_sec > @dur_short_max AND duration_sec <= @dur_medium_max THEN 1 END) as medium_alerts,
+        COUNT(CASE WHEN duration_sec > @dur_medium_max THEN 1 END) as long_alerts,
+        COUNT(DISTINCT panel_title) as unique_panels,
+        COUNT(DISTINCT application) as unique_applications,
+        COUNT(DISTINCT node_name) as unique_nodes,
+        COUNT(DISTINCT network) as unique_networks,
+        COUNT(DISTINCT operator) as unique_operators,
+        COUNT(CASE WHEN time_resolved IS NOT NULL THEN 1 END) as resolved_alerts,
+        COUNT(CASE WHEN time_resolved IS NULL THEN 1 END) as unresolved_alerts,
+        COUNT(CASE WHEN ${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end THEN 1 END) as night_alerts,
+        COUNT(CASE WHEN ${SQL_IL_HOUR} >= @day_start AND ${SQL_IL_HOUR} < @day_end THEN 1 END) as day_alerts,
+        CASE WHEN COUNT(*) > 0 
+             THEN ROUND( ( COUNT(*) - COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) ) * 100.0 / COUNT(*), 1)
+             ELSE 0 END as signal_to_noise_ratio
+      FROM dbo.historicalAlerts
+      ${where}
+    `;
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset[0], null, {
+      date_range: params.start_date && params.end_date ? { start: params.start_date, end: params.end_date } : null
+    });
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching overview stats');
+  }
+});
+
+// Hourly distribution
+app.get('/api/stats/hourly', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('stats_hourly', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT 
+        ${SQL_IL_HOUR} as hour,
+        COUNT(*) as alert_count,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+        COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as immediate_alerts,
+        COUNT(CASE WHEN duration_sec > @dur_short_max AND duration_sec <= @dur_medium_max THEN 1 END) as short_alerts,
+        COUNT(CASE WHEN duration_sec > @dur_medium_max THEN 1 END) as long_alerts
+      FROM dbo.historicalAlerts
+      ${where}
+      GROUP BY ${SQL_IL_HOUR}
+      ORDER BY hour
+    `;
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching hourly stats');
+  }
+});
+
+// Patterns (storms & correlations) — unchanged logic, with bound params for consistency
+app.get('/api/stats/patterns', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('stats_patterns', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    // storms
+    const stormsReq = pool.request();
+    bindThresholdParamsToRequest(stormsReq, params);
+    let stormsWhere = ' WHERE 1=1 ';
+    stormsWhere += addUtcDateFilter(stormsReq, params);
+
+    const stormQuery = `
+      WITH Base AS (
+        SELECT application, panel_title, time_fired
+        FROM dbo.historicalAlerts
+        ${stormsWhere}
+      ),
+      Storms AS (
+        SELECT 
+          b.application,
+          b.panel_title,
+          b.time_fired,
+          (SELECT COUNT(*) 
+             FROM dbo.historicalAlerts x
+             WHERE x.application = b.application
+               AND x.time_fired BETWEEN DATEADD(MINUTE, -10, b.time_fired) AND b.time_fired
+          ) AS alerts_in_window
+        FROM Base b
+      )
+      SELECT *
+      FROM Storms
+      WHERE alerts_in_window >= 5
+      ORDER BY time_fired DESC
+    `;
+
+    // correlations
+    const corrReq = pool.request();
+    bindThresholdParamsToRequest(corrReq, params);
+    let corrWhere = ' WHERE 1=1 ';
+    corrWhere += addUtcDateFilter(corrReq, params);
+
+    const correlationQuery = `
+      SELECT TOP 20
+        a1.application,
+        a1.panel_title as panel1,
+        a2.panel_title as panel2,
+        COUNT(*) as correlation_count,
+        ROUND(AVG(CAST(ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) AS FLOAT)), 2) as avg_time_diff
+      FROM dbo.historicalAlerts a1
+      JOIN dbo.historicalAlerts a2 
+        ON a1.application = a2.application
+       AND a1.incident_id < a2.incident_id
+       AND ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) <= 300
+      ${corrWhere.replace('WHERE 1=1', 'WHERE a1.time_fired IS NOT NULL AND a2.time_fired IS NOT NULL')}
+      GROUP BY a1.application, a1.panel_title, a2.panel_title
+      HAVING COUNT(*) >= 3
+      ORDER BY correlation_count DESC
+    `;
+
+    const [stormResult, correlationResult] = await Promise.all([
+      stormsReq.query(stormQuery),
+      corrReq.query(correlationQuery)
+    ]);
+
+    const response = createStandardResponse({
+      storms: stormResult.recordset,
+      correlations: correlationResult.recordset
+    });
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching pattern analysis');
+  }
+});
+
+// Operators
+app.get('/api/stats/operators', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('stats_operators', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT 
+        COALESCE(operator, 'System/Auto') as operator,
+        COUNT(*) as total_alerts,
+        COUNT(CASE WHEN ${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end THEN 1 END) as night_alerts,
+        COUNT(CASE WHEN ${SQL_IL_HOUR} >= @day_start AND ${SQL_IL_HOUR} < @day_end THEN 1 END) as day_alerts,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_resolution_time,
+        COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as quick_resolutions,
+        COUNT(CASE WHEN duration_sec > 900 THEN 1 END) as long_resolutions,
+        COUNT(CASE WHEN time_resolved IS NOT NULL THEN 1 END) as resolved_count,
+        COUNT(DISTINCT application) as apps_handled,
+        MIN(time_fired) as first_alert_utc,
+        MAX(time_fired) as last_alert_utc
+      FROM dbo.historicalAlerts
+      ${where}
+      GROUP BY operator
+      ORDER BY total_alerts DESC
+    `;
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching operator stats');
+  }
+});
+
+// By panel
+app.get('/api/stats/by-panel', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('stats_panel', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    let query;
+    if (params.limit) {
+      request.input('limit', sql.Int, params.limit);
+      query = `
+        SELECT TOP (@limit)
+          panel_title,
+          application,
+          COUNT(*) as alert_count,
+          ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+          MIN(duration_sec) as min_duration,
+          MAX(duration_sec) as max_duration,
+          COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as short_alerts,
+          COUNT(CASE WHEN duration_sec > @dur_short_max AND duration_sec <= @dur_medium_max THEN 1 END) as medium_alerts,
+          COUNT(CASE WHEN duration_sec > @dur_medium_max THEN 1 END) as long_alerts
+        FROM dbo.historicalAlerts
+        ${where}
+        GROUP BY panel_title, application
+        ORDER BY alert_count DESC
+      `;
+    } else {
+      query = `
+        SELECT 
+          panel_title,
+          application,
+          COUNT(*) as alert_count,
+          ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+          MIN(duration_sec) as min_duration,
+          MAX(duration_sec) as max_duration,
+          COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) as short_alerts,
+          COUNT(CASE WHEN duration_sec > @dur_short_max AND duration_sec <= @dur_medium_max THEN 1 END) as medium_alerts,
+          COUNT(CASE WHEN duration_sec > @dur_medium_max THEN 1 END) as long_alerts
+        FROM dbo.historicalAlerts
+        ${where}
+        GROUP BY panel_title, application
+        ORDER BY alert_count DESC
+      `;
     }
 
-    const sqlText = `
-      SELECT DISTINCT [${field}]
-      FROM ${TABLE}
-      WHERE [${field}] IS NOT NULL
-      ORDER BY [${field}];
-    `;
-    const result = await pool.request().query(sqlText);
-    return res.json(result.recordset.map((r) => r[field]));
-  } catch (err) {
-    console.error('Error fetching filter values:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching panel stats');
   }
 });
 
-// ---------- Start Server ----------
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+// Time series (per IL day)
+app.get('/api/stats/timeseries', validateRequest(statsQuerySchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = buildCacheKey('stats_timeseries', params);
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const request = pool.request();
+    bindThresholdParamsToRequest(request, params);
+
+    let where = ' WHERE 1=1 ';
+    where += addUtcDateFilter(request, params);
+
+    const query = `
+      SELECT 
+        ${SQL_IL_DATE} as date_il,
+        COUNT(*) as alert_count,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+        COUNT(CASE WHEN ${SQL_IL_HOUR} >= @night_start OR ${SQL_IL_HOUR} < @night_end THEN 1 END) as night_count,
+        COUNT(CASE WHEN ${SQL_IL_HOUR} >= @day_start AND ${SQL_IL_HOUR} < @day_end THEN 1 END) as day_count
+      FROM dbo.historicalAlerts
+      ${where}
+      GROUP BY ${SQL_IL_DATE}
+      ORDER BY date_il
+    `;
+    const result = await request.query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching time series data');
+  }
 });
 
-// ---------- Graceful Shutdown ----------
-process.on('SIGINT', async () => {
-  console.log('\nShutting down server…');
-  try { if (pool) await pool.close(); } catch {}
-  process.exit(0);
+// Dropdown options
+app.get('/api/dropdown-options/:field', async (req, res) => {
+  try {
+    const { field } = req.params;
+    const validFields = ['panel_title', 'application', 'node_name', 'network', 'object', 'operator'];
+    if (!validFields.includes(field)) {
+      return res.status(400).json({ error: 'Invalid field parameter', valid_fields: validFields });
+    }
+
+    const cacheKey = buildCacheKey('dropdown', { field });
+    const cached = getFromCache(cacheKey);
+    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
+
+    const query = `
+      SELECT DISTINCT ${field} as value, COUNT(*) as count
+      FROM dbo.historicalAlerts
+      WHERE ${field} IS NOT NULL AND ${field} != ''
+      GROUP BY ${field}
+      ORDER BY count DESC, ${field}
+    `;
+    const result = await pool.request().query(query);
+    const response = createStandardResponse(result.recordset);
+    setCache(cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    await handleError(res, error, 'Error fetching dropdown options');
+  }
 });
+
+// 404
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found', path: req.path, method: req.method });
+});
+
+// Error handler
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({ error: 'Internal server error', ...(process.env.NODE_ENV === 'development' && { details: error.message }) });
+});
+
+// ======= STARTUP & SHUTDOWN =======
+async function startServer() {
+  await initializeDatabase();
+  server = app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📡 API at http://localhost:${PORT}/api/`);
+    console.log(`⚙️  Shifts (defaults): ${JSON.stringify(CONFIG.shifts)}`);
+    console.log(`🕐 Timezone: ${CONFIG.tz.IANA} (DB stored in UTC)`);
+    console.log(`🔒 CORS: ${process.env.NODE_ENV === 'production' ? 'Restricted' : 'Development (Allow All)'}`);
+  });
+}
+async function shutdown(signal = 'SIGINT') {
+  console.log(`\n🛑 Shutting down server gracefully (${signal})...`);
+  try {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    console.log('🔌 HTTP server closed');
+    if (pool) {
+      await pool.close();
+      console.log('📊 Database connection closed');
+    }
+    console.log('👋 Server shutdown complete');
+    process.exit(0);
+  } catch (e) {
+    console.error('Error during shutdown:', e);
+    process.exit(1);
+  }
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  shutdown('uncaughtException');
+});
+
+startServer().catch(console.error);
