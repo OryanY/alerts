@@ -16,6 +16,8 @@
     "helmet": "^7.2.0",
     "joi": "^18.0.1",
     "luxon": "^3.7.2",
+    "module-alias": "^2.2.3",
+    "mongodb": "^6.19.0",
     "mssql": "^10.0.4",
     "sequelize": "^6.37.7"
   },
