@@ -1,9 +1,7 @@
 // components/Layout.jsx — Main layout with navigation
-import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Eye, Settings, Clock } from 'lucide-react';
+import { AlertTriangle, BarChart3, Eye, Settings } from 'lucide-react';
 import { S } from '../utils/styles';
-import { JerusalemTime } from '../utils/time';
 
 const navigationItems = [
   { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -65,26 +63,7 @@ export const Layout = () => {
       <main style={S.main}>
         <Outlet />
       </main>
-
-      {/* Footer */}
-      <footer style={S.footer}>
-        <div style={S.footerInner}>
-          <div style={{ 
-            display:'flex', justifyContent:'space-between', 
-            alignItems:'center', fontSize:14, color:'#6B7280' 
-          }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <span>Alert Stats Dashboard</span>
-              <span>•</span>
-              <span>Asia/Jerusalem Timezone</span>
-            </div>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <Clock size={16} />
-              <span>Last updated: {JerusalemTime.formatTime(new Date().toISOString())}</span>
-            </div>
-          </div>
-        </div>
-      </footer>
+              
     </div>
   );
 };

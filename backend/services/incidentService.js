@@ -1,4 +1,4 @@
-// services/incidentService.js - Enhanced version with rules support
+// services/incidentService.js - Simplified and cleaned version
 const { getMongoDb } = require('../database/connection');
 const { mongoConfig } = require('../config');
 const { ObjectId } = require('mongodb');
@@ -7,52 +7,124 @@ class IncidentService {
   constructor() {
     this.systemMappingsCollection = null;
     this.incidentRulesCollection = null;
+    this.requiredFieldsCollection = null;
   }
 
   async initialize() {
     const db = getMongoDb();
     this.systemMappingsCollection = db.collection(mongoConfig.collections.systemMappings);
-    this.incidentRulesCollection = db.collection('incident_rules'); // New collection
+    this.incidentRulesCollection = db.collection('incident_rules');
+    this.requiredFieldsCollection = db.collection('service_offering_required_fields');
   }
 
-   _buildIncidentData(systemMapping, ruleOverrides = {}, alertData) {
-    // Define required fields that must always be present
-    const requiredFields = ['assignment_group', 'service_offering', 'business_service'];
+  // ================== REQUIRED FIELDS MANAGEMENT ==================
+
+  async getRequiredFieldsForServiceOffering(serviceOffering) {
+    // Base required fields that are always mandatory
+    const baseRequired = ['grafana_name', 'service_offering', 'business_service', 'u_network', 'assignment_group'];
     
-    // System fields that should never be copied to incidents
+    if (!this.requiredFieldsCollection) await this.initialize();
+
+    try {
+      const doc = await this.requiredFieldsCollection.findOne({ service_offering: serviceOffering });
+      const additionalFromStore = Array.isArray(doc?.fields) ? doc.fields : [];
+
+      // Also get fields from existing mappings with this service offering
+      const mappings = await this.systemMappingsCollection
+        .find({ service_offering: serviceOffering })
+        .toArray();
+
+      const mappingFields = new Set();
+      mappings.forEach(mapping => {
+        Object.keys(mapping || {}).forEach(key => {
+          if (!['_id', 'created_at', 'updated_at'].includes(key)) {
+            mappingFields.add(key);
+          }
+        });
+      });
+
+      const allRequired = Array.from(new Set([
+        ...baseRequired, 
+        ...additionalFromStore, 
+        ...mappingFields
+      ]));
+
+      return { 
+        baseRequired, 
+        additionalRequired: additionalFromStore, 
+        allRequired 
+      };
+    } catch (error) {
+      console.error('Error fetching required fields:', error);
+      return { baseRequired, additionalRequired: [], allRequired: baseRequired };
+    }
+  }
+
+  async setRequiredFieldsForServiceOffering(serviceOffering, fields) {
+    if (!this.requiredFieldsCollection) await this.initialize();
+    
+    try {
+      const cleanFields = Array.from(new Set(
+        (fields || []).map(f => String(f).trim()).filter(Boolean)
+      ));
+
+      await this.requiredFieldsCollection.updateOne(
+        { service_offering: serviceOffering },
+        { 
+          $set: { 
+            service_offering: serviceOffering, 
+            fields: cleanFields, 
+            updated_at: new Date() 
+          }, 
+          $setOnInsert: { created_at: new Date() } 
+        },
+        { upsert: true }
+      );
+
+      return { service_offering: serviceOffering, fields: cleanFields };
+    } catch (error) {
+      console.error('Error setting required fields:', error);
+      throw error;
+    }
+  }
+
+  // ================== INCIDENT BUILDING ==================
+  
+  _buildIncidentData(systemMapping, ruleOverrides = {}, alertData) {
+    const baseRequired = ['service_offering', 'business_service', 'u_network', 'assignment_group'];
     const excludeFields = new Set(['_id', 'grafana_name', 'created_at', 'updated_at']);
     
     const incidentData = {};
     
-    // 1. Add required fields (from overrides or mapping)
-    requiredFields.forEach(field => {
+    // 1. Add base required fields first
+    baseRequired.forEach(field => {
       const value = ruleOverrides[field] || systemMapping[field];
       if (!value) {
-        throw new Error(`Required field '${field}' is missing from both mapping and rule overrides`);
+        throw new Error(`Required field '${field}' is missing`);
       }
       incidentData[field] = value;
     });
     
-    // 2. Auto-inherit all other fields from system mapping (if they have values)
+    // 2. Add other fields from mapping
     Object.entries(systemMapping).forEach(([key, value]) => {
-      if (!excludeFields.has(key) && !requiredFields.includes(key)) {
-        // Only include if value exists and is not empty
-        if (value != null && String(value).trim() !== '') {
-          incidentData[key] = value;
-        }
+      if (!excludeFields.has(key) && 
+          !baseRequired.includes(key) && 
+          value != null && 
+          String(value).trim() !== '') {
+        incidentData[key] = value;
       }
     });
     
-    // 3. Apply rule overrides (can override inherited fields)
-    if (ruleOverrides) {
-      Object.entries(ruleOverrides).forEach(([key, value]) => {
-        if (!excludeFields.has(key) && value != null && String(value).trim() !== '') {
-          incidentData[key] = this._replaceTemplateVariables(value, alertData);
-        }
-      });
-    }
+    // 3. Apply rule overrides
+    Object.entries(ruleOverrides).forEach(([key, value]) => {
+      if (!excludeFields.has(key) && 
+          value != null && 
+          String(value).trim() !== '') {
+        incidentData[key] = this._replaceTemplateVariables(value, alertData);
+      }
+    });
     
-    // 4. Add default description fields if not overridden
+    // 4. Add default descriptions if not provided
     if (!incidentData.short_description) {
       incidentData.short_description = `Alert: ${alertData.object_name} - ${alertData.application}`;
     }
@@ -62,32 +134,27 @@ class IncidentService {
 Application: ${alertData.application}
 Object: ${alertData.object_name}
 Node: ${alertData.node_name}
-Network: ${alertData.network || 'N/A'}
 Message: ${alertData.message}
-Time Created: ${alertData.time_created}
+Time: ${alertData.time_created}
 Operator: ${alertData.operator}`;
     }
     
     return incidentData;
   }
 
-
-
-  _sanitizeIncidentOverrides(overrides) {
-    if (!overrides || typeof overrides !== 'object') return overrides;
-    // Disallow overriding core identity/enablement fields
-    const forbidden = new Set(['priority', 'urgency', 'grafana_name', 'service_offering', 'business_service', 'enabled']);
-    const cleaned = {};
-    for (const [k, v] of Object.entries(overrides)) {
-      if (forbidden.has(k)) continue;
-      if (v === undefined || v === null) continue;
-      if (typeof v === 'string' && v.trim() === '') continue;
-      cleaned[k] = v;
-    }
-    return cleaned;
+  _replaceTemplateVariables(template, alertData) {
+    if (!template || typeof template !== 'string') return template;
+    
+    return template
+      .replace(/\{\{application\}\}/g, alertData.application || '')
+      .replace(/\{\{object_name\}\}/g, alertData.object_name || '')
+      .replace(/\{\{node_name\}\}/g, alertData.node_name || '')
+      .replace(/\{\{message\}\}/g, alertData.message || '')
+      .replace(/\{\{time_created\}\}/g, alertData.time_created || '')
+      .replace(/\{\{operator\}\}/g, alertData.operator || '');
   }
 
-  // ================== SYSTEM MAPPINGS (existing methods) ==================
+  // ================== SYSTEM MAPPINGS ==================
   
   async getSystemMappings() {
     if (!this.systemMappingsCollection) await this.initialize();
@@ -121,7 +188,9 @@ Operator: ${alertData.operator}`;
         throw new Error('grafana_name is required');
       }
 
-      const existing = await this.systemMappingsCollection.findOne({ grafana_name: mappingData.grafana_name });
+      const existing = await this.systemMappingsCollection.findOne({ 
+        grafana_name: mappingData.grafana_name 
+      });
       if (existing) {
         throw new Error('Mapping for this grafana_name already exists');
       }
@@ -168,13 +237,13 @@ Operator: ${alertData.operator}`;
     try {
       const objectId = new ObjectId(id);
       
-      // Check if there are rules using this mapping
+      // Check if rules depend on this mapping
       const rulesCount = await this.incidentRulesCollection.countDocuments({ 
         system_mapping_id: objectId 
       });
       
       if (rulesCount > 0) {
-        throw new Error(`Cannot delete system mapping. ${rulesCount} incident rules depend on it.`);
+        throw new Error(`Cannot delete mapping. ${rulesCount} incident rules depend on it.`);
       }
       
       const result = await this.systemMappingsCollection.deleteOne({ _id: objectId });
@@ -190,7 +259,7 @@ Operator: ${alertData.operator}`;
     }
   }
 
-  // ================== INCIDENT RULES (new methods) ==================
+  // ================== INCIDENT RULES ==================
 
   async getIncidentRules(grafanaName = null) {
     if (!this.incidentRulesCollection) await this.initialize();
@@ -229,7 +298,6 @@ Operator: ${alertData.operator}`;
     if (!this.incidentRulesCollection) await this.initialize();
     
     try {
-      // Validate system mapping exists
       const mappingId = new ObjectId(ruleData.system_mapping_id);
       const mapping = await this.systemMappingsCollection.findOne({ _id: mappingId });
       
@@ -237,18 +305,15 @@ Operator: ${alertData.operator}`;
         throw new Error('System mapping not found');
       }
 
-      const cleanedOverrides = this._sanitizeIncidentOverrides(ruleData.incident_overrides);
-
       const result = await this.incidentRulesCollection.insertOne({
         ...ruleData,
         system_mapping_id: mappingId,
-        grafana_name: mapping.grafana_name, // Store for quick lookup
-        ...(cleanedOverrides !== undefined ? { incident_overrides: cleanedOverrides } : {}),
+        grafana_name: mapping.grafana_name,
         created_at: new Date(),
         updated_at: new Date()
       });
 
-      return { _id: result.insertedId, ...ruleData, ...(cleanedOverrides !== undefined ? { incident_overrides: cleanedOverrides } : {}) };
+      return { _id: result.insertedId, ...ruleData };
     } catch (error) {
       console.error('Error creating incident rule:', error);
       throw error;
@@ -262,7 +327,6 @@ Operator: ${alertData.operator}`;
       const objectId = new ObjectId(id);
       const { _id, created_at, system_mapping_id, ...updateData } = ruleData;
       
-      // If system_mapping_id is being updated, validate it exists
       if (system_mapping_id) {
         const mappingId = new ObjectId(system_mapping_id);
         const mapping = await this.systemMappingsCollection.findOne({ _id: mappingId });
@@ -271,9 +335,6 @@ Operator: ${alertData.operator}`;
         }
         updateData.system_mapping_id = mappingId;
         updateData.grafana_name = mapping.grafana_name;
-      }
-      if (updateData.incident_overrides) {
-        updateData.incident_overrides = this._sanitizeIncidentOverrides(updateData.incident_overrides);
       }
       
       const result = await this.incidentRulesCollection.updateOne(
@@ -331,33 +392,28 @@ Operator: ${alertData.operator}`;
     }
   }
 
-  // ================== ENHANCED INCIDENT CREATION ==================
+  // ================== RULE MATCHING ==================
 
-  // Helper method to check if alert matches rule conditions
   _doesAlertMatchRule(alertData, rule) {
     const { conditions } = rule;
-    const { message, node_name, object_name, network } = alertData;
+    const { message, node_name, object_name } = alertData;
     
     // Check message conditions
-    if (conditions.message_exact && message !== conditions.message_exact) {
-      return false;
-    }
-    
-    if (conditions.message_regex) {
-      try {
-        const regex = new RegExp(conditions.message_regex.replace(/^\/|\/[gimuy]*$/g, ''), 'i');
-        if (!regex.test(message)) return false;
-      } catch (e) {
-        console.warn('Invalid regex in rule:', conditions.message_regex);
-        return false;
-      }
-    }
-    
     if (conditions.message_contains && Array.isArray(conditions.message_contains)) {
       const hasMatch = conditions.message_contains.some(term => 
         message.toLowerCase().includes(term.toLowerCase())
       );
       if (!hasMatch) return false;
+    }
+    
+    if (conditions.message_regex) {
+      try {
+        const regex = new RegExp(conditions.message_regex, 'i');
+        if (!regex.test(message)) return false;
+      } catch (e) {
+        console.warn('Invalid regex in rule:', conditions.message_regex);
+        return false;
+      }
     }
     
     // Check node name conditions
@@ -376,34 +432,16 @@ Operator: ${alertData.operator}`;
       if (!hasMatch) return false;
     }
     
-    // Check network condition
-    if (conditions.network && network !== conditions.network) {
-      return false;
-    }
-    
     return true;
   }
 
-  // Helper method to replace template variables
-  _replaceTemplateVariables(template, alertData) {
-    if (!template || typeof template !== 'string') return template;
-    
-    return template
-      .replace(/\{\{application\}\}/g, alertData.application || '')
-      .replace(/\{\{object_name\}\}/g, alertData.object_name || '')
-      .replace(/\{\{node_name\}\}/g, alertData.node_name || '')
-      .replace(/\{\{message\}\}/g, alertData.message || '')
-      .replace(/\{\{time_created\}\}/g, alertData.time_created || '')
-      .replace(/\{\{operator\}\}/g, alertData.operator || '')
-      .replace(/\{\{network\}\}/g, alertData.network || '');
-  }
+  // ================== INCIDENT CREATION ==================
 
-  // Enhanced incident creation with rule support
-   async createIncidentFromAlert(alertData) {
+  async createIncidentFromAlert(alertData) {
     try {
       const { application } = alertData;
       
-      // First, try to find matching rules for this application
+      // Find matching rules for this application
       const rules = await this.getIncidentRules(application);
       const enabledRules = rules.filter(rule => rule.enabled);
       
@@ -420,7 +458,6 @@ Operator: ${alertData.operator}`;
       let incidentData;
       
       if (matchingRule) {
-        // Use the rule's system mapping and overrides
         systemMapping = matchingRule.system_mapping;
         
         if (!systemMapping) {
@@ -428,10 +465,7 @@ Operator: ${alertData.operator}`;
         }
         
         console.log(`Using incident rule: ${matchingRule.rule_name}`);
-        
-        // Build incident with smart field inheritance
-        const cleanedOverrides = this._sanitizeIncidentOverrides(matchingRule.incident_overrides);
-        incidentData = this._buildIncidentData(systemMapping, cleanedOverrides, alertData);
+        incidentData = this._buildIncidentData(systemMapping, matchingRule.incident_overrides, alertData);
         
         // Add rule metadata
         incidentData.matched_rule_id = matchingRule._id;
@@ -446,8 +480,6 @@ Operator: ${alertData.operator}`;
         }
         
         console.log(`Using basic system mapping for: ${application}`);
-        
-        // Build incident with smart field inheritance (no overrides)
         incidentData = this._buildIncidentData(systemMapping, {}, alertData);
       }
       
@@ -457,7 +489,6 @@ Operator: ${alertData.operator}`;
       incidentData.grafana_operator = alertData.operator;
       incidentData.created_at = new Date();
       
-      // TODO: Integrate with ServiceNow API here
       console.log('Creating incident with data:', JSON.stringify(incidentData, null, 2));
       
       return incidentData;

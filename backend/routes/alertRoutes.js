@@ -857,34 +857,4 @@ router.get('/stats/timeseries', validateRequest(statsQuerySchema), async (req, r
   }
 });
 
-// Dropdown options
-router.get('/dropdown-options/:field', async (req, res) => {
-  try {
-    const { field } = req.params;
-    const validFields = ['panel_title', 'application', 'node_name', 'network', 'object', 'operator'];
-    if (!validFields.includes(field)) {
-      return res.status(400).json({ error: 'Invalid field parameter', valid_fields: validFields });
-    }
-
-    const cacheKey = buildCacheKey('dropdown', { field });
-    const cached = getFromCache(cacheKey);
-    if (cached) return res.json({ ...cached, meta: { ...cached.meta, cached: true }});
-
-    const pool = getSqlPool();
-    const query = `
-      SELECT DISTINCT ${field} as value, COUNT(*) as count
-      FROM dbo.historicalAlerts
-      WHERE ${field} IS NOT NULL AND ${field} != ''
-      GROUP BY ${field}
-      ORDER BY count DESC, ${field}
-    `;
-    const result = await pool.request().query(query);
-    const response = createStandardResponse(result.recordset);
-    setCache(cacheKey, response);
-    res.json(response);
-  } catch (error) {
-    await handleError(res, error, 'Error fetching dropdown options');
-  }
-});
-
 module.exports = router;

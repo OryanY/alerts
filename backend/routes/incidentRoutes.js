@@ -1,4 +1,4 @@
-// routes/incidentRoutes.js - Enhanced version with rules support
+// routes/incidentRoutes.js - Simplified version with GET for alerts
 const express = require('express');
 const Joi = require('joi');
 const incidentService = require('../services/incidentService');
@@ -7,60 +7,58 @@ const router = express.Router();
 
 // ================== VALIDATION SCHEMAS ==================
 
-// Updated alert schema with optional network field
-const alertSchema = Joi.object({
-  application: Joi.string().required().trim(),
-  object_name: Joi.string().required().trim(),
-  node_name: Joi.string().required().trim(),
-  message: Joi.string().required().trim(),
+// Secure alert schema for GET request (query parameters)
+const alertQuerySchema = Joi.object({
+  application: Joi.string().required().trim().max(100),
+  object_name: Joi.string().required().trim().max(100),
+  node_name: Joi.string().required().trim().max(100),
+  message: Joi.string().required().trim().max(500),
   time_created: Joi.string().required().trim(),
-  operator: Joi.string().required().trim(),
-  network: Joi.string().optional().trim() // New optional field
+  operator: Joi.string().required().trim().max(50),
+  network: Joi.string().trim().max(50)
+
 });
 
+// Simplified system mapping schema - only base required fields
 const systemMappingSchema = Joi.object({
   grafana_name: Joi.string().required().trim(),
   service_offering: Joi.string().required().trim(),
   business_service: Joi.string().required().trim(),
-  u_site: Joi.string().required().trim(),
   u_network: Joi.string().required().trim(),
-  u_impact_technology: Joi.string().required().trim(),
-  u_monitor_identifier: Joi.string().default('עלה בניטור'),
-  assignment_group: Joi.string().required().trim(),
-}).unknown(true);
+  assignment_group: Joi.string().required().trim()
+}).unknown(true); // Allow additional fields
 
-const updateMappingSchema = systemMappingSchema.fork(['grafana_name'], (schema) => schema.optional());
-
-// New incident rule schema
+// Incident rule schema
 const incidentRuleSchema = Joi.object({
   system_mapping_id: Joi.string().required(),
   rule_name: Joi.string().required().trim(),
   description: Joi.string().optional().trim(),
-  
   conditions: Joi.object({
     message_contains: Joi.array().items(Joi.string().trim()).optional(),
     message_regex: Joi.string().optional(),
-    message_exact: Joi.string().optional(),
     node_name_contains: Joi.array().items(Joi.string().trim()).optional(),
-    object_name_contains: Joi.array().items(Joi.string().trim()).optional(),
-    network: Joi.string().optional().trim()
-  }).min(1).required(), // At least one condition required
-  
-  incident_overrides: Joi.object({
-    short_description: Joi.string().optional(),
-    description: Joi.string().optional(),
-    // Priority and urgency removed from backend
-  }).unknown(true).optional(),
-  
+    object_name_contains: Joi.array().items(Joi.string().trim()).optional()
+  }).min(1).required(),
+  incident_overrides: Joi.object().unknown(true).optional(),
   enabled: Joi.boolean().default(true),
   priority_order: Joi.number().integer().min(1).default(1)
 });
 
-const updateRuleSchema = incidentRuleSchema.fork(['system_mapping_id'], (schema) => schema.optional());
+// ================== UTILITY FUNCTIONS ==================
 
-// ================== MIDDLEWARE ==================
+const validateQuery = (schema) => (req, res, next) => {
+  const { error, value } = schema.validate(req.query);
+  if (error) {
+    return res.status(400).json({
+      error: 'Invalid parameters',
+      details: error.details.map(d => d.message)
+    });
+  }
+  req.validatedQuery = value;
+  next();
+};
 
-const validateRequest = (schema) => (req, res, next) => {
+const validateBody = (schema) => (req, res, next) => {
   const { error, value } = schema.validate(req.body);
   if (error) {
     return res.status(400).json({
@@ -80,12 +78,13 @@ const handleError = (res, error, message = 'Internal server error') => {
   });
 };
 
-// ================== INCIDENT CREATION (existing, enhanced) ==================
+// ================== INCIDENT CREATION - SECURE GET REQUEST ==================
 
-router.post('/create-incident', validateRequest(alertSchema), async (req, res) => {
+// GET endpoint for Grafana webhooks - using query parameters for security
+router.get('/alert', validateQuery(alertQuerySchema), async (req, res) => {
   try {
-    const alertData = req.validatedBody;
-    console.log('Creating incident from alert:', JSON.stringify(alertData, null, 2));
+    const alertData = req.validatedQuery;
+    console.log('Creating incident from alert (GET):', alertData);
     
     const incidentData = await incidentService.createIncidentFromAlert(alertData);
     
@@ -101,11 +100,68 @@ router.post('/create-incident', validateRequest(alertSchema), async (req, res) =
         details: error.message
       });
     }
+    if (error.message.includes('Required field') && error.message.includes('is missing')) {
+      return res.status(400).json({
+        error: 'Missing required field',
+        details: error.message
+      });
+    }
     handleError(res, error, 'Error creating incident');
   }
 });
 
-// ================== SYSTEM MAPPINGS (existing routes) ==================
+// ================== REQUIRED FIELDS MANAGEMENT ==================
+
+router.get('/required-fields', async (req, res) => {
+  try {
+    const { service_offering } = req.query;
+    
+    if (!service_offering) {
+      return res.status(400).json({
+        error: 'service_offering parameter is required'
+      });
+    }
+
+    const requiredFields = await incidentService.getRequiredFieldsForServiceOffering(service_offering);
+    
+    res.json({
+      success: true,
+      data: requiredFields
+    });
+  } catch (error) {
+    handleError(res, error, 'Error fetching required fields');
+  }
+});
+
+router.post('/required-fields', async (req, res) => {
+  try {
+    const { service_offering, fields } = req.body;
+    
+    if (!service_offering) {
+      return res.status(400).json({
+        error: 'service_offering is required'
+      });
+    }
+
+    if (!Array.isArray(fields)) {
+      return res.status(400).json({
+        error: 'fields must be an array'
+      });
+    }
+
+    const result = await incidentService.setRequiredFieldsForServiceOffering(service_offering, fields);
+    
+    res.json({
+      success: true,
+      message: 'Required fields updated successfully',
+      data: result
+    });
+  } catch (error) {
+    handleError(res, error, 'Error setting required fields');
+  }
+});
+
+// ================== SYSTEM MAPPINGS ==================
 
 router.get('/system-mappings', async (req, res) => {
   try {
@@ -120,28 +176,7 @@ router.get('/system-mappings', async (req, res) => {
   }
 });
 
-router.get('/system-mappings/application/:application', async (req, res) => {
-  try {
-    const { application } = req.params;
-    const mapping = await incidentService.getMappingByApplication(application);
-    
-    if (!mapping) {
-      return res.status(404).json({
-        error: 'System mapping not found',
-        details: `No mapping found for application: ${application}`
-      });
-    }
-    
-    res.json({
-      success: true,
-      data: mapping
-    });
-  } catch (error) {
-    handleError(res, error, 'Error fetching system mapping');
-  }
-});
-
-router.post('/system-mappings', validateRequest(systemMappingSchema), async (req, res) => {
+router.post('/system-mappings', validateBody(systemMappingSchema), async (req, res) => {
   try {
     const mappingData = req.validatedBody;
     const newMapping = await incidentService.createSystemMapping(mappingData);
@@ -162,7 +197,7 @@ router.post('/system-mappings', validateRequest(systemMappingSchema), async (req
   }
 });
 
-router.put('/system-mappings/:id', validateRequest(updateMappingSchema), async (req, res) => {
+router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafana_name'], (schema) => schema.optional())), async (req, res) => {
   try {
     const { id } = req.params;
     const mappingData = req.validatedBody;
@@ -179,12 +214,6 @@ router.put('/system-mappings/:id', validateRequest(updateMappingSchema), async (
       return res.status(404).json({
         error: 'System mapping not found',
         details: error.message
-      });
-    }
-    if (error.message.includes('Invalid ObjectId')) {
-      return res.status(400).json({
-        error: 'Invalid mapping ID',
-        details: 'Please provide a valid mapping ID'
       });
     }
     handleError(res, error, 'Error updating system mapping');
@@ -213,19 +242,12 @@ router.delete('/system-mappings/:id', async (req, res) => {
         details: error.message
       });
     }
-    if (error.message.includes('Invalid ObjectId')) {
-      return res.status(400).json({
-        error: 'Invalid mapping ID',
-        details: 'Please provide a valid mapping ID'
-      });
-    }
     handleError(res, error, 'Error deleting system mapping');
   }
 });
 
-// ================== INCIDENT RULES (new routes) ==================
+// ================== INCIDENT RULES ==================
 
-// Get all incident rules or rules for specific application
 router.get('/incident-rules', async (req, res) => {
   try {
     const { application } = req.query;
@@ -241,8 +263,7 @@ router.get('/incident-rules', async (req, res) => {
   }
 });
 
-// Create new incident rule
-router.post('/incident-rules', validateRequest(incidentRuleSchema), async (req, res) => {
+router.post('/incident-rules', validateBody(incidentRuleSchema), async (req, res) => {
   try {
     const ruleData = req.validatedBody;
     const newRule = await incidentService.createIncidentRule(ruleData);
@@ -263,8 +284,7 @@ router.post('/incident-rules', validateRequest(incidentRuleSchema), async (req, 
   }
 });
 
-// Update incident rule
-router.put('/incident-rules/:id', validateRequest(updateRuleSchema), async (req, res) => {
+router.put('/incident-rules/:id', validateBody(incidentRuleSchema.fork(['system_mapping_id'], (schema) => schema.optional())), async (req, res) => {
   try {
     const { id } = req.params;
     const ruleData = req.validatedBody;
@@ -283,17 +303,10 @@ router.put('/incident-rules/:id', validateRequest(updateRuleSchema), async (req,
         details: error.message
       });
     }
-    if (error.message.includes('Invalid ObjectId')) {
-      return res.status(400).json({
-        error: 'Invalid rule ID',
-        details: 'Please provide a valid rule ID'
-      });
-    }
     handleError(res, error, 'Error updating incident rule');
   }
 });
 
-// Delete incident rule
 router.delete('/incident-rules/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -310,17 +323,10 @@ router.delete('/incident-rules/:id', async (req, res) => {
         details: error.message
       });
     }
-    if (error.message.includes('Invalid ObjectId')) {
-      return res.status(400).json({
-        error: 'Invalid rule ID',
-        details: 'Please provide a valid rule ID'
-      });
-    }
     handleError(res, error, 'Error deleting incident rule');
   }
 });
 
-// Toggle incident rule enabled/disabled
 router.patch('/incident-rules/:id/toggle', async (req, res) => {
   try {
     const { id } = req.params;
@@ -350,12 +356,20 @@ router.patch('/incident-rules/:id/toggle', async (req, res) => {
   }
 });
 
-// ================== UTILITY ROUTES (existing) ==================
+// ================== UTILITY ROUTES ==================
 
-router.get('/system-mappings/distinct/:field', async (req, res) => {
+router.get('/distinct/:field', async (req, res) => {
   try {
     const { field } = req.params;
-    const validFields = ['assignment_group', 'service_offering', 'business_service', 'u_site', 'u_network', 'u_impact_technology'];
+    const validFields = [
+      'assignment_group', 
+      'service_offering', 
+      'business_service', 
+      'u_network',
+      'u_site',
+      'u_impact_technology',
+      'u_monitor_identifier'
+    ];
     
     if (!validFields.includes(field)) {
       return res.status(400).json({
@@ -371,28 +385,6 @@ router.get('/system-mappings/distinct/:field', async (req, res) => {
     });
   } catch (error) {
     handleError(res, error, 'Error fetching distinct values');
-  }
-});
-
-// Test rule matching (for testing purposes)
-router.post('/test-rule-match', async (req, res) => {
-  try {
-    const { alertData, ruleId } = req.body;
-    
-    if (!alertData || !ruleId) {
-      return res.status(400).json({
-        error: 'Missing required fields',
-        details: 'alertData and ruleId are required'
-      });
-    }
-    
-    // This would be implemented in the service if needed
-    res.json({
-      success: true,
-      message: 'Rule matching test endpoint - implement as needed'
-    });
-  } catch (error) {
-    handleError(res, error, 'Error testing rule match');
   }
 });
 

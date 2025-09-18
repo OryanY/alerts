@@ -47,7 +47,8 @@ const mongoConfig = {
   database: mongoDb,
   collections: {
     systemMappings: 'system_mappings',
-    incidentRules: 'incident_rules'
+    incidentRules: 'incident_rules',
+    requiredFields: 'service_offering_required_fields'
   }
 };
 
