@@ -1,4 +1,4 @@
-// routes/incidentRoutes.js - Simplified version with GET for alerts
+// routes/incidentRoutes.js - Updated with system_failure support and improved validation
 const express = require('express');
 const Joi = require('joi');
 const incidentService = require('../services/incidentService');
@@ -15,20 +15,21 @@ const alertQuerySchema = Joi.object({
   message: Joi.string().required().trim().max(500),
   time_created: Joi.string().required().trim(),
   operator: Joi.string().required().trim().max(50),
-  network: Joi.string().trim().max(50)
-
+  network: Joi.string().trim().max(50).optional()
 });
 
-// Simplified system mapping schema - only base required fields
+// Updated system mapping schema with system_failure
 const systemMappingSchema = Joi.object({
   grafana_name: Joi.string().required().trim(),
   service_offering: Joi.string().required().trim(),
   business_service: Joi.string().required().trim(),
   u_network: Joi.string().required().trim(),
-  assignment_group: Joi.string().required().trim()
+  u_impact_technology: Joi.string().required().trim(),
+  assignment_group: Joi.string().required().trim(),
+  system_failure: Joi.boolean().default(false) // New mandatory field
 }).unknown(true); // Allow additional fields
 
-// Incident rule schema
+// Updated incident rule schema with improved conditions and logic_operator
 const incidentRuleSchema = Joi.object({
   system_mapping_id: Joi.string().required(),
   rule_name: Joi.string().required().trim(),
@@ -36,12 +37,19 @@ const incidentRuleSchema = Joi.object({
   conditions: Joi.object({
     message_contains: Joi.array().items(Joi.string().trim()).optional(),
     message_regex: Joi.string().optional(),
+    message_exact: Joi.string().optional(),
     node_name_contains: Joi.array().items(Joi.string().trim()).optional(),
-    object_name_contains: Joi.array().items(Joi.string().trim()).optional()
+    object_name_contains: Joi.array().items(Joi.string().trim()).optional(),
+    network: Joi.string().optional(),
+    operator_contains: Joi.array().items(Joi.string().trim()).optional()
   }).min(1).required(),
-  incident_overrides: Joi.object().unknown(true).optional(),
+  logic_operator: Joi.string().valid('OR', 'AND').default('OR'),
+  incident_overrides: Joi.object({
+    short_description: Joi.string().optional(),
+    description: Joi.string().optional(),
+    system_failure: Joi.boolean().optional()
+  }).unknown(true).optional(),
   enabled: Joi.boolean().default(true),
-  priority_order: Joi.number().integer().min(1).default(1)
 });
 
 // ================== UTILITY FUNCTIONS ==================
@@ -50,6 +58,7 @@ const validateQuery = (schema) => (req, res, next) => {
   const { error, value } = schema.validate(req.query);
   if (error) {
     return res.status(400).json({
+      success: false,
       error: 'Invalid parameters',
       details: error.details.map(d => d.message)
     });
@@ -62,6 +71,7 @@ const validateBody = (schema) => (req, res, next) => {
   const { error, value } = schema.validate(req.body);
   if (error) {
     return res.status(400).json({
+      success: false,
       error: 'Validation error',
       details: error.details.map(d => d.message)
     });
@@ -73,6 +83,7 @@ const validateBody = (schema) => (req, res, next) => {
 const handleError = (res, error, message = 'Internal server error') => {
   console.error(`${message}:`, error);
   res.status(500).json({
+    success: false,
     error: message,
     details: error.message
   });
@@ -96,12 +107,14 @@ router.get('/alert', validateQuery(alertQuerySchema), async (req, res) => {
   } catch (error) {
     if (error.message.includes('No system mapping') || error.message.includes('not found')) {
       return res.status(404).json({
+        success: false,
         error: 'No system mapping or rules found',
         details: error.message
       });
     }
     if (error.message.includes('Required field') && error.message.includes('is missing')) {
       return res.status(400).json({
+        success: false,
         error: 'Missing required field',
         details: error.message
       });
@@ -118,6 +131,7 @@ router.get('/required-fields', async (req, res) => {
     
     if (!service_offering) {
       return res.status(400).json({
+        success: false,
         error: 'service_offering parameter is required'
       });
     }
@@ -139,12 +153,14 @@ router.post('/required-fields', async (req, res) => {
     
     if (!service_offering) {
       return res.status(400).json({
+        success: false,
         error: 'service_offering is required'
       });
     }
 
     if (!Array.isArray(fields)) {
       return res.status(400).json({
+        success: false,
         error: 'fields must be an array'
       });
     }
@@ -158,6 +174,39 @@ router.post('/required-fields', async (req, res) => {
     });
   } catch (error) {
     handleError(res, error, 'Error setting required fields');
+  }
+});
+
+// New endpoint to get additional fields for service offering (for frontend)
+router.get('/servicenow-fields', async (req, res) => {
+  try {
+    const { service_offering } = req.query;
+    
+    if (!service_offering) {
+      return res.status(400).json({
+        success: false,
+        error: 'service_offering parameter is required'
+      });
+    }
+
+    const requiredFields = await incidentService.getRequiredFieldsForServiceOffering(service_offering);
+    
+    // Convert additional fields to frontend format
+    const additionalFields = {};
+    requiredFields.additionalRequired.forEach(field => {
+      additionalFields[field] = {
+        label: field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        placeholder: `Enter ${field.replace(/_/g, ' ')}`,
+        description: `Additional field required for ${service_offering}`
+      };
+    });
+    
+    res.json({
+      success: true,
+      additionalFields
+    });
+  } catch (error) {
+    handleError(res, error, 'Error fetching ServiceNow fields');
   }
 });
 
@@ -189,6 +238,7 @@ router.post('/system-mappings', validateBody(systemMappingSchema), async (req, r
   } catch (error) {
     if (error.message.includes('already exists')) {
       return res.status(409).json({
+        success: false,
         error: 'Mapping already exists',
         details: error.message
       });
@@ -212,6 +262,7 @@ router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafa
   } catch (error) {
     if (error.message.includes('not found')) {
       return res.status(404).json({
+        success: false,
         error: 'System mapping not found',
         details: error.message
       });
@@ -232,12 +283,14 @@ router.delete('/system-mappings/:id', async (req, res) => {
   } catch (error) {
     if (error.message.includes('not found')) {
       return res.status(404).json({
+        success: false,
         error: 'System mapping not found',
         details: error.message
       });
     }
     if (error.message.includes('Cannot delete')) {
       return res.status(409).json({
+        success: false,
         error: 'Cannot delete mapping',
         details: error.message
       });
@@ -276,6 +329,7 @@ router.post('/incident-rules', validateBody(incidentRuleSchema), async (req, res
   } catch (error) {
     if (error.message.includes('System mapping not found')) {
       return res.status(404).json({
+        success: false,
         error: 'System mapping not found',
         details: error.message
       });
@@ -299,6 +353,7 @@ router.put('/incident-rules/:id', validateBody(incidentRuleSchema.fork(['system_
   } catch (error) {
     if (error.message.includes('not found')) {
       return res.status(404).json({
+        success: false,
         error: 'Rule not found',
         details: error.message
       });
@@ -319,6 +374,7 @@ router.delete('/incident-rules/:id', async (req, res) => {
   } catch (error) {
     if (error.message.includes('not found')) {
       return res.status(404).json({
+        success: false,
         error: 'Incident rule not found',
         details: error.message
       });
@@ -334,6 +390,7 @@ router.patch('/incident-rules/:id/toggle', async (req, res) => {
     
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({
+        success: false,
         error: 'Invalid request',
         details: 'enabled field must be a boolean'
       });
@@ -348,6 +405,7 @@ router.patch('/incident-rules/:id/toggle', async (req, res) => {
   } catch (error) {
     if (error.message.includes('not found')) {
       return res.status(404).json({
+        success: false,
         error: 'Incident rule not found',
         details: error.message
       });
@@ -373,6 +431,7 @@ router.get('/distinct/:field', async (req, res) => {
     
     if (!validFields.includes(field)) {
       return res.status(400).json({
+        success: false,
         error: 'Invalid field',
         details: `Valid fields are: ${validFields.join(', ')}`
       });

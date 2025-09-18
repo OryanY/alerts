@@ -402,37 +402,6 @@ const SettingsPage = () => {
           )}
         </div>
 
-        {/* Current Configuration Summary */}
-        <div style={S.card()}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 16px 0' }}>
-            Current Configuration Summary
-          </h3>
-          
-          <div style={{ 
-            background: '#F8FAFC', 
-            border: '1px solid #E2E8F0', 
-            borderRadius: 6, 
-            padding: 16 
-          }}>
-            <pre style={{ 
-              fontSize: 12, 
-              fontFamily: 'monospace', 
-              margin: 0, 
-              whiteSpace: 'pre-wrap',
-              color: '#475569'
-            }}>
-              {JSON.stringify(localConfig, null, 2)}
-            </pre>
-          </div>
-          
-          <div style={{ 
-            marginTop: 12, 
-            fontSize: 12, 
-            color: '#6B7280' 
-          }}>
-            This configuration is stored in your browser's local storage and persists between sessions.
-          </div>
-        </div>
       </div>
     </div>
   );
