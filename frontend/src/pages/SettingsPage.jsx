@@ -30,61 +30,80 @@ const SettingsPage = () => {
   };
 
   const updateLocalConfig = (path, value) => {
-    // Safely update nested paths without mutating arrays into plain objects
-    setLocalConfig((prev) => {
+    setLocalConfig(prev => {
       const keys = path.split('.');
-
-      // Clone root appropriately
-      const updated = Array.isArray(prev) ? [...prev] : { ...prev };
+      const updated = JSON.parse(JSON.stringify(prev)); // Deep clone
       let cursor = updated;
 
+      // Navigate to the parent of the target key
       for (let i = 0; i < keys.length - 1; i++) {
-        const k = keys[i];
-        const nextK = keys[i + 1];
-        const isNextIndex = String(Number(nextK)) === nextK;
-
-        const curVal = cursor[k];
-        let newVal;
-
-        if (curVal === undefined || curVal === null) {
-          // Create container based on the next key type
-          newVal = isNextIndex ? [] : {};
-        } else {
-          // Preserve arrays vs objects when cloning
-          newVal = Array.isArray(curVal) ? [...curVal] : { ...curVal };
+        const key = keys[i];
+        if (!cursor[key]) {
+          // Determine if next key is array index
+          const nextKey = keys[i + 1];
+          const isArrayIndex = /^\d+$/.test(nextKey);
+          cursor[key] = isArrayIndex ? [] : {};
         }
-
-        cursor[k] = newVal;
-        cursor = cursor[k];
+        cursor = cursor[key];
       }
 
+      // Set the final value
       const lastKey = keys[keys.length - 1];
       cursor[lastKey] = value;
       return updated;
     });
   };
 
-  const LabeledInput = ({ label, value, onChange, type = 'number', min, max, placeholder, description }) => (
-    <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-      <label style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
-        {label}
-        {description && (
-          <span style={{ fontSize: 12, fontWeight: 400, color: '#6B7280', marginLeft: 8 }}>
-            {description}
-          </span>
-        )}
-      </label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(type === 'number' ? parseInt(e.target.value, 10) || 0 : e.target.value)}
-        min={min}
-        max={max}
-        placeholder={placeholder}
-        style={S.input}
-      />
-    </div>
-  );
+  // Fixed input component that handles text properly
+  const LabeledInput = ({ 
+    label, 
+    value, 
+    onChange, 
+    type = 'number', 
+    min, 
+    max, 
+    placeholder, 
+    description 
+  }) => {
+    const handleChange = (e) => {
+      const newValue = e.target.value;
+      if (type === 'number') {
+        // For number inputs, allow empty string during typing
+        if (newValue === '') {
+          onChange('');
+        } else {
+          const parsed = parseInt(newValue, 10);
+          if (!isNaN(parsed)) {
+            onChange(parsed);
+          }
+        }
+      } else {
+        onChange(newValue);
+      }
+    };
+
+    return (
+      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+        <label style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
+          {label}
+          {description && (
+            <span style={{ fontSize: 12, fontWeight: 400, color: '#6B7280', marginLeft: 8 }}>
+              {description}
+            </span>
+          )}
+        </label>
+        <input
+          type={type}
+          value={value}
+          onChange={handleChange}
+          min={min}
+          max={max}
+          placeholder={placeholder}
+          style={S.input}
+        />
+      </div>
+    );
+  };
 
   const ColorInput = ({ label, value, onChange }) => (
     <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
@@ -144,6 +163,7 @@ const SettingsPage = () => {
               label="Day Shift Start"
               value={localConfig.dayStart}
               onChange={(value) => updateLocalConfig('dayStart', value)}
+              type="number"
               min={0}
               max={23}
               description="Hour when day shift begins (0-23)"
@@ -152,6 +172,7 @@ const SettingsPage = () => {
               label="Day Shift End"
               value={localConfig.dayEnd}
               onChange={(value) => updateLocalConfig('dayEnd', value)}
+              type="number"
               min={0}
               max={23}
               description="Hour when day shift ends (0-23)"
@@ -160,6 +181,7 @@ const SettingsPage = () => {
               label="Night Shift Start"
               value={localConfig.nightStart}
               onChange={(value) => updateLocalConfig('nightStart', value)}
+              type="number"
               min={0}
               max={23}
               description="Hour when night shift begins (0-23)"
@@ -168,6 +190,7 @@ const SettingsPage = () => {
               label="Night Shift End"
               value={localConfig.nightEnd}
               onChange={(value) => updateLocalConfig('nightEnd', value)}
+              type="number"
               min={0}
               max={23}
               description="Hour when night shift ends (0-23)"
@@ -188,8 +211,8 @@ const SettingsPage = () => {
               </span>
             </div>
             <div style={{ fontSize: 13, color: '#1E40AF' }}>
-              Day: {String(localConfig.dayStart).padStart(2, '0')}:00 - {String(localConfig.dayEnd).padStart(2, '0')}:00 • 
-              Night: {String(localConfig.nightStart).padStart(2, '0')}:00 - {String(localConfig.nightEnd).padStart(2, '0')}:00
+              Day: {String(localConfig.dayStart || 0).padStart(2, '0')}:00 - {String(localConfig.dayEnd || 0).padStart(2, '0')}:00 • 
+              Night: {String(localConfig.nightStart || 0).padStart(2, '0')}:00 - {String(localConfig.nightEnd || 0).padStart(2, '0')}:00
             </div>
           </div>
         </div>
@@ -212,6 +235,7 @@ const SettingsPage = () => {
               label="False Wakeup Threshold"
               value={localConfig.falseWakeupThreshold}
               onChange={(value) => updateLocalConfig('falseWakeupThreshold', value)}
+              type="number"
               min={0}
               description="Night alerts ≤ this duration (seconds) are considered false wakeups"
             />
@@ -236,8 +260,8 @@ const SettingsPage = () => {
             gap: 16, 
             gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' 
           }}>
-            {localConfig.bands.map((band, idx) => (
-              <div key={band.key} style={{ 
+            {(localConfig.bands || []).map((band, idx) => (
+              <div key={band.key || idx} style={{ 
                 border: '1px solid #E5E7EB', 
                 borderRadius: 8, 
                 padding: 16, 
@@ -253,10 +277,10 @@ const SettingsPage = () => {
                     width: 16, 
                     height: 16, 
                     borderRadius: '50%', 
-                    background: band.color 
+                    background: band.color || '#000000' 
                   }} />
-                  <span style={{ fontWeight: 600, color: band.color }}>
-                    {band.label}
+                  <span style={{ fontWeight: 600, color: band.color || '#000000' }}>
+                    {band.label || 'Unnamed'}
                   </span>
                 </div>
                 
@@ -264,7 +288,7 @@ const SettingsPage = () => {
                   <LabeledInput
                     label="Label"
                     type="text"
-                    value={band.label}
+                    value={band.label || ''}
                     onChange={(value) => updateLocalConfig(`bands.${idx}.label`, value)}
                   />
                   
@@ -273,19 +297,21 @@ const SettingsPage = () => {
                       label="Min (seconds)"
                       value={band.min}
                       onChange={(value) => updateLocalConfig(`bands.${idx}.min`, value)}
+                      type="number"
                       min={0}
                     />
                     <LabeledInput
                       label="Max (seconds)"
                       value={band.max}
                       onChange={(value) => updateLocalConfig(`bands.${idx}.max`, value)}
+                      type="number"
                       min={0}
                     />
                   </div>
                   
                   <ColorInput
                     label="Color"
-                    value={band.color}
+                    value={band.color || '#000000'}
                     onChange={(value) => updateLocalConfig(`bands.${idx}.color`, value)}
                   />
                 </div>
@@ -307,19 +333,19 @@ const SettingsPage = () => {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-              {localConfig.bands.map(band => (
-                <span key={band.key} style={{
+              {(localConfig.bands || []).map((band, idx) => (
+                <span key={band.key || idx} style={{
                   display: 'inline-flex', 
                   alignItems: 'center', 
                   gap: 6,
                   padding: '4px 8px', 
                   borderRadius: 12, 
-                  background: `${band.color}20`,
-                  color: band.color, 
+                  background: `${band.color || '#000000'}20`,
+                  color: band.color || '#000000', 
                   fontWeight: 600,
                   fontSize: 12
                 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: band.color }} />
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: band.color || '#000000' }} />
                   {band.label} ({band.min}-{band.max === 1e9 ? '∞' : band.max}s)
                 </span>
               ))}

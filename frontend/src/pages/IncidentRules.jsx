@@ -34,7 +34,7 @@ const IncidentRules = () => {
     rule_name: '',
     description: '',
     conditions: [],
-    logic_operator: 'OR', // OR or AND
+    logic_operator: 'OR',
     incident_overrides: {
       short_description: '',
       description: '',
@@ -140,17 +140,17 @@ const IncidentRules = () => {
       
       form.conditions.forEach(condition => {
         const { field, operator, value } = condition;
-        if (!value.trim()) return;
+        if (!value || !value.toString().trim()) return;
 
         if (operator === 'contains') {
           if (!legacyConditions[`${field}_contains`]) {
             legacyConditions[`${field}_contains`] = [];
           }
-          legacyConditions[`${field}_contains`].push(value.trim());
+          legacyConditions[`${field}_contains`].push(value.toString().trim());
         } else if (operator === 'equals') {
-          legacyConditions[`${field}_exact`] = value.trim();
+          legacyConditions[`${field}_exact`] = value.toString().trim();
         } else if (operator === 'regex') {
-          legacyConditions[`${field}_regex`] = value.trim();
+          legacyConditions[`${field}_regex`] = value.toString().trim();
         }
       });
 
@@ -169,7 +169,7 @@ const IncidentRules = () => {
         rule_name: form.rule_name,
         description: form.description || undefined,
         conditions: legacyConditions,
-        logic_operator : form.logic_operator, 
+        logic_operator: form.logic_operator, 
         incident_overrides: Object.keys(cleanOverrides).length > 0 ? cleanOverrides : undefined,
         enabled: form.enabled
       };
@@ -350,7 +350,7 @@ const IncidentRules = () => {
       rule_name: rule.rule_name || '',
       description: rule.description || '',
       conditions: newConditions,
-      logic_operator: rule.logic_operator  || rule.logic_operator || 'OR', // Check both field names
+      logic_operator: rule.logic_operator || 'OR',
       incident_overrides: {
         short_description: rule.incident_overrides?.short_description || '',
         description: rule.incident_overrides?.description || '',
@@ -1242,20 +1242,6 @@ Please investigate and take appropriate action.`}
                         border: '1px solid #e2e8f0'
                       }}>
                         <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
-                          App
-                        </div>
-                        <div style={{fontSize: 14, color: '#1e293b'}}>
-                          {selectedMapping.grafana_name}
-                        </div>
-                      </div>
-                      
-                      <div style={{
-                        background: '#f8fafc',
-                        padding: 12,
-                        borderRadius: 6,
-                        border: '1px solid #e2e8f0'
-                      }}>
-                        <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
                           Short Description
                         </div>
                         <div style={{fontSize: 14, color: '#1e293b'}}>
@@ -1445,7 +1431,7 @@ Please investigate and take appropriate action.`}
                         fontSize: 11,
                         fontWeight: 600
                       }}>
-                        {rule.logic_operator  || rule.logic_operator || 'OR'} Logic
+                        {rule.logic_operator || 'OR'} Logic
                       </div>
                     </div>
 

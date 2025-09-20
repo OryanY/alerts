@@ -29,19 +29,37 @@ const systemMappingSchema = Joi.object({
   system_failure: Joi.boolean().default(false) // New mandatory field
 }).unknown(true); // Allow additional fields
 
-// Updated incident rule schema with improved conditions and logic_operator
+// Updated incident rule schema with all possible condition fields
 const incidentRuleSchema = Joi.object({
   system_mapping_id: Joi.string().required(),
   rule_name: Joi.string().required().trim(),
   description: Joi.string().optional().trim(),
   conditions: Joi.object({
+    // Message conditions
     message_contains: Joi.array().items(Joi.string().trim()).optional(),
     message_regex: Joi.string().optional(),
     message_exact: Joi.string().optional(),
+    
+    // Node name conditions
     node_name_contains: Joi.array().items(Joi.string().trim()).optional(),
+    node_name_regex: Joi.string().optional(),
+    node_name_exact: Joi.string().optional(),
+    
+    // Object name conditions
     object_name_contains: Joi.array().items(Joi.string().trim()).optional(),
-    network: Joi.string().optional(),
-    operator_contains: Joi.array().items(Joi.string().trim()).optional()
+    object_name_regex: Joi.string().optional(),
+    object_name_exact: Joi.string().optional(),
+    
+    // Network conditions
+    network_contains: Joi.array().items(Joi.string().trim()).optional(),
+    network_regex: Joi.string().optional(),
+    network_exact: Joi.string().optional(),
+    network: Joi.string().optional(), // Legacy support
+    
+    // Operator conditions
+    operator_contains: Joi.array().items(Joi.string().trim()).optional(),
+    operator_regex: Joi.string().optional(),
+    operator_exact: Joi.string().optional()
   }).min(1).required(),
   logic_operator: Joi.string().valid('OR', 'AND').default('OR'),
   incident_overrides: Joi.object({

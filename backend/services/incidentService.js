@@ -288,70 +288,72 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
   }
 
   // ================== INCIDENT RULES ==================
-async getIncidentRules(grafanaName = null) {
-  if (!this.incidentRulesCollection) await this.initialize();
-  
-  try {
-    const filter = grafanaName ? { grafana_name: grafanaName } : {};
-    const rules = await this.incidentRulesCollection
-      .aggregate([
-        { $match: filter },
-        {
-          $lookup: {
-            from: mongoConfig.collections.systemMappings,
-            localField: 'system_mapping_id',
-            foreignField: '_id',
-            as: 'system_mapping'
-          }
-        },
-        {
-          $unwind: {
-            path: '$system_mapping',
-            preserveNullAndEmptyArrays: true
-          }
-        },
-        { $sort: { created_at: -1 } } // Changed from priority_order to created_at
-      ])
-      .toArray();
+
+  async getIncidentRules(grafanaName = null) {
+    if (!this.incidentRulesCollection) await this.initialize();
     
-    return rules;
-  } catch (error) {
-    console.error('Error fetching incident rules:', error);
-    throw new Error('Failed to fetch incident rules');
+    try {
+      const filter = grafanaName ? { grafana_name: grafanaName } : {};
+      const rules = await this.incidentRulesCollection
+        .aggregate([
+          { $match: filter },
+          {
+            $lookup: {
+              from: mongoConfig.collections.systemMappings,
+              localField: 'system_mapping_id',
+              foreignField: '_id',
+              as: 'system_mapping'
+            }
+          },
+          {
+            $unwind: {
+              path: '$system_mapping',
+              preserveNullAndEmptyArrays: true
+            }
+          },
+          { $sort: { created_at: -1 } }
+        ])
+        .toArray();
+      
+      return rules;
+    } catch (error) {
+      console.error('Error fetching incident rules:', error);
+      throw new Error('Failed to fetch incident rules');
+    }
   }
-}
-async createIncidentRule(ruleData) {
-  if (!this.incidentRulesCollection) await this.initialize();
-  
-  try {
-    const mappingId = new ObjectId(ruleData.system_mapping_id);
-    const mapping = await this.systemMappingsCollection.findOne({ _id: mappingId });
+
+  async createIncidentRule(ruleData) {
+    if (!this.incidentRulesCollection) await this.initialize();
     
-    if (!mapping) {
-      throw new Error('System mapping not found');
+    try {
+      const mappingId = new ObjectId(ruleData.system_mapping_id);
+      const mapping = await this.systemMappingsCollection.findOne({ _id: mappingId });
+      
+      if (!mapping) {
+        throw new Error('System mapping not found');
+      }
+
+      if (ruleData.incident_overrides?.system_failure !== undefined) {
+        ruleData.incident_overrides.system_failure = Boolean(ruleData.incident_overrides.system_failure);
+      }
+
+      const dataToInsert = {
+        ...ruleData,
+        system_mapping_id: mappingId,
+        grafana_name: mapping.grafana_name,
+        logic_operator: ruleData.logic_operator || 'OR', // Use consistent field name
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      const result = await this.incidentRulesCollection.insertOne(dataToInsert);
+      return { _id: result.insertedId, ...dataToInsert };
+    } catch (error) {
+      console.error('Error creating incident rule:', error);
+      throw error;
     }
-
-    if (ruleData.incident_overrides?.system_failure !== undefined) {
-      ruleData.incident_overrides.system_failure = Boolean(ruleData.incident_overrides.system_failure);
-    }
-
-    const dataToInsert = {
-      ...ruleData,
-      system_mapping_id: mappingId,
-      grafana_name: mapping.grafana_name,
-      conditions_logic: ruleData.conditions_logic || 'OR', // Changed from logic_operator
-      created_at: new Date(),
-      updated_at: new Date()
-      // Removed priority_order
-    };
-
-    const result = await this.incidentRulesCollection.insertOne(dataToInsert);
-    return { _id: result.insertedId, ...dataToInsert };
-  } catch (error) {
-    console.error('Error creating incident rule:', error);
-    throw error;
   }
-}
+
   async updateIncidentRule(id, ruleData) {
     if (!this.incidentRulesCollection) await this.initialize();
     
@@ -430,150 +432,159 @@ async createIncidentRule(ruleData) {
   }
 
   // ================== IMPROVED RULE MATCHING WITH AND/OR LOGIC ==================
-_doesAlertMatchRule(alertData, rule) {
-  const { conditions, conditions_logic = 'OR' } = rule;
-  const { message, node_name, object_name, network, operator } = alertData;
-  
-  const conditionGroups = [];
 
-  // Message conditions - group them together
-  const messageConditions = [];
-  if (conditions.message_contains?.length) {
-    conditions.message_contains.forEach(term => {
-      messageConditions.push(message.toLowerCase().includes(term.toLowerCase()));
-    });
-  }
-  if (conditions.message_regex) {
-    try {
-      const regex = new RegExp(conditions.message_regex, 'i');
-      messageConditions.push(regex.test(message));
-    } catch (e) {
-      console.warn('Invalid regex in rule:', conditions.message_regex);
-      messageConditions.push(false);
+  _checkFieldConditions(value, conditions, fieldPrefix) {
+    const results = [];
+    
+    // Contains conditions
+    if (conditions[`${fieldPrefix}_contains`]?.length) {
+      conditions[`${fieldPrefix}_contains`].forEach(term => {
+        results.push(value && value.toLowerCase().includes(term.toLowerCase()));
+      });
     }
+    
+    // Exact match conditions
+    if (conditions[`${fieldPrefix}_exact`]) {
+      results.push(value && value.toLowerCase() === conditions[`${fieldPrefix}_exact`].toLowerCase());
+    }
+    
+    // Regex conditions
+    if (conditions[`${fieldPrefix}_regex`]) {
+      try {
+        const regex = new RegExp(conditions[`${fieldPrefix}_regex`], 'i');
+        results.push(value && regex.test(value));
+      } catch (e) {
+        console.warn(`Invalid regex in rule for ${fieldPrefix}:`, conditions[`${fieldPrefix}_regex`]);
+        results.push(false);
+      }
+    }
+    
+    return results;
   }
-  if (conditions.message_exact) {
-    messageConditions.push(message.toLowerCase() === conditions.message_exact.toLowerCase());
-  }
-  
-  // For message conditions, if we have multiple terms in message_contains with AND logic,
-  // ALL terms must be found
-  if (messageConditions.length > 0) {
-    if (conditions_logic === 'AND' && conditions.message_contains?.length > 1) {
-      // For AND logic with multiple message terms, ALL must match
-      conditionGroups.push(messageConditions.every(result => result === true));
+
+  _doesAlertMatchRule(alertData, rule) {
+    const { conditions, logic_operator = 'OR' } = rule;
+    const { message, node_name, object_name, network, operator } = alertData;
+    
+    const conditionGroups = [];
+
+    // Message conditions
+    const messageResults = this._checkFieldConditions(message, conditions, 'message');
+    if (messageResults.length > 0) {
+      if (logic_operator === 'AND' && conditions.message_contains?.length > 1) {
+        // For AND logic with multiple message terms, ALL must match
+        conditionGroups.push(messageResults.every(result => result === true));
+      } else {
+        // For OR logic or single conditions, ANY can match
+        conditionGroups.push(messageResults.some(result => result === true));
+      }
+    }
+
+    // Node name conditions
+    const nodeResults = this._checkFieldConditions(node_name, conditions, 'node_name');
+    if (nodeResults.length > 0) {
+      conditionGroups.push(nodeResults.some(result => result === true));
+    }
+
+    // Object name conditions  
+    const objectResults = this._checkFieldConditions(object_name, conditions, 'object_name');
+    if (objectResults.length > 0) {
+      conditionGroups.push(objectResults.some(result => result === true));
+    }
+
+    // Network conditions (handle both new format and legacy)
+    const networkResults = this._checkFieldConditions(network, conditions, 'network');
+    if (networkResults.length > 0) {
+      conditionGroups.push(networkResults.some(result => result === true));
+    } else if (conditions.network) {
+      // Legacy network condition support
+      const networkMatches = network && network.toLowerCase().includes(conditions.network.toLowerCase());
+      conditionGroups.push(networkMatches);
+    }
+
+    // Operator conditions
+    const operatorResults = this._checkFieldConditions(operator, conditions, 'operator');
+    if (operatorResults.length > 0) {
+      conditionGroups.push(operatorResults.some(result => result === true));
+    }
+
+    if (conditionGroups.length === 0) {
+      return false;
+    }
+
+    // Apply the main logic operator to condition groups
+    if (logic_operator === 'AND') {
+      return conditionGroups.every(result => result === true);
     } else {
-      // For OR logic or single conditions, ANY can match
-      conditionGroups.push(messageConditions.some(result => result === true));
+      return conditionGroups.some(result => result === true);
     }
   }
-
-  // Node name conditions
-  if (conditions.node_name_contains?.length) {
-    const nodeMatches = conditions.node_name_contains.some(term => 
-      node_name.toLowerCase().includes(term.toLowerCase())
-    );
-    conditionGroups.push(nodeMatches);
-  }
-
-  // Object name conditions  
-  if (conditions.object_name_contains?.length) {
-    const objectMatches = conditions.object_name_contains.some(term => 
-      object_name.toLowerCase().includes(term.toLowerCase())
-    );
-    conditionGroups.push(objectMatches);
-  }
-
-  // Network conditions
-  if (conditions.network) {
-    const networkMatches = network && network.toLowerCase().includes(conditions.network.toLowerCase());
-    conditionGroups.push(networkMatches);
-  }
-
-  // Operator conditions
-  if (conditions.operator_contains?.length) {
-    const operatorMatches = conditions.operator_contains.some(term => 
-      operator && operator.toLowerCase().includes(term.toLowerCase())
-    );
-    conditionGroups.push(operatorMatches);
-  }
-
-  if (conditionGroups.length === 0) {
-    return false;
-  }
-
-  // Apply the main logic operator to condition groups
-  if (conditions_logic === 'AND') {
-    return conditionGroups.every(result => result === true);
-  } else {
-    return conditionGroups.some(result => result === true);
-  }
-}
 
   // ================== INCIDENT CREATION ==================
-async createIncidentFromAlert(alertData) {
-  try {
-    const { application } = alertData;
-    
-    // Find matching rules for this application
-    const rules = await this.getIncidentRules(application);
-    const enabledRules = rules.filter(rule => rule.enabled);
-    
-    // Find the first matching rule (sorted by creation date - newest first)
-    let matchingRule = null;
-    for (const rule of enabledRules) {
-      if (this._doesAlertMatchRule(alertData, rule)) {
-        matchingRule = rule;
-        break;
+
+  async createIncidentFromAlert(alertData) {
+    try {
+      const { application } = alertData;
+      
+      // Find matching rules for this application
+      const rules = await this.getIncidentRules(application);
+      const enabledRules = rules.filter(rule => rule.enabled);
+      
+      // Find the first matching rule (sorted by creation date - newest first)
+      let matchingRule = null;
+      for (const rule of enabledRules) {
+        if (this._doesAlertMatchRule(alertData, rule)) {
+          matchingRule = rule;
+          break;
+        }
       }
+      
+      let systemMapping;
+      let incidentData;
+      
+      if (matchingRule) {
+        systemMapping = matchingRule.system_mapping;
+        
+        if (!systemMapping) {
+          throw new Error(`System mapping not found for rule: ${matchingRule.rule_name}`);
+        }
+        
+        console.log(`Using incident rule: ${matchingRule.rule_name} (${matchingRule.logic_operator || 'OR'} logic)`);
+        incidentData = this._buildIncidentData(systemMapping, matchingRule.incident_overrides, alertData);
+        
+        // Add rule metadata
+        incidentData.matched_rule_id = matchingRule._id;
+        incidentData.matched_rule_name = matchingRule.rule_name;
+        incidentData.matched_rule_logic = matchingRule.logic_operator || 'OR';
+        
+      } else {
+        // Fallback to basic system mapping
+        systemMapping = await this.getMappingByApplication(application);
+        
+        if (!systemMapping) {
+          throw new Error(`No system mapping or incident rules found for application: ${application}`);
+        }
+        
+        console.log(`Using basic system mapping for: ${application}`);
+        incidentData = this._buildIncidentData(systemMapping, {}, alertData);
+      }
+      
+      // Add common metadata
+      incidentData.source_application = alertData.application;
+      incidentData.alert_time = alertData.time_created;
+      incidentData.grafana_operator = alertData.operator;
+      incidentData.alert_network = alertData.network;
+      incidentData.created_at = new Date();
+      
+      console.log('Creating incident with data:', JSON.stringify(incidentData, null, 2));
+      
+      return incidentData;
+      
+    } catch (error) {
+      console.error('Error creating incident from alert:', error);
+      throw error;
     }
-    
-    let systemMapping;
-    let incidentData;
-    
-    if (matchingRule) {
-      systemMapping = matchingRule.system_mapping;
-      
-      if (!systemMapping) {
-        throw new Error(`System mapping not found for rule: ${matchingRule.rule_name}`);
-      }
-      
-      console.log(`Using incident rule: ${matchingRule.rule_name} (${matchingRule.conditions_logic || matchingRule.logic_operator || 'OR'} logic)`);
-      incidentData = this._buildIncidentData(systemMapping, matchingRule.incident_overrides, alertData);
-      
-      // Add rule metadata
-      incidentData.matched_rule_id = matchingRule._id;
-      incidentData.matched_rule_name = matchingRule.rule_name;
-      incidentData.matched_rule_logic = matchingRule.conditions_logic || matchingRule.logic_operator || 'OR';
-      
-    } else {
-      // Fallback to basic system mapping
-      systemMapping = await this.getMappingByApplication(application);
-      
-      if (!systemMapping) {
-        throw new Error(`No system mapping or incident rules found for application: ${application}`);
-      }
-      
-      console.log(`Using basic system mapping for: ${application}`);
-      incidentData = this._buildIncidentData(systemMapping, {}, alertData);
-    }
-    
-    // Add common metadata
-    incidentData.source_application = alertData.application;
-    incidentData.alert_time = alertData.time_created;
-    incidentData.grafana_operator = alertData.operator;
-    incidentData.alert_network = alertData.network;
-    incidentData.created_at = new Date();
-    
-    console.log('Creating incident with data:', JSON.stringify(incidentData, null, 2));
-    
-    return incidentData;
-    
-  } catch (error) {
-    console.error('Error creating incident from alert:', error);
-    throw error;
   }
-}
 
   async getDistinctValues(fieldName) {
     if (!this.systemMappingsCollection) await this.initialize();
