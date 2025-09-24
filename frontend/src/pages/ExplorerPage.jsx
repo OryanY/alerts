@@ -1,10 +1,8 @@
 // pages/ExplorerPage.jsx — Alert Explorer with selective debounce + debounce-cancel on pagination
 import { useMemo, useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Download, Share, RefreshCw, X } from 'lucide-react';
 
 import { S } from '../utils/styles';
-import { JerusalemTime } from '../utils/time';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useDateRangeUrl, useExplorerFilters, useShareableUrl } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
@@ -18,12 +16,23 @@ const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 50;
 
 const ExplorerPage = () => {
-  const navigate = useNavigate();
   const { config, getApiParams } = useClientConfig();
   const { dateRange, setDateRange, setPresetRange } = useDateRangeUrl();
-  const { filters, setFilters, setPage, clearFilters } = useExplorerFilters();
+  const { filters, setFilters, setPage } = useExplorerFilters();
   const { shareCurrentUrl } = useShareableUrl();
   const { colorByDuration } = useDurationBands(config);
+
+  // Fix for "today" selection - adjust end_date to avoid validation error
+  const adjustedDateRange = useMemo(() => {
+    if (dateRange.start_date && dateRange.end_date && dateRange.start_date === dateRange.end_date) {
+      // When start and end are the same (clicking "today"), add time to end date
+      return {
+        start_date: dateRange.start_date,
+        end_date: `${dateRange.end_date}T23:59:59`
+      };
+    }
+    return dateRange;
+  }, [dateRange]);
 
   // Extract page from filters; debounce only the rest
   const rawPage = Number(filters.page) || 1;
@@ -57,18 +66,18 @@ const ExplorerPage = () => {
     }
   }, [rawPage]);
 
-  // Build API params (server expects 'ASC'|'DESC')
+  // Build API params (server expects 'ASC'|'DESC') - use adjusted date range
   const apiParams = useMemo(() => {
     const f = debouncedFilters || {};
     const normalizedSortOrder = (f.sort_order || 'desc').toString().toUpperCase();
     return {
-      ...dateRange,
+      ...adjustedDateRange,  // Use adjusted date range instead of dateRange
       ...getApiParams(),
       ...f,
       sort_order: normalizedSortOrder,
       limit: 1000,
     };
-  }, [debouncedFilters, dateRange, getApiParams]);
+  }, [debouncedFilters, adjustedDateRange, getApiParams]); // Updated dependency
 
   // Fetch data
   const { data: alerts, loading, error, refetch } = useApiData('/alerts', apiParams);
@@ -166,6 +175,20 @@ const ExplorerPage = () => {
     setPage(1);
   };
 
+  const formatHourAndDay = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    // Always render in Israel time
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(d);
+  };
+
   const exportToCsv = () => {
     const headers = ['ID', 'Panel Title', 'Application', 'Time Fired (JL)', 'Duration (sec)', 'Operator', 'Status'];
     const csvContent = [
@@ -174,7 +197,7 @@ const ExplorerPage = () => {
         alert.id || '',
         `"${(alert.panel_title || '').replace(/"/g, '""')}"`,
         `"${(alert.application || '').replace(/"/g, '""')}"`,
-        JerusalemTime.formatDateTime(alert.time_fired_il || alert.time_fired_utc),
+        formatHourAndDay(alert.time_fired) || '',
         alert.duration_sec || '',
         `"${(alert.operator || 'System/Auto').replace(/"/g, '""')}"`,
         alert.time_resolved ? 'Resolved' : 'Open'
@@ -185,7 +208,7 @@ const ExplorerPage = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `alerts_${dateRange.start_date}_to_${dateRange.end_date}.csv`;
+    a.download = `alerts_${adjustedDateRange.start_date}_to_${adjustedDateRange.end_date}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -295,25 +318,6 @@ const ExplorerPage = () => {
             <Filter size={16} style={{ color: '#6B7280' }} />
             <span style={{ fontWeight: 600 }}>Filters</span>
           </div>
-
-          <button
-            onClick={clearFilters}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '4px 8px',
-              border: 'none',
-              borderRadius: 4,
-              background: 'transparent',
-              color: '#6B7280',
-              cursor: 'pointer',
-              fontSize: 12
-            }}
-          >
-            <X size={12} />
-            Clear All
-          </button>
         </div>
 
         <div style={{
@@ -444,7 +448,7 @@ const ExplorerPage = () => {
                       { key: 'id', label: 'ID' },
                       { key: 'panel_title', label: 'Panel' },
                       { key: 'application', label: 'Application' },
-                      { key: 'time_fired_il', label: 'Time Fired (JL)'},
+                      { key: 'time_fired', label: 'Time Fired (JL)'},
                       { key: 'duration_sec', label: 'Duration' },
                       { key: 'operator', label: 'Operator' }
                     ].map(({ key, label }) => (
@@ -488,7 +492,7 @@ const ExplorerPage = () => {
                       </td>
                       <td style={S.tableCell}>{alert.application || 'N/A'}</td>
                       <td style={{ ...S.tableCell, fontSize: 13, fontFamily: 'monospace' }}>
-                        {JerusalemTime.formatDateTime(alert.time_fired_il || alert.time_fired_utc)}
+                        {formatHourAndDay(alert.time_fired)}
                       </td>
                       <td style={S.tableCell}>
                         <span style={{

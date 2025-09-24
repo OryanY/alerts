@@ -5,21 +5,18 @@ import {
 } from 'recharts';
 
 import { S } from '../utils/styles';
-import { JerusalemTime } from '../utils/time';
 
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { useClientConfig } from '../contexts/ClientConfigContext'; 
 import { useDateRangeUrl, useShareableUrl } from '../hooks/useUrlState';
-
-// כל הקומפוננטות האלו צריכות להיות default export → מייבאים בלי סוגריים
 import {LoadingSpinner} from '../components/LoadingSpinner';
 import {DateRangePicker} from '../components/DateRangePicker';
 import {MetricCard} from '../components/MetricCard';
 import {ChartCard} from '../components/ChartCard';
 import {WakeupGauge} from '../components/WakeupGauge';
 
-import { AlertTriangle, BarChart3, Calendar, Clock, Eye, Moon, Settings, Sun, TrendingUp, Zap, Shield } from '../icons';
+import { AlertTriangle, Calendar, Clock, Moon, Sun, TrendingUp, Zap, Shield } from '../icons';
 import { Share } from 'lucide-react';
 
 const NocDashboard = () => {
@@ -28,21 +25,60 @@ const NocDashboard = () => {
   const { shareCurrentUrl } = useShareableUrl();
   const { colorByDuration, Legend } = useDurationBands(config);
 
-  // API params combining date range and config
-  const apiParams = {
-    ...dateRange,
-    ...getApiParams()
+  // Fix for "today" selection - adjust end_date to avoid validation error
+  const adjustedDateRange = React.useMemo(() => {
+    if (dateRange.start_date && dateRange.end_date && dateRange.start_date === dateRange.end_date) {
+      // When start and end are the same (clicking "today"), add time to end date
+      return {
+        start_date: dateRange.start_date,
+        end_date: `${dateRange.end_date}T23:59:59`
+      };
+    }
+    return dateRange;
+  }, [dateRange]);
+
+  // Simplified API params - start with minimal parameters to debug
+  const baseApiParams = {
+    // Only include date range if available
+    ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
+    ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date })
   };
 
-  // API calls with URL-driven parameters
+  // Add config parameters only if they differ from defaults
+  const configParams = getApiParams();
+  const apiParams = {
+    ...baseApiParams,
+    // Only add non-default config values
+    ...(configParams.day_start !== 8 && { day_start: configParams.day_start }),
+    ...(configParams.day_end !== 22 && { day_end: configParams.day_end }),
+    ...(configParams.dur_short_max !== 30 && { dur_short_max: configParams.dur_short_max }),
+    ...(configParams.dur_medium_max !== 300 && { dur_medium_max: configParams.dur_medium_max })
+  };
+
+  // Debug: Log the parameters being sent
+  console.log('API Parameters being sent:', apiParams);
+
+  // Updated API calls with error logging
   const exec = useApiData('/stats/executive-kpis', apiParams);
   const shifts = useApiData('/stats/shift-analysis', apiParams);
   const duration = useApiData('/stats/duration-histogram', apiParams);
   const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
   const weekend = useApiData('/stats/weekend-weekday', apiParams);
-  const recent = useApiData('/stats/recent-alerts', { hours: 24, limit: 15, ...getApiParams() });
+  
+  // Recent alerts with simpler params
+  const recent = useApiData('/stats/recent-alerts', { hours: 24, limit: 15 });
   const panelStats = useApiData('/stats/by-panel', { ...apiParams, limit: 20 });
   const timeseries = useApiData('/stats/timeseries', apiParams);
+
+  // Log any errors for debugging
+  React.useEffect(() => {
+    [exec, shifts, duration, heatmap, weekend, recent, panelStats, timeseries].forEach((apiCall, index) => {
+      if (apiCall.error) {
+        const endpoints = ['executive-kpis', 'shift-analysis', 'duration-histogram', 'hourly-heatmap', 'weekend-weekday', 'recent-alerts', 'by-panel', 'timeseries'];
+        console.error(`Error in ${endpoints[index]}:`, apiCall.error);
+      }
+    });
+  }, [exec.error, shifts.error, duration.error, heatmap.error, weekend.error, recent.error, panelStats.error, timeseries.error]);
 
   const isLoading = exec.loading || shifts.loading || duration.loading || heatmap.loading;
 
@@ -84,7 +120,7 @@ const NocDashboard = () => {
       </div>
 
       <Suspense fallback={<LoadingSpinner />}>
-        {/* KPI Cards */}
+        {/* KPI Cards - Updated field names for new API */}
         <div style={S.grid('repeat(auto-fit, minmax(300px, 1fr))')}>
           <MetricCard
             title="Total Alerts"
@@ -94,8 +130,8 @@ const NocDashboard = () => {
             color="orange"
           />
           <MetricCard
-            title="Signal-to-Noise Ratio"
-            value={`${exec.data?.signal_to_noise_ratio ?? '—'}%`}
+            title="Signal Ratio"
+            value={`${exec.data?.signal_ratio ?? '—'}%`}
             subtitle="Meaningful vs noise alerts"
             icon={TrendingUp}
             color="blue"
@@ -232,7 +268,7 @@ const NocDashboard = () => {
                     <Cell key={`cell-${index}`} fill={index === 0 ? '#3B82F6' : '#8B5CF6'} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(value, name, props) => [value, props.payload.period]} />
               </PieChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -278,7 +314,7 @@ const NocDashboard = () => {
           <WakeupGauge shiftData={shifts.data} loading={shifts.loading} error={shifts.error} />
         </div>
 
-        {/* Recent Alerts */}
+        {/* Recent Alerts - Updated to handle new response structure */}
         <ChartCard
           title="Recent Alerts (24h)"
           icon={Clock}
@@ -294,7 +330,7 @@ const NocDashboard = () => {
           }}>
             {(recent.data || []).map((a, i) => (
               <div
-                key={a.id || i}
+                key={a.id || a.incident_id || i}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -314,7 +350,7 @@ const NocDashboard = () => {
                     {(a.panel_title || '').length > 40 ? '…' : ''}
                   </div>
                   <div style={{ fontSize: 11, color: '#6B7280' }}>
-                    {a.application || 'N/A'} • {JerusalemTime.formatTime(a.time_fired_il || a.time_fired_utc)}
+                    {a.application || 'N/A'} • {a.time_fired || a.time_fired_il}
                   </div>
                 </div>
                 <div style={{
