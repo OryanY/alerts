@@ -200,29 +200,9 @@ router.get('/by-panel', validateQuery(panelStatsSchema), async (req, res) => {
   }
 });
 
-// Operator statistics
-router.get('/operators', validateQuery(statsSchema), async (req, res) => {
-  try {
-    const params = req.validatedQuery;
-    const cacheKey = `operators:${JSON.stringify(params)}`;
-    
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, meta: { ...cached.meta, cached: true } });
-    }
-
-    const result = await alertService.getOperatorStats(params);
-    cache.set(cacheKey, result);
-    
-    res.json(result);
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
 // ================== PATTERN ANALYSIS ==================
 
-// Storm detection and correlations
+// Storm  and correlations
 router.get('/patterns', validateQuery(statsSchema), async (req, res) => {
   try {
     const params = req.validatedQuery;

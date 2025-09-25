@@ -16,9 +16,7 @@ class AlertService {
     return this.pool;
   }
 
-  /**
-   * Get alerts with filtering and pagination
-   */
+
   async getAlerts(params) {
     const pool = this.getPool();
     const request = pool.request();
@@ -73,9 +71,6 @@ class AlertService {
     return ResponseFormatter.success(transformedData, pagination);
   }
 
-  /**
-   * Get recent alerts within specified hours
-   */
   async getRecentAlerts(params) {
     const pool = this.getPool();
     const request = pool.request();
@@ -98,9 +93,6 @@ class AlertService {
     return ResponseFormatter.success(transformedData);
   }
 
-  /**
-   * Get executive KPIs with computed metrics
-   */
   async getExecutiveKPIs(params) {
     const pool = this.getPool();
     const request = pool.request();
@@ -134,18 +126,13 @@ class AlertService {
     return ResponseFormatter.success(kpis);
   }
 
-  /**
-   * Get weekend vs weekday comparison
-   */
   async getWeekendWeekdayStats(params) {
     const data = await this._getBasicAlertData(params);
     const stats = this._computeWeekendWeekdayStats(data.recordset, params);
     return ResponseFormatter.success(stats);
   }
 
-  /**
-   * Get duration histogram data
-   */
+
   async getDurationHistogram(params) {
     const pool = this.getPool();
     const request = pool.request();
@@ -166,18 +153,12 @@ class AlertService {
     return ResponseFormatter.success(histogram);
   }
 
-  /**
-   * Get hourly distribution data
-   */
   async getHourlyHeatmap(params) {
     const data = await this._getBasicAlertData(params);
     const heatmap = this._computeHourlyHeatmap(data.recordset, params);
     return ResponseFormatter.success(heatmap);
   }
 
-  /**
-   * Get shift analysis
-   */
   async getShiftAnalysis(params) {
     const pool = this.getPool();
     const request = pool.request();
@@ -198,7 +179,187 @@ class AlertService {
     return ResponseFormatter.success(analysis);
   }
 
-  // ================== PRIVATE HELPER METHODS ==================
+  
+  async _getBasicAlertData(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+    
+    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
+    const where = this._buildDateWhereClause(request, range);
+    const cap = Math.min(params.limit || 100000, 100000);
+    request.input('cap', this._getSqlType('Int'), cap);
+
+    return await request.query(`
+      SELECT TOP (@cap) time_fired, duration_sec
+      FROM dbo.historicalAlerts
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY time_fired DESC
+    `);
+  }
+
+  _buildDateWhereClause(request, range) {
+    const where = [];
+    if (range?.start) {
+      request.input('start', this._getSqlType('DateTime2'), range.start);
+      where.push('time_fired >= @start');
+    }
+    if (range?.end) {
+      request.input('end', this._getSqlType('DateTime2'), range.end);
+      where.push('time_fired <= @end');
+    }
+    return where;
+  }
+
+  async getOverviewStats(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
+    const where = this._buildDateWhereClause(request, range);
+    const cap = Math.min(params.limit || 100000, 100000);
+    request.input('cap', this._getSqlType('Int'), cap);
+
+    const rows = (await request.query(`
+      SELECT TOP (@cap)
+        time_fired, time_resolved, duration_sec,
+        panel_title, application, node_name, network, operator
+      FROM dbo.historicalAlerts
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY time_fired DESC
+    `)).recordset;
+
+    const stats = this._computeOverviewStats(rows, params);
+    return ResponseFormatter.success(stats);
+  }
+
+  async getHourlyStats(params) {
+    const data = await this._getBasicAlertData(params);
+    const hourlyStats = this._computeHourlyStats(data.recordset, params);
+    return ResponseFormatter.success(hourlyStats);
+  }
+
+  async getTimeseriesStats(params) {
+    const data = await this._getBasicAlertData(params);
+    const timeseries = this._computeTimeseriesStats(data.recordset, params);
+    return ResponseFormatter.success(timeseries);
+  }
+
+  async getPanelStats(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
+    const where = this._buildDateWhereClause(request, range);
+
+    if (params.limit) request.input('limit', this._getSqlType('Int'), params.limit);
+
+    const sqlText = params.limit ? `
+        SELECT TOP (@limit)
+        panel_title, application,
+        COUNT(*) as alert_count,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+        MIN(duration_sec) as min_duration,
+        MAX(duration_sec) as max_duration,
+        COUNT(CASE WHEN duration_sec <= ${params.dur_short_max || 30} THEN 1 END) as short_alerts,
+        COUNT(CASE WHEN duration_sec > ${params.dur_short_max || 30} AND duration_sec <= ${params.dur_medium_max || 300} THEN 1 END) as medium_alerts,
+        COUNT(CASE WHEN duration_sec > ${params.dur_medium_max || 300} THEN 1 END) as long_alerts
+        FROM dbo.historicalAlerts
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        GROUP BY panel_title, application
+        ORDER BY alert_count DESC
+    ` : `
+        SELECT 
+        panel_title, application,
+        COUNT(*) as alert_count,
+        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
+        MIN(duration_sec) as min_duration,
+        MAX(duration_sec) as max_duration,
+        COUNT(CASE WHEN duration_sec <= ${params.dur_short_max || 30} THEN 1 END) as short_alerts,
+        COUNT(CASE WHEN duration_sec > ${params.dur_short_max || 30} AND duration_sec <= ${params.dur_medium_max || 300} THEN 1 END) as medium_alerts,
+        COUNT(CASE WHEN duration_sec > ${params.dur_medium_max || 300} THEN 1 END) as long_alerts
+        FROM dbo.historicalAlerts
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        GROUP BY panel_title, application
+        ORDER BY alert_count DESC
+    `;
+
+    const result = await request.query(sqlText);
+    return ResponseFormatter.success(result.recordset);
+  }
+
+  async getPatternAnalysis(params) {
+    const pool = this.getPool();
+    
+    // Get storm patterns
+    const stormRequest = pool.request();
+    const stormRange = TimeUtils.validateDateRange(params.start_date, params.end_date);
+    const stormWhere = this._buildDateWhereClause(stormRequest, stormRange);
+
+    const stormSql = `
+      WITH Base AS (
+        SELECT application, panel_title, time_fired
+        FROM dbo.historicalAlerts
+        ${stormWhere.length ? 'WHERE ' + stormWhere.join(' AND ') : ''}
+      ),
+      Storms AS (
+        SELECT 
+          b.application,
+          b.panel_title,
+          b.time_fired,
+          (SELECT COUNT(*) 
+           FROM dbo.historicalAlerts x
+           WHERE x.application = b.application
+             AND x.time_fired BETWEEN DATEADD(MINUTE, -10, b.time_fired) AND b.time_fired
+          ) AS alerts_in_window
+        FROM Base b
+      )
+      SELECT TOP 100 *
+      FROM Storms
+      WHERE alerts_in_window >= 5
+      ORDER BY time_fired DESC
+    `;
+
+    // Get correlations
+    const corrRequest = pool.request();
+    const corrRange = TimeUtils.validateDateRange(params.start_date, params.end_date);
+    const corrWhere = [];
+    if (corrRange?.start) {
+      corrRequest.input('cStart', this._getSqlType('DateTime2'), corrRange.start);
+      corrWhere.push('a1.time_fired >= @cStart AND a2.time_fired >= @cStart');
+    }
+    if (corrRange?.end) {
+      corrRequest.input('cEnd', this._getSqlType('DateTime2'), corrRange.end);
+      corrWhere.push('a1.time_fired <= @cEnd AND a2.time_fired <= @cEnd');
+    }
+
+    const correlationsSql = `
+      SELECT TOP 20
+        a1.application,
+        a1.panel_title as panel1,
+        a2.panel_title as panel2,
+        COUNT(*) as correlation_count,
+        ROUND(AVG(CAST(ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) AS FLOAT)), 2) as avg_time_diff
+      FROM dbo.historicalAlerts a1
+      JOIN dbo.historicalAlerts a2 
+        ON a1.application = a2.application
+       AND a1.incident_id < a2.incident_id
+       AND ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) <= 300
+      ${corrWhere.length ? 'WHERE ' + corrWhere.join(' AND ') : ''}
+      GROUP BY a1.application, a1.panel_title, a2.panel_title
+      HAVING COUNT(*) >= 3
+      ORDER BY correlation_count DESC
+    `;
+
+    const [stormResult, corrResult] = await Promise.all([
+      stormRequest.query(stormSql),
+      corrRequest.query(correlationsSql),
+    ]);
+
+    return ResponseFormatter.success({
+      storms: stormResult.recordset,
+      correlations: corrResult.recordset
+    });
+  }
+
+  // ================== Helper Methods ==================
 
   _bindDateFilters(request, params) {
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
@@ -285,370 +446,7 @@ class AlertService {
     };
   }
 
-  _computeKPIs(records, params) {
-    const {
-      night_start = 22,
-      night_end = 8,
-      dur_short_max = 30,
-      false_wakeup_threshold = 120
-    } = params;
 
-    let total = 0, noise = 0, night = 0, trueWakeups = 0, falseWakeups = 0;
-
-    for (const record of records) {
-      total++;
-      const ilHour = TimeUtils.getILHour(record.time_fired);
-      const isNight = ilHour >= night_start || ilHour < night_end;
-
-      if (record.duration_sec <= dur_short_max) noise++;
-      
-      if (isNight) {
-        night++;
-        if (record.duration_sec > false_wakeup_threshold) {
-          trueWakeups++;
-        } else {
-          falseWakeups++;
-        }
-      }
-    }
-
-    const signalRatio = total > 0 ? +((total - noise) * 100 / total).toFixed(1) : 0;
-    const falseWakeRate = (trueWakeups + falseWakeups) > 0 
-      ? +(falseWakeups * 100 / (trueWakeups + falseWakeups)).toFixed(1) 
-      : 0;
-
-    return {
-      total_alerts: total,
-      noise_alerts: noise,
-      night_alerts: night,
-      true_wakeups: trueWakeups,
-      false_wakeups: falseWakeups,
-      signal_ratio: signalRatio,
-      false_wakeup_rate: falseWakeRate,
-    };
-  }
-
-  _computeDurationHistogram(records, params) {
-    const { dur_short_max = 30, dur_medium_max = 300 } = params;
-    let short = 0, medium = 0, long = 0;
-
-    for (const record of records) {
-      if (record.duration_sec <= dur_short_max) short++;
-      else if (record.duration_sec <= dur_medium_max) medium++;
-      else long++;
-    }
-
-    return [
-      { range: '<=short', count: short },
-      { range: 'short..medium', count: medium },
-      { range: '>medium', count: long },
-    ];
-  }
-
-  _computeHourlyHeatmap(records, params) {
-    const { night_start = 22, night_end = 8 } = params;
-    const counts = Array.from({ length: 24 }, () => 0);
-
-    for (const record of records) {
-      const ilHour = TimeUtils.getILHour(record.time_fired);
-      if (ilHour !== null) counts[ilHour]++;
-    }
-
-    return counts.map((count, hour) => ({
-      hour,
-      hour_display: `${String(hour).padStart(2, '0')}:00`,
-      count,
-      is_night: TimeUtils.isNightHour(hour, night_start, night_end),
-    }));
-  }
-
-  async _getBasicAlertData(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    return await request.query(`
-      SELECT TOP (@cap) time_fired, duration_sec
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `);
-  }
-
-  _buildDateWhereClause(request, range) {
-    const where = [];
-    if (range?.start) {
-      request.input('start', this._getSqlType('DateTime2'), range.start);
-      where.push('time_fired >= @start');
-    }
-    if (range?.end) {
-      request.input('end', this._getSqlType('DateTime2'), range.end);
-      where.push('time_fired <= @end');
-    }
-    return where;
-  }
-
-  _computeWeekendWeekdayStats(records, params) {
-    const {
-      day_start = 8, day_end = 22,
-      night_start = 22, night_end = 8,
-      dur_short_max = 30, dur_medium_max = 300
-    } = params;
-
-    const acc = {
-      Weekend: { alert_count: 0, sum: 0, short_alerts: 0, long_alerts: 0, night_alerts: 0 },
-      Weekdays: { alert_count: 0, sum: 0, short_alerts: 0, long_alerts: 0, night_alerts: 0 },
-    };
-
-    for (const record of records) {
-      const weekday = TimeUtils.getILWeekday(record.time_fired);
-      const bucket = (weekday === 5 || weekday === 6) ? 'Weekend' : 'Weekdays'; // Fri/Sat
-      const hour = TimeUtils.getILHour(record.time_fired);
-      
-      acc[bucket].alert_count++;
-      acc[bucket].sum += record.duration_sec;
-      
-      if (record.duration_sec <= dur_short_max) acc[bucket].short_alerts++;
-      if (record.duration_sec > dur_medium_max) acc[bucket].long_alerts++;
-      if (TimeUtils.isNightHour(hour, night_start, night_end)) acc[bucket].night_alerts++;
-    }
-
-    return Object.entries(acc).map(([period, stats]) => ({
-      period,
-      alert_count: stats.alert_count,
-      avg_duration: stats.alert_count ? +(stats.sum / stats.alert_count).toFixed(2) : 0,
-      short_alerts: stats.short_alerts,
-      long_alerts: stats.long_alerts,
-      night_alerts: stats.night_alerts,
-    })).sort((a, b) => a.period === 'Weekend' ? -1 : 1);
-  }
-
-  _computeShiftAnalysis(records, params) {
-    const {
-      day_start = 8, day_end = 22,
-      false_wakeup_threshold = 120
-    } = params;
-
-    const buckets = {
-      Day: { 
-        n: 0, sum: 0, min: Infinity, max: -Infinity, 
-        false_wakeups: 0, true_alerts: 0, 
-        panels: new Set(), ops: new Set() 
-      },
-      Night: { 
-        n: 0, sum: 0, min: Infinity, max: -Infinity, 
-        false_wakeups: 0, true_alerts: 0, 
-        panels: new Set(), ops: new Set() 
-      },
-    };
-
-    for (const record of records) {
-      const hour = TimeUtils.getILHour(record.time_fired);
-      const shift = TimeUtils.isDayHour(hour, day_start, day_end) ? 'Day' : 'Night';
-      const bucket = buckets[shift];
-      
-      bucket.n++;
-      bucket.sum += record.duration_sec;
-      bucket.min = Math.min(bucket.min, record.duration_sec);
-      bucket.max = Math.max(bucket.max, record.duration_sec);
-      
-      if (record.duration_sec <= false_wakeup_threshold) {
-        bucket.false_wakeups++;
-      } else {
-        bucket.true_alerts++;
-      }
-      
-      if (record.panel_title) bucket.panels.add(record.panel_title);
-      if (record.operator) bucket.ops.add(record.operator);
-    }
-
-    return Object.entries(buckets).map(([shift, bucket]) => ({
-      shift,
-      alert_count: bucket.n,
-      avg_duration: bucket.n ? +(bucket.sum / bucket.n).toFixed(2) : 0,
-      min_duration: bucket.n ? bucket.min : 0,
-      max_duration: bucket.n ? bucket.max : 0,
-      false_wakeups: bucket.false_wakeups,
-      true_alerts: bucket.true_alerts,
-      unique_panels: bucket.panels.size,
-      unique_operators: bucket.ops.size,
-      false_wakeup_rate: bucket.n ? +((bucket.false_wakeups * 100) / bucket.n).toFixed(1) : 0,
-    }));
-  }
-
-  // ================== ADDITIONAL STATS METHODS ==================
-
-  async getOverviewStats(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    const rows = (await request.query(`
-      SELECT TOP (@cap)
-        time_fired, time_resolved, duration_sec,
-        panel_title, application, node_name, network, operator
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `)).recordset;
-
-    const stats = this._computeOverviewStats(rows, params);
-    return ResponseFormatter.success(stats);
-  }
-
-  async getHourlyStats(params) {
-    const data = await this._getBasicAlertData(params);
-    const hourlyStats = this._computeHourlyStats(data.recordset, params);
-    return ResponseFormatter.success(hourlyStats);
-  }
-
-  async getTimeseriesStats(params) {
-    const data = await this._getBasicAlertData(params);
-    const timeseries = this._computeTimeseriesStats(data.recordset, params);
-    return ResponseFormatter.success(timeseries);
-  }
-    async getPanelStats(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
-
-    if (params.limit) request.input('limit', this._getSqlType('Int'), params.limit);
-
-    const sqlText = params.limit ? `
-        SELECT TOP (@limit)
-        panel_title, application,
-        COUNT(*) as alert_count,
-        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
-        MIN(duration_sec) as min_duration,
-        MAX(duration_sec) as max_duration,
-        COUNT(CASE WHEN duration_sec <= ${params.dur_short_max || 30} THEN 1 END) as short_alerts,
-        COUNT(CASE WHEN duration_sec > ${params.dur_short_max || 30} AND duration_sec <= ${params.dur_medium_max || 300} THEN 1 END) as medium_alerts,
-        COUNT(CASE WHEN duration_sec > ${params.dur_medium_max || 300} THEN 1 END) as long_alerts
-        FROM dbo.historicalAlerts
-        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-        GROUP BY panel_title, application
-        ORDER BY alert_count DESC
-    ` : `
-        SELECT 
-        panel_title, application,
-        COUNT(*) as alert_count,
-        ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) as avg_duration,
-        MIN(duration_sec) as min_duration,
-        MAX(duration_sec) as max_duration,
-        COUNT(CASE WHEN duration_sec <= ${params.dur_short_max || 30} THEN 1 END) as short_alerts,
-        COUNT(CASE WHEN duration_sec > ${params.dur_short_max || 30} AND duration_sec <= ${params.dur_medium_max || 300} THEN 1 END) as medium_alerts,
-        COUNT(CASE WHEN duration_sec > ${params.dur_medium_max || 300} THEN 1 END) as long_alerts
-        FROM dbo.historicalAlerts
-        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-        GROUP BY panel_title, application
-        ORDER BY alert_count DESC
-    `;
-
-    const result = await request.query(sqlText);
-    return ResponseFormatter.success(result.recordset);
-    }
-
-  async getOperatorStats(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    const rows = (await request.query(`
-      SELECT TOP (@cap)
-        operator, application, time_fired, duration_sec, time_resolved
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `)).recordset;
-
-    const stats = this._computeOperatorStats(rows, params);
-    return ResponseFormatter.success(stats);
-  }
-
-  async getPatternAnalysis(params) {
-    const pool = this.getPool();
-    
-    // Get storm patterns
-    const stormRequest = pool.request();
-    const stormRange = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const stormWhere = this._buildDateWhereClause(stormRequest, stormRange);
-
-    const stormSql = `
-      WITH Base AS (
-        SELECT application, panel_title, time_fired
-        FROM dbo.historicalAlerts
-        ${stormWhere.length ? 'WHERE ' + stormWhere.join(' AND ') : ''}
-      ),
-      Storms AS (
-        SELECT 
-          b.application,
-          b.panel_title,
-          b.time_fired,
-          (SELECT COUNT(*) 
-           FROM dbo.historicalAlerts x
-           WHERE x.application = b.application
-             AND x.time_fired BETWEEN DATEADD(MINUTE, -10, b.time_fired) AND b.time_fired
-          ) AS alerts_in_window
-        FROM Base b
-      )
-      SELECT TOP 100 *
-      FROM Storms
-      WHERE alerts_in_window >= 5
-      ORDER BY time_fired DESC
-    `;
-
-    // Get correlations
-    const corrRequest = pool.request();
-    const corrRange = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const corrWhere = [];
-    if (corrRange?.start) {
-      corrRequest.input('cStart', this._getSqlType('DateTime2'), corrRange.start);
-      corrWhere.push('a1.time_fired >= @cStart AND a2.time_fired >= @cStart');
-    }
-    if (corrRange?.end) {
-      corrRequest.input('cEnd', this._getSqlType('DateTime2'), corrRange.end);
-      corrWhere.push('a1.time_fired <= @cEnd AND a2.time_fired <= @cEnd');
-    }
-
-    const correlationsSql = `
-      SELECT TOP 20
-        a1.application,
-        a1.panel_title as panel1,
-        a2.panel_title as panel2,
-        COUNT(*) as correlation_count,
-        ROUND(AVG(CAST(ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) AS FLOAT)), 2) as avg_time_diff
-      FROM dbo.historicalAlerts a1
-      JOIN dbo.historicalAlerts a2 
-        ON a1.application = a2.application
-       AND a1.incident_id < a2.incident_id
-       AND ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) <= 300
-      ${corrWhere.length ? 'WHERE ' + corrWhere.join(' AND ') : ''}
-      GROUP BY a1.application, a1.panel_title, a2.panel_title
-      HAVING COUNT(*) >= 3
-      ORDER BY correlation_count DESC
-    `;
-
-    const [stormResult, corrResult] = await Promise.all([
-      stormRequest.query(stormSql),
-      corrRequest.query(correlationsSql),
-    ]);
-
-    return ResponseFormatter.success({
-      storms: stormResult.recordset,
-      correlations: corrResult.recordset
-    });
-  }
 
   // ================== COMPUTATION HELPERS ==================
 
@@ -781,72 +579,173 @@ class AlertService {
         night_count: stats.night,
       }));
   }
+  
+  _computeWeekendWeekdayStats(records, params) {
+    const {
+      day_start = 8, day_end = 22,
+      night_start = 22, night_end = 8,
+      dur_short_max = 30, dur_medium_max = 300
+    } = params;
 
-  _computeOperatorStats(records, params) {
-    const { night_start = 22, night_end = 8, dur_short_max = 30 } = params;
-    const operatorMap = new Map();
+    const acc = {
+      Weekend: { alert_count: 0, sum: 0, short_alerts: 0, long_alerts: 0, night_alerts: 0 },
+      Weekdays: { alert_count: 0, sum: 0, short_alerts: 0, long_alerts: 0, night_alerts: 0 },
+    };
 
     for (const record of records) {
-      const operator = record.operator || 'System/Auto';
-      
-      if (!operatorMap.has(operator)) {
-        operatorMap.set(operator, {
-          operator,
-          total_alerts: 0,
-          night_alerts: 0,
-          day_alerts: 0,
-          sum: 0,
-          quick_resolutions: 0,
-          long_resolutions: 0,
-          resolved_count: 0,
-          apps: new Set(),
-          first_alert_utc: null,
-          last_alert_utc: null,
-        });
-      }
-
-      const stats = operatorMap.get(operator);
-      stats.total_alerts++;
-      stats.sum += record.duration_sec;
-      
-      if (record.duration_sec <= dur_short_max) stats.quick_resolutions++;
-      if (record.duration_sec > 900) stats.long_resolutions++;
-      if (record.time_resolved) stats.resolved_count++;
-      
-      stats.apps.add(record.application);
-
+      const weekday = TimeUtils.getILWeekday(record.time_fired);
+      const bucket = (weekday === 5 || weekday === 6) ? 'Weekend' : 'Weekdays'; // Fri/Sat
       const hour = TimeUtils.getILHour(record.time_fired);
-      if (TimeUtils.isNightHour(hour, night_start, night_end)) {
-        stats.night_alerts++;
-      } else {
-        stats.day_alerts++;
-      }
-
-      if (!stats.first_alert_utc || record.time_fired < stats.first_alert_utc) {
-        stats.first_alert_utc = record.time_fired;
-      }
-      if (!stats.last_alert_utc || record.time_fired > stats.last_alert_utc) {
-        stats.last_alert_utc = record.time_fired;
-      }
+      
+      acc[bucket].alert_count++;
+      acc[bucket].sum += record.duration_sec;
+      
+      if (record.duration_sec <= dur_short_max) acc[bucket].short_alerts++;
+      if (record.duration_sec > dur_medium_max) acc[bucket].long_alerts++;
+      if (TimeUtils.isNightHour(hour, night_start, night_end)) acc[bucket].night_alerts++;
     }
 
-    return Array.from(operatorMap.values())
-      .map(stats => ({
-        operator: stats.operator,
-        total_alerts: stats.total_alerts,
-        night_alerts: stats.night_alerts,
-        day_alerts: stats.day_alerts,
-        avg_resolution_time: stats.total_alerts 
-          ? +(stats.sum / stats.total_alerts).toFixed(2) : 0,
-        quick_resolutions: stats.quick_resolutions,
-        long_resolutions: stats.long_resolutions,
-        resolved_count: stats.resolved_count,
-        apps_handled: stats.apps.size,
-        first_alert_utc: stats.first_alert_utc,
-        last_alert_utc: stats.last_alert_utc,
-      }))
-      .sort((a, b) => b.total_alerts - a.total_alerts);
+    return Object.entries(acc).map(([period, stats]) => ({
+      period,
+      alert_count: stats.alert_count,
+      avg_duration: stats.alert_count ? +(stats.sum / stats.alert_count).toFixed(2) : 0,
+      short_alerts: stats.short_alerts,
+      long_alerts: stats.long_alerts,
+      night_alerts: stats.night_alerts,
+    })).sort((a, b) => a.period === 'Weekend' ? -1 : 1);
   }
+
+  _computeShiftAnalysis(records, params) {
+    const {
+      day_start = 8, day_end = 22,
+      false_wakeup_threshold = 120
+    } = params;
+
+    const buckets = {
+      Day: { 
+        n: 0, sum: 0, min: Infinity, max: -Infinity, 
+        false_wakeups: 0, true_alerts: 0, 
+        panels: new Set(), ops: new Set() 
+      },
+      Night: { 
+        n: 0, sum: 0, min: Infinity, max: -Infinity, 
+        false_wakeups: 0, true_alerts: 0, 
+        panels: new Set(), ops: new Set() 
+      },
+    };
+
+    for (const record of records) {
+      const hour = TimeUtils.getILHour(record.time_fired);
+      const shift = TimeUtils.isDayHour(hour, day_start, day_end) ? 'Day' : 'Night';
+      const bucket = buckets[shift];
+      
+      bucket.n++;
+      bucket.sum += record.duration_sec;
+      bucket.min = Math.min(bucket.min, record.duration_sec);
+      bucket.max = Math.max(bucket.max, record.duration_sec);
+      
+      if (record.duration_sec <= false_wakeup_threshold) {
+        bucket.false_wakeups++;
+      } else {
+        bucket.true_alerts++;
+      }
+      
+      if (record.panel_title) bucket.panels.add(record.panel_title);
+      if (record.operator) bucket.ops.add(record.operator);
+    }
+
+    return Object.entries(buckets).map(([shift, bucket]) => ({
+      shift,
+      alert_count: bucket.n,
+      avg_duration: bucket.n ? +(bucket.sum / bucket.n).toFixed(2) : 0,
+      min_duration: bucket.n ? bucket.min : 0,
+      max_duration: bucket.n ? bucket.max : 0,
+      false_wakeups: bucket.false_wakeups,
+      true_alerts: bucket.true_alerts,
+      unique_panels: bucket.panels.size,
+      unique_operators: bucket.ops.size,
+      false_wakeup_rate: bucket.n ? +((bucket.false_wakeups * 100) / bucket.n).toFixed(1) : 0,
+    }));
+  }
+
+  _computeKPIs(records, params) {
+    console.log('Computing KPIs with params:', params);
+  const {
+    night_start = params.night_start || 22,
+    night_end = params.night_end || 8,
+    dur_short_max = params.dur_short_max || 30,
+    false_wakeup_threshold = params.false_wakeup_threshold || 120  // This should come from client settings
+  } = params;
+
+  let total = 0, noise = 0, night = 0, trueWakeups = 0, falseWakeups = 0;
+
+  for (const record of records) {
+    total++;
+    const ilHour = TimeUtils.getILHour(record.time_fired);
+    const isNight = ilHour >= night_start || ilHour < night_end;
+
+    if (record.duration_sec <= dur_short_max) noise++;
+    
+    if (isNight) {
+      night++;
+      if (record.duration_sec > false_wakeup_threshold) {
+        trueWakeups++;
+      } else {
+        falseWakeups++;
+      }
+    }
+  }
+
+  const signalRatio = total > 0 ? +((total - noise) * 100 / total).toFixed(1) : 0;
+  const falseWakeRate = (trueWakeups + falseWakeups) > 0 
+    ? +(falseWakeups * 100 / (trueWakeups + falseWakeups)).toFixed(1) 
+    : 0;
+
+  return {
+    total_alerts: total,
+    noise_alerts: noise,
+    night_alerts: night,
+    true_wakeups: trueWakeups,
+    false_wakeups: falseWakeups,
+    signal_ratio: signalRatio,
+    false_wakeup_rate: falseWakeRate,
+  };
+  }
+
+  _computeDurationHistogram(records, params) {
+    const { dur_short_max = 30, dur_medium_max = 300 } = params;
+    let short = 0, medium = 0, long = 0;
+
+    for (const record of records) {
+      if (record.duration_sec <= dur_short_max) short++;
+      else if (record.duration_sec <= dur_medium_max) medium++;
+      else long++;
+    }
+
+    return [
+      { range: '<=short', count: short },
+      { range: 'short..medium', count: medium },
+      { range: '>medium', count: long },
+    ];
+  }
+
+  _computeHourlyHeatmap(records, params) {
+    const { night_start = 22, night_end = 8 } = params;
+    const counts = Array.from({ length: 24 }, () => 0);
+
+    for (const record of records) {
+      const ilHour = TimeUtils.getILHour(record.time_fired);
+      if (ilHour !== null) counts[ilHour]++;
+    }
+
+    return counts.map((count, hour) => ({
+      hour,
+      hour_display: `${String(hour).padStart(2, '0')}:00`,
+      count,
+      is_night: TimeUtils.isNightHour(hour, night_start, night_end),
+    }));
+  }
+
 }
 
 module.exports = AlertService;

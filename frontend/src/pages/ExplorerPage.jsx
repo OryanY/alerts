@@ -1,4 +1,4 @@
-// pages/ExplorerPage.jsx — Alert Explorer with selective debounce + debounce-cancel on pagination
+// Fixed ExplorerPage.jsx with proper CSV export and date highlighting
 import { useMemo, useEffect, useState, useRef } from 'react';
 import { Search, Filter, Download, Share, RefreshCw, X } from 'lucide-react';
 
@@ -17,7 +17,7 @@ const PAGE_SIZE = 50;
 
 const ExplorerPage = () => {
   const { config, getApiParams } = useClientConfig();
-  const { dateRange, setDateRange, setPresetRange } = useDateRangeUrl();
+  const { dateRange, setDateRange, setPresetRange, selectedPreset } = useDateRangeUrl();
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { shareCurrentUrl } = useShareableUrl();
   const { colorByDuration } = useDurationBands(config);
@@ -25,7 +25,6 @@ const ExplorerPage = () => {
   // Fix for "today" selection - adjust end_date to avoid validation error
   const adjustedDateRange = useMemo(() => {
     if (dateRange.start_date && dateRange.end_date && dateRange.start_date === dateRange.end_date) {
-      // When start and end are the same (clicking "today"), add time to end date
       return {
         start_date: dateRange.start_date,
         end_date: `${dateRange.end_date}T23:59:59`
@@ -55,7 +54,6 @@ const ExplorerPage = () => {
         debounceIdRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(filtersNoPage), setPage]);
 
   // If user paginates while a debounce is pending, cancel the pending reset-to-1
@@ -66,63 +64,54 @@ const ExplorerPage = () => {
     }
   }, [rawPage]);
 
-  // Build API params (server expects 'ASC'|'DESC') - use adjusted date range
+  // Build API params - remove client-side only filters
   const apiParams = useMemo(() => {
     const f = debouncedFilters || {};
     const normalizedSortOrder = (f.sort_order || 'desc').toString().toUpperCase();
+    
+    // Only send server-side filters
+    const serverFilters = {};
+    const serverSideFields = ['panel_title', 'application', 'operator', 'min_duration', 'max_duration'];
+    
+    serverSideFields.forEach(field => {
+      if (f[field] && f[field] !== '') {
+        serverFilters[field] = f[field];
+      }
+    });
+
     return {
-      ...adjustedDateRange,  // Use adjusted date range instead of dateRange
+      ...adjustedDateRange,
       ...getApiParams(),
-      ...f,
+      ...serverFilters,
+      sort_by: f.sort_by || 'time_fired',
       sort_order: normalizedSortOrder,
       limit: 1000,
     };
-  }, [debouncedFilters, adjustedDateRange, getApiParams]); // Updated dependency
+  }, [debouncedFilters, adjustedDateRange, getApiParams]);
 
   // Fetch data
   const { data: alerts, loading, error, refetch } = useApiData('/alerts', apiParams);
 
-  // Client-side filtering & sorting
+  // Client-side filtering & sorting for fields not handled server-side
   const processedAlerts = useMemo(() => {
     if (!alerts || !Array.isArray(alerts)) return [];
     const f = debouncedFilters || {};
     let filtered = [...alerts];
 
+    // Client-side search across all fields
     if (f.search) {
       const q = String(f.search).toLowerCase();
       filtered = filtered.filter(a => JSON.stringify(a).toLowerCase().includes(q));
     }
-    if (f.panel_title) {
-      const q = String(f.panel_title).toLowerCase();
-      filtered = filtered.filter(a => String(a.panel_title || '').toLowerCase().includes(q));
-    }
-    if (f.application) {
-      const q = String(f.application).toLowerCase();
-      filtered = filtered.filter(a => String(a.application || '').toLowerCase().includes(q));
-    }
-    if (f.operator) {
-      const q = String(f.operator).toLowerCase();
-      filtered = filtered.filter(a => String(a.operator || 'System/Auto').toLowerCase().includes(q));
-    }
 
-    const minD = f.min_duration !== '' && f.min_duration !== undefined ? Number(f.min_duration) : null;
-    const maxD = f.max_duration !== '' && f.max_duration !== undefined ? Number(f.max_duration) : null;
-    if (minD !== null || maxD !== null) {
-      filtered = filtered.filter(a => {
-        const d = Number(a.duration_sec) || 0;
-        if (minD !== null && d < minD) return false;
-        if (maxD !== null && d > maxD) return false;
-        return true;
-      });
-    }
-
+    // Client-side duration category filtering
     if (f.duration_category) {
       const cat = String(f.duration_category);
       filtered = filtered.filter(a => {
         const d = Number(a.duration_sec) || 0;
-        if (cat === 'short') return d <= 59;
-        if (cat === 'medium') return d >= 60 && d <= 299;
-        if (cat === 'long') return d >= 300;
+        if (cat === 'short') return d <= (config.bands?.[0]?.max || 59);
+        if (cat === 'medium') return d >= (config.bands?.[1]?.min || 60) && d <= (config.bands?.[1]?.max || 299);
+        if (cat === 'long') return d >= (config.bands?.[2]?.min || 300);
         return true;
       });
     }
@@ -150,7 +139,7 @@ const ExplorerPage = () => {
     });
 
     return filtered;
-  }, [alerts, debouncedFilters]);
+  }, [alerts, debouncedFilters, config.bands]);
 
   // Pagination driven by URL (no debounce)
   const totalItems = processedAlerts.length;
@@ -178,7 +167,6 @@ const ExplorerPage = () => {
   const formatHourAndDay = (iso) => {
     if (!iso) return '';
     const d = new Date(iso);
-    // Always render in Israel time
     return new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Jerusalem',
       day: '2-digit',
@@ -189,8 +177,9 @@ const ExplorerPage = () => {
     }).format(d);
   };
 
+  // Export CSV using FILTERED data, not all alerts
   const exportToCsv = () => {
-    const headers = ['ID', 'Panel Title', 'Application', 'Time Fired (JL)', 'Duration (sec)', 'Operator', 'Status'];
+    const headers = ['ID', 'Panel Title', 'Application', 'Time Fired (IL)', 'Duration (sec)', 'Operator', 'Status'];
     const csvContent = [
       headers.join(','),
       ...processedAlerts.map(alert => [
@@ -208,7 +197,9 @@ const ExplorerPage = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `alerts_${adjustedDateRange.start_date}_to_${adjustedDateRange.end_date}.csv`;
+    const dateStr = adjustedDateRange.start_date ? adjustedDateRange.start_date.split('T')[0] : 'filtered';
+    const endDateStr = adjustedDateRange.end_date ? adjustedDateRange.end_date.split('T')[0] : '';
+    a.download = `alerts_${dateStr}_to_${endDateStr}_filtered.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -235,6 +226,19 @@ const ExplorerPage = () => {
             </h2>
             <p style={{ fontSize: 14, color: '#6B7280', margin: '4px 0 0 0' }}>
               {loading ? 'Loading...' : `${processedAlerts.length} alerts found`}
+              {selectedPreset && (
+                <span style={{ 
+                  marginLeft: 8, 
+                  padding: '2px 6px', 
+                  background: '#EBF8FF', 
+                  color: '#2563EB',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontWeight: 600
+                }}>
+                  {selectedPreset}
+                </span>
+              )}
             </p>
           </div>
 
@@ -276,7 +280,7 @@ const ExplorerPage = () => {
               }}
             >
               <Download size={14} />
-              Export CSV
+              Export Filtered CSV ({processedAlerts.length} records)
             </button>
 
             <button
@@ -306,6 +310,7 @@ const ExplorerPage = () => {
         />
       </div>
 
+      {/* Rest of the component remains the same... */}
       {/* Filters */}
       <div style={{ ...S.card(), marginBottom: 20 }}>
         <div style={{
@@ -328,7 +333,7 @@ const ExplorerPage = () => {
           <input
             type="text"
             placeholder="Search all fields..."
-            value={filters.search}
+            value={filters.search || ''}
             onChange={(e) => setFilters({ search: e.target.value })}
             style={S.input}
           />
@@ -336,7 +341,7 @@ const ExplorerPage = () => {
           <input
             type="text"
             placeholder="Panel title..."
-            value={filters.panel_title}
+            value={filters.panel_title || ''}
             onChange={(e) => setFilters({ panel_title: e.target.value })}
             style={S.input}
           />
@@ -344,7 +349,7 @@ const ExplorerPage = () => {
           <input
             type="text"
             placeholder="Application..."
-            value={filters.application}
+            value={filters.application || ''}
             onChange={(e) => setFilters({ application: e.target.value })}
             style={S.input}
           />
@@ -352,34 +357,34 @@ const ExplorerPage = () => {
           <input
             type="text"
             placeholder="Operator..."
-            value={filters.operator}
+            value={filters.operator || ''}
             onChange={(e) => setFilters({ operator: e.target.value })}
             style={S.input}
           />
           
           <select
-            value={filters.duration_category}
+            value={filters.duration_category || ''}
             onChange={(e) => setFilters({ duration_category: e.target.value })}
             style={S.select}
           >
             <option value="">All Durations</option>
-            <option value="short">Short</option>
-            <option value="medium">Medium</option>
-            <option value="long">Long</option>
+            <option value="short">Short (≤{config.bands?.[0]?.max || 59}s)</option>
+            <option value="medium">Medium ({config.bands?.[1]?.min || 60}-{config.bands?.[1]?.max || 299}s)</option>
+            <option value="long">Long (≥{config.bands?.[2]?.min || 300}s)</option>
           </select>
 
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               type="number"
               placeholder="Min duration"
-              value={filters.min_duration}
+              value={filters.min_duration || ''}
               onChange={(e) => setFilters({ min_duration: e.target.value })}
               style={{ ...S.input, flex: 1 }}
             />
             <input
               type="number"
               placeholder="Max duration"
-              value={filters.max_duration}
+              value={filters.max_duration || ''}
               onChange={(e) => setFilters({ max_duration: e.target.value })}
               style={{ ...S.input, flex: 1 }}
             />
@@ -448,7 +453,7 @@ const ExplorerPage = () => {
                       { key: 'id', label: 'ID' },
                       { key: 'panel_title', label: 'Panel' },
                       { key: 'application', label: 'Application' },
-                      { key: 'time_fired', label: 'Time Fired (JL)'},
+                      { key: 'time_fired', label: 'Time Fired (IL)'},
                       { key: 'duration_sec', label: 'Duration' },
                       { key: 'operator', label: 'Operator' }
                     ].map(({ key, label }) => (

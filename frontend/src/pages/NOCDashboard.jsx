@@ -1,7 +1,8 @@
 import React, { Suspense } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell
+  LineChart, Line, PieChart, Pie, Cell, ScatterPlot, Scatter, AreaChart, Area,
+  RadialBarChart, RadialBar, ComposedChart
 } from 'recharts';
 
 import { S } from '../utils/styles';
@@ -16,19 +17,18 @@ import {MetricCard} from '../components/MetricCard';
 import {ChartCard} from '../components/ChartCard';
 import {WakeupGauge} from '../components/WakeupGauge';
 
-import { AlertTriangle, Calendar, Clock, Moon, Sun, TrendingUp, Zap, Shield } from '../icons';
+import { AlertTriangle, Calendar, Clock, Moon, Sun, TrendingUp, Zap, Shield, Activity, Users, Network, Target } from '../icons';
 import { Share } from 'lucide-react';
 
 const NocDashboard = () => {
   const { config, getApiParams } = useClientConfig();
-  const { dateRange, setDateRange, setPresetRange } = useDateRangeUrl();
+  const { dateRange, setDateRange, setPresetRange, selectedPreset } = useDateRangeUrl();
   const { shareCurrentUrl } = useShareableUrl();
   const { colorByDuration, Legend } = useDurationBands(config);
 
   // Fix for "today" selection - adjust end_date to avoid validation error
   const adjustedDateRange = React.useMemo(() => {
     if (dateRange.start_date && dateRange.end_date && dateRange.start_date === dateRange.end_date) {
-      // When start and end are the same (clicking "today"), add time to end date
       return {
         start_date: dateRange.start_date,
         end_date: `${dateRange.end_date}T23:59:59`
@@ -37,65 +37,67 @@ const NocDashboard = () => {
     return dateRange;
   }, [dateRange]);
 
-  // Simplified API params - start with minimal parameters to debug
+  // API params with false wakeup threshold from config
   const baseApiParams = {
-    // Only include date range if available
     ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
     ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date })
   };
 
-  // Add config parameters only if they differ from defaults
   const configParams = getApiParams();
   const apiParams = {
     ...baseApiParams,
-    // Only add non-default config values
+    // Include false wakeup threshold from settings
+    false_wakeup_threshold: config.falseWakeupThreshold || 120,
     ...(configParams.day_start !== 8 && { day_start: configParams.day_start }),
     ...(configParams.day_end !== 22 && { day_end: configParams.day_end }),
     ...(configParams.dur_short_max !== 30 && { dur_short_max: configParams.dur_short_max }),
     ...(configParams.dur_medium_max !== 300 && { dur_medium_max: configParams.dur_medium_max })
   };
 
-  // Debug: Log the parameters being sent
-  console.log('API Parameters being sent:', apiParams);
-
-  // Updated API calls with error logging
+  // Existing API calls
   const exec = useApiData('/stats/executive-kpis', apiParams);
   const shifts = useApiData('/stats/shift-analysis', apiParams);
   const duration = useApiData('/stats/duration-histogram', apiParams);
   const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
   const weekend = useApiData('/stats/weekend-weekday', apiParams);
-  
-  // Recent alerts with simpler params
   const recent = useApiData('/stats/recent-alerts', { hours: 24, limit: 15 });
   const panelStats = useApiData('/stats/by-panel', { ...apiParams, limit: 20 });
   const timeseries = useApiData('/stats/timeseries', apiParams);
-
-  // Log any errors for debugging
-  React.useEffect(() => {
-    [exec, shifts, duration, heatmap, weekend, recent, panelStats, timeseries].forEach((apiCall, index) => {
-      if (apiCall.error) {
-        const endpoints = ['executive-kpis', 'shift-analysis', 'duration-histogram', 'hourly-heatmap', 'weekend-weekday', 'recent-alerts', 'by-panel', 'timeseries'];
-        console.error(`Error in ${endpoints[index]}:`, apiCall.error);
-      }
-    });
-  }, [exec.error, shifts.error, duration.error, heatmap.error, weekend.error, recent.error, panelStats.error, timeseries.error]);
+  
+  const patterns = useApiData('/stats/patterns', apiParams);
+  const overview = useApiData('/stats/overview', apiParams);
 
   const isLoading = exec.loading || shifts.loading || duration.loading || heatmap.loading;
 
   return (
     <div>
-      {/* Date Range Picker with URL state */}
+      {/* Date Range Picker with selected preset indicator */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: 20
       }}>
-        <DateRangePicker
-          dateRange={dateRange}
-          onChange={setDateRange}
-          setPresetRange={setPresetRange}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <DateRangePicker
+            dateRange={dateRange}
+            onChange={setDateRange}
+            setPresetRange={setPresetRange}
+          />
+          {selectedPreset && (
+            <span style={{ 
+              padding: '4px 8px', 
+              background: '#EBF8FF', 
+              color: '#2563EB',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              border: '1px solid #BFDBFE'
+            }}>
+              {selectedPreset} Selected
+            </span>
+          )}
+        </div>
         
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -120,8 +122,8 @@ const NocDashboard = () => {
       </div>
 
       <Suspense fallback={<LoadingSpinner />}>
-        {/* KPI Cards - Updated field names for new API */}
-        <div style={S.grid('repeat(auto-fit, minmax(300px, 1fr))')}>
+        {/* Enhanced KPI Cards */}
+        <div style={S.grid('repeat(auto-fit, minmax(280px, 1fr))')}>
           <MetricCard
             title="Total Alerts"
             value={exec.data?.total_alerts ?? '—'}
@@ -132,28 +134,35 @@ const NocDashboard = () => {
           <MetricCard
             title="Signal Ratio"
             value={`${exec.data?.signal_ratio ?? '—'}%`}
-            subtitle="Meaningful vs noise alerts"
+            subtitle="Long vs Short duration alerts"
             icon={TrendingUp}
             color="blue"
           />
           <MetricCard
             title="True Night Wakeups"
             value={exec.data?.true_wakeups ?? '—'}
-            subtitle="Significant night alerts"
+            subtitle={`Alerts >${config.falseWakeupThreshold || 120}s at night`}
             icon={Moon}
             color="purple"
           />
           <MetricCard
             title="False Wakeup Rate"
             value={`${exec.data?.false_wakeup_rate ?? '—'}%`}
-            subtitle="Quick-resolving night alerts"
+            subtitle={`Quick-resolving (≤${config.falseWakeupThreshold || 120}s) night alerts`}
             icon={Shield}
             color="red"
           />
+          <MetricCard
+            title="Avg Resolution Time"
+            value={`${overview.data?.avg_duration ?? '—'}s`}
+            subtitle="Mean time to resolve alerts"
+            icon={Clock}
+            color="green"
+          />
         </div>
 
-        {/* Charts Row 1 */}
-        <div style={S.grid('1fr 1fr')}>
+        {/* Charts Row 1 - Core Operations */}
+        <div style={S.grid('1fr 1fr 1fr')}>
           <ChartCard title="Shift Distribution" icon={Sun} loading={shifts.loading} error={shifts.error}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={shifts.data || []}>
@@ -162,6 +171,7 @@ const NocDashboard = () => {
                 <YAxis />
                 <Tooltip />
                 <Bar dataKey="alert_count" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="false_wakeups" fill="#EF4444" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -182,69 +192,6 @@ const NocDashboard = () => {
                 <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </ChartCard>
-        </div>
-
-        {/* Charts Row 2 */}
-        <div style={S.grid('2fr 1fr 1fr')}>
-          <ChartCard
-            title="Hourly Alert Distribution"
-            icon={Clock}
-            loading={heatmap.loading}
-            error={heatmap.error}
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={heatmap.data || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="hour_display" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count">
-                  {(heatmap.data || []).map((entry, idx) => (
-                    <Cell key={idx} fill={entry?.is_night ? '#8B5CF6' : '#3B82F6'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
-          <ChartCard
-            title="Top Noisy Services"
-            icon={Zap}
-            loading={panelStats.loading}
-            error={panelStats.error}
-          >
-            <div style={{
-              maxHeight: 300,
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12
-            }}>
-              {(panelStats.data || []).slice(0, 10).map((p, idx) => (
-                <div
-                  key={`${p.panel_title}-${idx}`}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: 12,
-                    background: '#F9FAFB',
-                    borderRadius: 6,
-                    border: '1px solid #F3F4F6'
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{p.panel_title}</div>
-                    <div style={{ fontSize: 12, color: '#6B7280' }}>{p.application}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 600 }}>{p.alert_count} alerts</div>
-                    <div style={{ fontSize: 12, color: '#6B7280' }}>Avg: {p.avg_duration}s</div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </ChartCard>
 
           <ChartCard
@@ -274,16 +221,56 @@ const NocDashboard = () => {
           </ChartCard>
         </div>
 
-        {/* Charts Row 3 */}
-        <div style={S.grid('1fr 400px')}>
+        {/* Charts Row 2 - Time Analysis */}
+        <div style={S.grid('2fr 1fr')}>
           <ChartCard
-            title="Weekly Trends"
+            title="Hourly Alert Distribution"
+            icon={Clock}
+            loading={heatmap.loading}
+            error={heatmap.error}
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={heatmap.data || []}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="hour_display" />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
+                <Tooltip />
+                <Bar yAxisId="left" dataKey="count">
+                  {(heatmap.data || []).map((entry, idx) => (
+                    <Cell key={idx} fill={entry?.is_night ? '#8B5CF6' : '#3B82F6'} />
+                  ))}
+                </Bar>
+                <Line 
+                  yAxisId="right" 
+                  type="monotone" 
+                  dataKey="avg_duration" 
+                  stroke="#F59E0B" 
+                  strokeWidth={2}
+                  dot={{ fill: '#F59E0B', r: 3 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <WakeupGauge 
+            shiftData={shifts.data} 
+            loading={shifts.loading} 
+            error={shifts.error}
+            falseWakeupThreshold={config.falseWakeupThreshold || 120}
+          />
+        </div>
+
+        {/* Charts Row 3 - Trend and Pattern Analysis */}
+        <div style={S.grid('2fr 1fr')}>
+          <ChartCard
+            title="Weekly Trends & Patterns"
             icon={TrendingUp}
             loading={timeseries.loading}
             error={timeseries.error}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={timeseries.data || []}>
+              <ComposedChart data={timeseries.data || []}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="date_il"
@@ -291,32 +278,139 @@ const NocDashboard = () => {
                     new Date(d).toLocaleDateString('en-IL', { month: 'short', day: 'numeric' })
                   }
                 />
-                <YAxis />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
                 <Tooltip labelFormatter={(d) => new Date(d).toLocaleDateString('en-IL')} />
-                <Line
+                <Area
+                  yAxisId="left"
                   type="monotone"
                   dataKey="alert_count"
+                  fill="#3B82F6"
+                  fillOpacity={0.3}
                   stroke="#3B82F6"
                   strokeWidth={2}
-                  dot={{ r: 3 }}
                 />
                 <Line
+                  yAxisId="right"
                   type="monotone"
                   dataKey="avg_duration"
                   stroke="#10B981"
                   strokeWidth={2}
                   dot={{ r: 3 }}
                 />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
-
-          <WakeupGauge shiftData={shifts.data} loading={shifts.loading} error={shifts.error} />
         </div>
 
-        {/* Recent Alerts - Updated to handle new response structure */}
+        {/* Charts Row 4 - Service and Operator Analysis */}
+        <div style={S.grid('1fr 1fr 1fr')}>
+          <ChartCard
+            title="Top Alert Sources"
+            icon={Network}
+            loading={panelStats.loading}
+            error={panelStats.error}
+          >
+            <div style={{
+              maxHeight: 300,
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
+            }}>
+              {(panelStats.data || []).slice(0, 12).map((p, idx) => (
+                <div
+                  key={`${p.panel_title}-${idx}`}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: 10,
+                    background: idx < 3 ? '#FEF2F2' : '#F9FAFB',
+                    borderRadius: 6,
+                    border: `1px solid ${idx < 3 ? '#FCA5A5' : '#F3F4F6'}`
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ 
+                      fontWeight: 600, 
+                      fontSize: 13,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}>
+                      {p.panel_title}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#6B7280' }}>
+                      {p.application}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', marginLeft: 8 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{p.alert_count}</div>
+                    <div style={{ fontSize: 10, color: '#6B7280' }}>
+                      {p.avg_duration}s avg
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ChartCard>
+
+          <ChartCard
+            title="Service Correlations"
+            icon={Target}
+            loading={patterns.loading}
+            error={patterns.error}
+          >
+            <div style={{
+              maxHeight: 300,
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
+            }}>
+              {(patterns.data?.correlations || []).slice(0, 10).map((corr, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: 12,
+                    background: '#F0F9FF',
+                    borderRadius: 6,
+                    border: '1px solid #BAE6FD'
+                  }}
+                >
+                  <div style={{ 
+                    fontSize: 12, 
+                    fontWeight: 600, 
+                    marginBottom: 4,
+                    color: '#0369A1'
+                  }}>
+                    {corr.application}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>
+                    {corr.panel1} ↔ {corr.panel2}
+                  </div>
+                  <div style={{ 
+                    fontSize: 10, 
+                    color: '#0369A1',
+                    fontWeight: 500
+                  }}>
+                    {corr.correlation_count} co-occurrences • Δ{corr.avg_time_diff}s avg
+                  </div>
+                </div>
+              ))}
+              {(!patterns.data?.correlations?.length) && !patterns.loading && (
+                <div style={{ textAlign: 'center', color: '#6B7280', padding: 20 }}>
+                  No correlations detected
+                </div>
+              )}
+            </div>
+          </ChartCard>
+        </div>
+
+        {/* Recent Alerts - Enhanced */}
         <ChartCard
-          title="Recent Alerts (24h)"
+          title="Recent Critical Activity (24h)"
           icon={Clock}
           loading={recent.loading}
           error={recent.error}
@@ -328,43 +422,76 @@ const NocDashboard = () => {
             flexDirection: 'column',
             gap: 8
           }}>
-            {(recent.data || []).map((a, i) => (
-              <div
-                key={a.id || a.incident_id || i}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: 12,
-                  background: '#F9FAFB',
-                  borderRadius: 6,
-                  borderLeft: `4px solid ${colorByDuration(a.duration_sec)}`
-                }}
-              >
-                <div>
-                  <div
-                    style={{ fontWeight: 600, fontSize: 13 }}
-                    title={a.panel_title || 'Unknown Panel'}
-                  >
-                    {(a.panel_title || 'Unknown Panel').slice(0, 40)}
-                    {(a.panel_title || '').length > 40 ? '…' : ''}
+            {(recent.data || []).map((a, i) => {
+              const isNightAlert = (() => {
+                const hour = new Date(a.time_fired).getHours();
+                return hour >= (config.nightStart || 22) || hour < (config.nightEnd || 8);
+              })();
+              
+              const isCritical = a.duration_sec > (config.falseWakeupThreshold || 120);
+              
+              return (
+                <div
+                  key={a.id || a.incident_id || i}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: 12,
+                    background: isCritical && isNightAlert ? '#FEF2F2' : '#F9FAFB',
+                    borderRadius: 6,
+                    borderLeft: `4px solid ${colorByDuration(a.duration_sec)}`,
+                    border: isCritical && isNightAlert ? '1px solid #FCA5A5' : '1px solid #F3F4F6'
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 8, 
+                      marginBottom: 2 
+                    }}>
+                      <div
+                        style={{ 
+                          fontWeight: 600, 
+                          fontSize: 13,
+                          flex: 1,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}
+                        title={a.panel_title || 'Unknown Panel'}
+                      >
+                        {a.panel_title || 'Unknown Panel'}
+                      </div>
+                      {isNightAlert && (
+                        <Moon size={12} style={{ color: '#8B5CF6' }} />
+                      )}
+                      {isCritical && (
+                        <AlertTriangle size={12} style={{ color: '#EF4444' }} />
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#6B7280' }}>
+                      {a.application || 'N/A'} • {new Date(a.time_fired).toLocaleTimeString('en-IL', {
+                        timeZone: 'Asia/Jerusalem',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: '#6B7280' }}>
-                    {a.application || 'N/A'} • {a.time_fired || a.time_fired_il}
+                  <div style={{
+                    background: `${colorByDuration(a.duration_sec)}20`,
+                    color: colorByDuration(a.duration_sec),
+                    padding: '4px 8px',
+                    borderRadius: 12,
+                    fontSize: 11,
+                    fontWeight: 600
+                  }}>
+                    {a.duration_sec}s
                   </div>
                 </div>
-                <div style={{
-                  background: `${colorByDuration(a.duration_sec)}20`,
-                  color: colorByDuration(a.duration_sec),
-                  padding: '4px 8px',
-                  borderRadius: 12,
-                  fontSize: 11,
-                  fontWeight: 600
-                }}>
-                  {a.duration_sec}s
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {(!recent.data || !recent.data.length) && !recent.loading && (
               <div style={{ textAlign: 'center', color: '#6B7280', padding: 20 }}>
                 No alerts in last 24 hours
