@@ -1,8 +1,6 @@
 import React, { Suspense } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell, ScatterPlot, Scatter, AreaChart, Area,
-  RadialBarChart, RadialBar, ComposedChart
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, Cell,Area, ComposedChart
 } from 'recharts';
 
 import { S } from '../utils/styles';
@@ -17,7 +15,7 @@ import {MetricCard} from '../components/MetricCard';
 import {ChartCard} from '../components/ChartCard';
 import {WakeupGauge} from '../components/WakeupGauge';
 
-import { AlertTriangle, Calendar, Clock, Moon, Sun, TrendingUp, Zap, Shield, Activity, Users, Network, Target } from '../icons';
+import { AlertTriangle, Clock, Moon, Sun, TrendingUp, Shield, Network } from '../icons';
 import { Share } from 'lucide-react';
 
 const NocDashboard = () => {
@@ -59,12 +57,8 @@ const NocDashboard = () => {
   const shifts = useApiData('/stats/shift-analysis', apiParams);
   const duration = useApiData('/stats/duration-histogram', apiParams);
   const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
-  const weekend = useApiData('/stats/weekend-weekday', apiParams);
-  const recent = useApiData('/stats/recent-alerts', { hours: 24, limit: 15 });
   const panelStats = useApiData('/stats/by-panel', { ...apiParams, limit: 20 });
   const timeseries = useApiData('/stats/timeseries', apiParams);
-  
-  const patterns = useApiData('/stats/patterns', apiParams);
   const overview = useApiData('/stats/overview', apiParams);
 
   const isLoading = exec.loading || shifts.loading || duration.loading || heatmap.loading;
@@ -194,31 +188,12 @@ const NocDashboard = () => {
             </ResponsiveContainer>
           </ChartCard>
 
-          <ChartCard
-            title="Weekend vs Weekday"
-            icon={Calendar}
-            loading={weekend.loading}
-            error={weekend.error}
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={weekend.data || []}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={120}
-                  paddingAngle={5}
-                  dataKey="alert_count"
-                >
-                  {(weekend.data || []).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index === 0 ? '#3B82F6' : '#8B5CF6'} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value, name, props) => [value, props.payload.period]} />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartCard>
+          <WakeupGauge 
+            shiftData={shifts.data} 
+            loading={shifts.loading} 
+            error={shifts.error}
+            falseWakeupThreshold={config.falseWakeupThreshold || 120}
+          />
         </div>
 
         {/* Charts Row 2 - Time Analysis */}
@@ -253,12 +228,7 @@ const NocDashboard = () => {
             </ResponsiveContainer>
           </ChartCard>
 
-          <WakeupGauge 
-            shiftData={shifts.data} 
-            loading={shifts.loading} 
-            error={shifts.error}
-            falseWakeupThreshold={config.falseWakeupThreshold || 120}
-          />
+      
         </div>
 
         {/* Charts Row 3 - Trend and Pattern Analysis */}
@@ -301,11 +271,7 @@ const NocDashboard = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
-        </div>
-
-        {/* Charts Row 4 - Service and Operator Analysis */}
-        <div style={S.grid('1fr 1fr 1fr')}>
-          <ChartCard
+                 <ChartCard
             title="Top Alert Sources"
             icon={Network}
             loading={panelStats.loading}
@@ -355,150 +321,7 @@ const NocDashboard = () => {
               ))}
             </div>
           </ChartCard>
-
-          <ChartCard
-            title="Service Correlations"
-            icon={Target}
-            loading={patterns.loading}
-            error={patterns.error}
-          >
-            <div style={{
-              maxHeight: 300,
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8
-            }}>
-              {(patterns.data?.correlations || []).slice(0, 10).map((corr, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    padding: 12,
-                    background: '#F0F9FF',
-                    borderRadius: 6,
-                    border: '1px solid #BAE6FD'
-                  }}
-                >
-                  <div style={{ 
-                    fontSize: 12, 
-                    fontWeight: 600, 
-                    marginBottom: 4,
-                    color: '#0369A1'
-                  }}>
-                    {corr.application}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>
-                    {corr.panel1} ↔ {corr.panel2}
-                  </div>
-                  <div style={{ 
-                    fontSize: 10, 
-                    color: '#0369A1',
-                    fontWeight: 500
-                  }}>
-                    {corr.correlation_count} co-occurrences • Δ{corr.avg_time_diff}s avg
-                  </div>
-                </div>
-              ))}
-              {(!patterns.data?.correlations?.length) && !patterns.loading && (
-                <div style={{ textAlign: 'center', color: '#6B7280', padding: 20 }}>
-                  No correlations detected
-                </div>
-              )}
-            </div>
-          </ChartCard>
-        </div>
-
-        {/* Recent Alerts - Enhanced */}
-        <ChartCard
-          title="Recent Critical Activity (24h)"
-          icon={Clock}
-          loading={recent.loading}
-          error={recent.error}
-        >
-          <div style={{
-            maxHeight: 300,
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8
-          }}>
-            {(recent.data || []).map((a, i) => {
-              const isNightAlert = (() => {
-                const hour = new Date(a.time_fired).getHours();
-                return hour >= (config.nightStart || 22) || hour < (config.nightEnd || 8);
-              })();
-              
-              const isCritical = a.duration_sec > (config.falseWakeupThreshold || 120);
-              
-              return (
-                <div
-                  key={a.id || a.incident_id || i}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: 12,
-                    background: isCritical && isNightAlert ? '#FEF2F2' : '#F9FAFB',
-                    borderRadius: 6,
-                    borderLeft: `4px solid ${colorByDuration(a.duration_sec)}`,
-                    border: isCritical && isNightAlert ? '1px solid #FCA5A5' : '1px solid #F3F4F6'
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 8, 
-                      marginBottom: 2 
-                    }}>
-                      <div
-                        style={{ 
-                          fontWeight: 600, 
-                          fontSize: 13,
-                          flex: 1,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis'
-                        }}
-                        title={a.panel_title || 'Unknown Panel'}
-                      >
-                        {a.panel_title || 'Unknown Panel'}
-                      </div>
-                      {isNightAlert && (
-                        <Moon size={12} style={{ color: '#8B5CF6' }} />
-                      )}
-                      {isCritical && (
-                        <AlertTriangle size={12} style={{ color: '#EF4444' }} />
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#6B7280' }}>
-                      {a.application || 'N/A'} • {new Date(a.time_fired).toLocaleTimeString('en-IL', {
-                        timeZone: 'Asia/Jerusalem',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </div>
-                  </div>
-                  <div style={{
-                    background: `${colorByDuration(a.duration_sec)}20`,
-                    color: colorByDuration(a.duration_sec),
-                    padding: '4px 8px',
-                    borderRadius: 12,
-                    fontSize: 11,
-                    fontWeight: 600
-                  }}>
-                    {a.duration_sec}s
-                  </div>
-                </div>
-              );
-            })}
-            {(!recent.data || !recent.data.length) && !recent.loading && (
-              <div style={{ textAlign: 'center', color: '#6B7280', padding: 20 }}>
-                No alerts in last 24 hours
-              </div>
-            )}
-          </div>
-        </ChartCard>
+        </div>   
       </Suspense>
 
       {/* Global Loading Overlay */}

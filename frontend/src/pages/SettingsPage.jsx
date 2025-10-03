@@ -1,4 +1,4 @@
-// pages/SettingsPage.jsx — Settings page with client config management
+// pages/SettingsPage.jsx — Fixed input handling and layout
 import React, { useState, useEffect } from 'react';
 import { Settings, Save, RotateCcw, Info } from 'lucide-react';
 import { S } from '../utils/styles';
@@ -32,14 +32,12 @@ const SettingsPage = () => {
   const updateLocalConfig = (path, value) => {
     setLocalConfig(prev => {
       const keys = path.split('.');
-      const updated = JSON.parse(JSON.stringify(prev)); // Deep clone
+      const updated = JSON.parse(JSON.stringify(prev));
       let cursor = updated;
 
-      // Navigate to the parent of the target key
       for (let i = 0; i < keys.length - 1; i++) {
         const key = keys[i];
         if (!cursor[key]) {
-          // Determine if next key is array index
           const nextKey = keys[i + 1];
           const isArrayIndex = /^\d+$/.test(nextKey);
           cursor[key] = isArrayIndex ? [] : {};
@@ -47,14 +45,13 @@ const SettingsPage = () => {
         cursor = cursor[key];
       }
 
-      // Set the final value
       const lastKey = keys[keys.length - 1];
       cursor[lastKey] = value;
       return updated;
     });
   };
 
-  // Fixed input component that handles text properly
+  // Fixed input component with proper state management
   const LabeledInput = ({ 
     label, 
     value, 
@@ -65,20 +62,34 @@ const SettingsPage = () => {
     placeholder, 
     description 
   }) => {
+    const [localValue, setLocalValue] = useState(value);
+
+    useEffect(() => {
+      setLocalValue(value);
+    }, [value]);
+
     const handleChange = (e) => {
       const newValue = e.target.value;
+      setLocalValue(newValue);
+    };
+
+    const handleBlur = () => {
       if (type === 'number') {
-        // For number inputs, allow empty string during typing
-        if (newValue === '') {
-          onChange('');
-        } else {
-          const parsed = parseInt(newValue, 10);
-          if (!isNaN(parsed)) {
-            onChange(parsed);
-          }
+        const parsed = parseInt(localValue, 10);
+        if (!isNaN(parsed)) {
+          onChange(parsed);
+        } else if (localValue === '') {
+          onChange(min || 0);
+          setLocalValue(min || 0);
         }
       } else {
-        onChange(newValue);
+        onChange(localValue);
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter') {
+        e.target.blur();
       }
     };
 
@@ -93,9 +104,11 @@ const SettingsPage = () => {
           )}
         </label>
         <input
-          type={type}
-          value={value}
+          type="text"
+          value={localValue}
           onChange={handleChange}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
           min={min}
           max={max}
           placeholder={placeholder}
@@ -230,7 +243,7 @@ const SettingsPage = () => {
             Alert Thresholds
           </h3>
           
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 16, maxWidth: 400 }}>
             <LabeledInput
               label="False Wakeup Threshold"
               value={localConfig.falseWakeupThreshold}
@@ -242,7 +255,7 @@ const SettingsPage = () => {
           </div>
         </div>
 
-        {/* Duration Bands */}
+        {/* Duration Bands - Fixed Layout */}
         <div style={S.card()}>
           <h3 style={{ 
             display: 'flex', 
@@ -258,7 +271,7 @@ const SettingsPage = () => {
           <div style={{ 
             display: 'grid', 
             gap: 16, 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' 
           }}>
             {(localConfig.bands || []).map((band, idx) => (
               <div key={band.key || idx} style={{ 

@@ -56,26 +56,6 @@ router.get('/overview', validateQuery(statsSchema), async (req, res) => {
 
 // ================== TEMPORAL ANALYSIS ==================
 
-// Weekend vs Weekday comparison
-router.get('/weekend-weekday', validateQuery(statsSchema), async (req, res) => {
-  try {
-    const params = req.validatedQuery;
-    const cacheKey = `weekend-weekday:${JSON.stringify(params)}`;
-    
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, meta: { ...cached.meta, cached: true } });
-    }
-
-    const result = await alertService.getWeekendWeekdayStats(params);
-    cache.set(cacheKey, result);
-    
-    res.json(result);
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
 // Hourly distribution heatmap
 router.get('/hourly-heatmap', validateQuery(statsSchema), async (req, res) => {
   try {
@@ -88,26 +68,6 @@ router.get('/hourly-heatmap', validateQuery(statsSchema), async (req, res) => {
     }
 
     const result = await alertService.getHourlyHeatmap(params);
-    cache.set(cacheKey, result);
-    
-    res.json(result);
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
-// Hourly breakdown with detailed metrics
-router.get('/hourly', validateQuery(statsSchema), async (req, res) => {
-  try {
-    const params = req.validatedQuery;
-    const cacheKey = `hourly:${JSON.stringify(params)}`;
-    
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, meta: { ...cached.meta, cached: true } });
-    }
-
-    const result = await alertService.getHourlyStats(params);
     cache.set(cacheKey, result);
     
     res.json(result);
@@ -192,28 +152,6 @@ router.get('/by-panel', validateQuery(panelStatsSchema), async (req, res) => {
     }
 
     const result = await alertService.getPanelStats(params);
-    cache.set(cacheKey, result);
-    
-    res.json(result);
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
-// ================== PATTERN ANALYSIS ==================
-
-// Storm  and correlations
-router.get('/patterns', validateQuery(statsSchema), async (req, res) => {
-  try {
-    const params = req.validatedQuery;
-    const cacheKey = `patterns:${JSON.stringify(params)}`;
-    
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, meta: { ...cached.meta, cached: true } });
-    }
-
-    const result = await alertService.getPatternAnalysis(params);
     cache.set(cacheKey, result);
     
     res.json(result);

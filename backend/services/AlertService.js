@@ -71,27 +71,7 @@ class AlertService {
     return ResponseFormatter.success(transformedData, pagination);
   }
 
-  async getRecentAlerts(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    
-    request.input('hours', this._getSqlType('Int'), params.hours);
-    request.input('limit', this._getSqlType('Int'), params.limit);
 
-    const sqlText = `
-      SELECT TOP (@limit)
-        incident_id, panel_title, application, node_name, network, object, operator,
-        time_fired, time_resolved, duration_sec, message, key_field, history_id
-      FROM dbo.historicalAlerts
-      WHERE time_fired >= DATEADD(HOUR, -@hours, GETUTCDATE())
-      ORDER BY time_fired DESC
-    `;
-
-    const result = await request.query(sqlText);
-    const transformedData = result.recordset.map(r => this._transformAlertRecord(r));
-    
-    return ResponseFormatter.success(transformedData);
-  }
 
   async getExecutiveKPIs(params) {
     const pool = this.getPool();
@@ -126,11 +106,6 @@ class AlertService {
     return ResponseFormatter.success(kpis);
   }
 
-  async getWeekendWeekdayStats(params) {
-    const data = await this._getBasicAlertData(params);
-    const stats = this._computeWeekendWeekdayStats(data.recordset, params);
-    return ResponseFormatter.success(stats);
-  }
 
 
   async getDurationHistogram(params) {
@@ -283,80 +258,6 @@ class AlertService {
 
     const result = await request.query(sqlText);
     return ResponseFormatter.success(result.recordset);
-  }
-
-  async getPatternAnalysis(params) {
-    const pool = this.getPool();
-    
-    // Get storm patterns
-    const stormRequest = pool.request();
-    const stormRange = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const stormWhere = this._buildDateWhereClause(stormRequest, stormRange);
-
-    const stormSql = `
-      WITH Base AS (
-        SELECT application, panel_title, time_fired
-        FROM dbo.historicalAlerts
-        ${stormWhere.length ? 'WHERE ' + stormWhere.join(' AND ') : ''}
-      ),
-      Storms AS (
-        SELECT 
-          b.application,
-          b.panel_title,
-          b.time_fired,
-          (SELECT COUNT(*) 
-           FROM dbo.historicalAlerts x
-           WHERE x.application = b.application
-             AND x.time_fired BETWEEN DATEADD(MINUTE, -10, b.time_fired) AND b.time_fired
-          ) AS alerts_in_window
-        FROM Base b
-      )
-      SELECT TOP 100 *
-      FROM Storms
-      WHERE alerts_in_window >= 5
-      ORDER BY time_fired DESC
-    `;
-
-    // Get correlations
-    const corrRequest = pool.request();
-    const corrRange = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const corrWhere = [];
-    if (corrRange?.start) {
-      corrRequest.input('cStart', this._getSqlType('DateTime2'), corrRange.start);
-      corrWhere.push('a1.time_fired >= @cStart AND a2.time_fired >= @cStart');
-    }
-    if (corrRange?.end) {
-      corrRequest.input('cEnd', this._getSqlType('DateTime2'), corrRange.end);
-      corrWhere.push('a1.time_fired <= @cEnd AND a2.time_fired <= @cEnd');
-    }
-
-    const correlationsSql = `
-      SELECT TOP 20
-        a1.application,
-        a1.panel_title as panel1,
-        a2.panel_title as panel2,
-        COUNT(*) as correlation_count,
-        ROUND(AVG(CAST(ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) AS FLOAT)), 2) as avg_time_diff
-      FROM dbo.historicalAlerts a1
-      JOIN dbo.historicalAlerts a2 
-        ON a1.application = a2.application
-       AND a1.incident_id < a2.incident_id
-       AND ABS(DATEDIFF(SECOND, a1.time_fired, a2.time_fired)) <= 300
-      ${corrWhere.length ? 'WHERE ' + corrWhere.join(' AND ') : ''}
-      GROUP BY a1.application, a1.panel_title, a2.panel_title
-      HAVING COUNT(*) >= 3
-      ORDER BY correlation_count DESC
-    `;
-
-    const [stormResult, corrResult] = await Promise.all([
-      stormRequest.query(stormSql),
-      corrRequest.query(correlationsSql),
-    ]);
-
-    return ResponseFormatter.success({
-      storms: stormResult.recordset,
-      correlations: corrResult.recordset
-    });
   }
 
   // ================== Helper Methods ==================
@@ -578,41 +479,6 @@ class AlertService {
         day_count: stats.day,
         night_count: stats.night,
       }));
-  }
-  
-  _computeWeekendWeekdayStats(records, params) {
-    const {
-      day_start = 8, day_end = 22,
-      night_start = 22, night_end = 8,
-      dur_short_max = 30, dur_medium_max = 300
-    } = params;
-
-    const acc = {
-      Weekend: { alert_count: 0, sum: 0, short_alerts: 0, long_alerts: 0, night_alerts: 0 },
-      Weekdays: { alert_count: 0, sum: 0, short_alerts: 0, long_alerts: 0, night_alerts: 0 },
-    };
-
-    for (const record of records) {
-      const weekday = TimeUtils.getILWeekday(record.time_fired);
-      const bucket = (weekday === 5 || weekday === 6) ? 'Weekend' : 'Weekdays'; // Fri/Sat
-      const hour = TimeUtils.getILHour(record.time_fired);
-      
-      acc[bucket].alert_count++;
-      acc[bucket].sum += record.duration_sec;
-      
-      if (record.duration_sec <= dur_short_max) acc[bucket].short_alerts++;
-      if (record.duration_sec > dur_medium_max) acc[bucket].long_alerts++;
-      if (TimeUtils.isNightHour(hour, night_start, night_end)) acc[bucket].night_alerts++;
-    }
-
-    return Object.entries(acc).map(([period, stats]) => ({
-      period,
-      alert_count: stats.alert_count,
-      avg_duration: stats.alert_count ? +(stats.sum / stats.alert_count).toFixed(2) : 0,
-      short_alerts: stats.short_alerts,
-      long_alerts: stats.long_alerts,
-      night_alerts: stats.night_alerts,
-    })).sort((a, b) => a.period === 'Weekend' ? -1 : 1);
   }
 
   _computeShiftAnalysis(records, params) {
