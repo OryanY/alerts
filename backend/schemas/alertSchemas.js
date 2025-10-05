@@ -5,13 +5,11 @@ const Joi = require('joi');
 const baseSchema = {
   start_date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/).optional(),
   end_date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/).optional(),
-  
   // Configuration parameters with defaults
   day_start: Joi.number().integer().min(0).max(23).default(8),
   day_end: Joi.number().integer().min(0).max(23).default(22),
   night_start: Joi.number().integer().min(0).max(23).default(22),
   night_end: Joi.number().integer().min(0).max(23).default(8),
-  
   // Duration thresholds
   dur_short_max: Joi.number().integer().min(1).default(30),
   dur_medium_max: Joi.number().integer().min(1).default(300),
@@ -34,7 +32,6 @@ const alertsSchema = Joi.object({
     'panel_title', 'application', 'node_name', 'operator'
   ).default('time_fired'),
   sort_order: Joi.string().valid('ASC', 'DESC').default('DESC'),
-  
   // Field filters
   panel_title: Joi.string().trim().max(100).optional(),
   application: Joi.string().trim().max(100).optional(),
@@ -69,6 +66,20 @@ const alertsSchema = Joi.object({
   }
   
   return value;
+});
+
+const panelResearchSchema = Joi.object({
+  start_date: Joi.string().isoDate().optional(),
+  end_date: Joi.string().isoDate().optional(),
+  panel_title: Joi.string().optional().allow(''),
+  false_wakeup_threshold: Joi.number().integer().min(1).max(3600).optional(),
+  day_start: Joi.number().integer().min(0).max(23).optional(),
+  day_end: Joi.number().integer().min(0).max(23).optional(),
+  night_start: Joi.number().integer().min(0).max(23).optional(),
+  night_end: Joi.number().integer().min(0).max(23).optional(),
+  dur_short_max: Joi.number().integer().min(1).max(3600).optional(),
+  dur_medium_max: Joi.number().integer().min(1).max(3600).optional(),
+  limit: Joi.number().integer().min(1).max(100000).optional()
 });
 
 // Schema for recent alerts endpoint
@@ -160,5 +171,6 @@ module.exports = {
   statsSchema,
   panelStatsSchema,
   timeseriesSchema,
+  panelResearchSchema,
   patternSchema
 };

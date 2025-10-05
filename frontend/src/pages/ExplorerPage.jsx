@@ -1,10 +1,9 @@
-// Fixed ExplorerPage.jsx with proper CSV export and date highlighting
 import { useMemo, useEffect, useState, useRef } from 'react';
-import { Search, Filter, Download, Share, RefreshCw, X } from 'lucide-react';
+import { Search, Filter, Download, RefreshCw, X } from 'lucide-react';
 
 import { S } from '../utils/styles';
 import { useClientConfig } from '../contexts/ClientConfigContext';
-import { useDateRangeUrl, useExplorerFilters, useShareableUrl } from '../hooks/useUrlState';
+import { useDateRangeUrl, useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 
@@ -19,10 +18,9 @@ const ExplorerPage = () => {
   const { config, getApiParams } = useClientConfig();
   const { dateRange, setDateRange, setPresetRange, selectedPreset } = useDateRangeUrl();
   const { filters, setFilters, setPage } = useExplorerFilters();
-  const { shareCurrentUrl } = useShareableUrl();
   const { colorByDuration } = useDurationBands(config);
 
-  // Fix for "today" selection - adjust end_date to avoid validation error
+  // Adjust same-day date ranges
   const adjustedDateRange = useMemo(() => {
     if (dateRange.start_date && dateRange.end_date && dateRange.start_date === dateRange.end_date) {
       return {
@@ -33,14 +31,17 @@ const ExplorerPage = () => {
     return dateRange;
   }, [dateRange]);
 
-  // Extract page from filters; debounce only the rest
+  // Extract page and debounce filters
   const rawPage = Number(filters.page) || 1;
   const { page: _omitPage, ...filtersNoPage } = filters;
 
   const [debouncedFilters, setDebouncedFilters] = useState(filtersNoPage);
   const debounceIdRef = useRef(null);
 
-  // Debounce ONLY non-page filters and reset to page 1 when they settle
+  // 👇 NEW: memoized string key for filters to satisfy ESLint
+  const filtersKey = useMemo(() => JSON.stringify(filtersNoPage), [filtersNoPage]);
+
+  // Debounce filters (except page)
   useEffect(() => {
     if (debounceIdRef.current) clearTimeout(debounceIdRef.current);
     debounceIdRef.current = setTimeout(() => {
@@ -48,15 +49,16 @@ const ExplorerPage = () => {
       setPage(1);
       debounceIdRef.current = null;
     }, DEBOUNCE_MS);
+
     return () => {
       if (debounceIdRef.current) {
         clearTimeout(debounceIdRef.current);
         debounceIdRef.current = null;
       }
     };
-  }, [JSON.stringify(filtersNoPage), setPage]);
+  }, [filtersKey, setPage, filtersNoPage]);
 
-  // If user paginates while a debounce is pending, cancel the pending reset-to-1
+  // Cancel pending debounce if user paginates
   useEffect(() => {
     if (debounceIdRef.current) {
       clearTimeout(debounceIdRef.current);
@@ -64,15 +66,13 @@ const ExplorerPage = () => {
     }
   }, [rawPage]);
 
-  // Build API params - remove client-side only filters
+  // Build API params
   const apiParams = useMemo(() => {
     const f = debouncedFilters || {};
     const normalizedSortOrder = (f.sort_order || 'desc').toString().toUpperCase();
-    
-    // Only send server-side filters
     const serverFilters = {};
     const serverSideFields = ['panel_title', 'application', 'operator', 'min_duration', 'max_duration'];
-    
+
     serverSideFields.forEach(field => {
       if (f[field] && f[field] !== '') {
         serverFilters[field] = f[field];
@@ -85,7 +85,7 @@ const ExplorerPage = () => {
       ...serverFilters,
       sort_by: f.sort_by || 'time_fired',
       sort_order: normalizedSortOrder,
-      limit: 1000,
+      limit: 1000
     };
   }, [debouncedFilters, adjustedDateRange, getApiParams]);
 
@@ -283,33 +283,22 @@ const ExplorerPage = () => {
               Export Filtered CSV ({processedAlerts.length} records)
             </button>
 
-            <button
-              onClick={shareCurrentUrl}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '8px 12px',
-                border: '1px solid #D1D5DB',
-                borderRadius: 6,
-                background: 'white',
-                cursor: 'pointer',
-                fontSize: 14
-              }}
-            >
-              <Share size={14} />
-              Share
-            </button>
           </div>
         </div>
-
-        <DateRangePicker
-          dateRange={dateRange}
-          onChange={setDateRange}
-          setPresetRange={setPresetRange}
-        />
-      </div>
-
+        <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 20,
+              position: 'relative'
+            }}>
+                <DateRangePicker
+                  dateRange={dateRange}
+                  onChange={setDateRange}
+                  setPresetRange={setPresetRange}
+                />
+          </div>
+        </div>
       {/* Rest of the component remains the same... */}
       {/* Filters */}
       <div style={{ ...S.card(), marginBottom: 20 }}>

@@ -21,6 +21,14 @@ class TimeUtils {
   }
 
   /**
+   * Get IL date string (YYYY-MM-DD) from DB UTC Date (DST-safe)
+   */
+  static getILDate(utcDate) {
+    if (!utcDate) return null;
+    return DateTime.fromJSDate(utcDate, { zone: 'utc' }).setZone(IL_ZONE).toISODate();
+  }
+
+  /**
    * Get IL weekday (1=Mon .. 7=Sun) from UTC Date
    */
   static getILWeekday(utcDate) {
@@ -29,19 +37,24 @@ class TimeUtils {
   }
 
   /**
-   * Parse IL input string → UTC Date (endOfDay=true sets 23:59:59 IL)
+   * Parse IL input string → UTC Date
+   * Accepts: YYYY-MM-DD, YYYY-MM-DDTHH:mm:ss, or full ISO
+   * For date-only strings: sets to start of day in IL time, then converts to UTC
    */
   static parseILToUTC(ilDateString, endOfDay = false) {
     if (!ilDateString) throw new Error('Date is required');
 
-    // Allow either YYYY-MM-DD or full ISO
-    const isYMD = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(ilDateString);
     let dt;
     
-    if (isYMD) {
+    // Check if it's a date-only string (YYYY-MM-DD)
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(ilDateString);
+    
+    if (isDateOnly) {
+      // Parse as IL date and set to start/end of day
       dt = DateTime.fromISO(ilDateString, { zone: IL_ZONE });
       dt = endOfDay ? dt.endOf('day') : dt.startOf('day');
     } else {
+      // Parse as full datetime in IL timezone
       dt = DateTime.fromISO(ilDateString, { zone: IL_ZONE });
     }
 
@@ -54,6 +67,7 @@ class TimeUtils {
 
   /**
    * Validate start/end IL-input → { start: UTC Date|null, end: UTC Date|null }
+   * Always sets start to beginning of day and end to end of day in IL time
    */
   static validateDateRange(startDate, endDate) {
     if (!startDate && !endDate) return null;
@@ -72,6 +86,7 @@ class TimeUtils {
    * Check if hour is during night shift (handles midnight wraparound)
    */
   static isNightHour(hour, nightStart, nightEnd) {
+    if (hour === null) return false;
     return nightStart <= nightEnd
       ? (hour >= nightStart && hour < nightEnd)
       : (hour >= nightStart || hour < nightEnd);
@@ -81,21 +96,35 @@ class TimeUtils {
    * Check if hour is during day shift
    */
   static isDayHour(hour, dayStart, dayEnd) {
+    if (hour === null) return false;
     return hour >= dayStart && hour < dayEnd;
   }
 
   /**
-   * Get current IL date as ISO string
+   * Get current IL date as ISO string (YYYY-MM-DD)
    */
   static getCurrentILDate() {
     return DateTime.now().setZone(IL_ZONE).toISODate();
   }
 
   /**
-   * Get current IL time as ISO string
+   * Get current IL time as full ISO string
    */
   static getCurrentILTime() {
     return DateTime.now().setZone(IL_ZONE).toISO();
+  }
+
+  /**
+   * Get timezone display info for UI
+   */
+  static getTimezoneInfo() {
+    const now = DateTime.now().setZone(IL_ZONE);
+    return {
+      zone: IL_ZONE,
+      offset: now.offsetNameShort, // e.g., "GMT+2" or "GMT+3"
+      isDST: now.isInDST,
+      displayName: 'Israel Time'
+    };
   }
 }
 

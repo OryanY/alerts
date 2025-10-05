@@ -1,6 +1,7 @@
 import React from 'react';
 import { S } from '../utils/styles';
 import { TrendingUp, TrendingDown } from '../icons';
+
 export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 'blue' }) => {
   const colors = {
     blue: '#3B82F6',
@@ -16,21 +17,25 @@ export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 
     <div style={S.card()}>
       <div style={{
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 16
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        gap: 12
       }}>
+        {/* Icon centered at top */}
         <div style={{
-          width: 40,
-          height: 40,
+          width: 48,
+          height: 48,
           borderRadius: 8,
           background: `${c}20`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'
         }}>
-          <Icon size={20} style={{ color: c }} />
+          <Icon size={24} style={{ color: c }} />
         </div>
+
+        {/* Trend indicator (if present) */}
         {typeof trend === 'number' && (
           <div style={{
             display: 'flex',
@@ -44,16 +49,37 @@ export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 
             </span>
           </div>
         )}
-      </div>
-      <div>
-        <h3 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 4px 0' }}>
+
+        {/* Value (large number) */}
+        <h3 style={{ 
+          fontSize: 28, 
+          fontWeight: 700, 
+          margin: 0,
+          color: '#111827'
+        }}>
           {value}
         </h3>
-        <p style={{ fontSize: 14, fontWeight: 500, color: '#111827', margin: '0 0 4px 0' }}>
+
+        {/* Title */}
+        <p style={{ 
+          fontSize: 14, 
+          fontWeight: 600, 
+          color: '#111827', 
+          margin: 0,
+          lineHeight: 1.3
+        }}>
           {title}
         </p>
+
+        {/* Subtitle */}
         {subtitle && (
-          <p style={{ fontSize: 12, color: '#6B7280', margin: 0 }}>
+          <p style={{ 
+            fontSize: 12, 
+            color: '#6B7280', 
+            margin: 0,
+            lineHeight: 1.4,
+            maxWidth: '90%'
+          }}>
             {subtitle}
           </p>
         )}

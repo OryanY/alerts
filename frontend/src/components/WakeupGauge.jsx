@@ -35,13 +35,15 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
       <h3 style={{
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
         fontSize: 16,
         fontWeight: 600,
-        margin: '0 0 20px 0'
+        margin: '0 0 20px 0',
+        position: 'relative'
       }}>
-        <Moon size={16} style={{ color: '#8B5CF6' }} />
-        Night Wakeup Analysis
+        <Moon size={16} style={{ color: '#8B5CF6', position: 'absolute', right: 'calc(50% + 80px)' }} />
+        <span>התראות שווא בלילה</span>
       </h3>
       
       <div style={{
@@ -79,18 +81,18 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
             textAlign: 'center'
           }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>
-              {falseWakeups} False / {total}
+              {falseWakeups}  / {total} שקריות
             </div>
             <div style={{ fontSize: 12, color: '#6B7280' }}>
-              False Rate: {nightShift?.false_wakeup_rate || 0}%
+              אחוז התראות שקריות: {nightShift?.false_wakeup_rate || 0}%
             </div>
           </div>
         </div>
       </div>
       
       <div style={{ textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
-        <span style={{ marginRight: 12 }}>True: {trueAlerts}</span>
-        <span>False: {falseWakeups}</span>
+        <span style={{ marginRight: 12 }}> אמת: {trueAlerts} </span>
+        <span>שקרי: {falseWakeups}</span>
       </div>
     </div>
   );

@@ -134,55 +134,6 @@ export const useExplorerFilters = () => {
   return { filters, setFilters, setPage, clearFilters };
 };
 
-// Hook for generating shareable URLs
-export const useShareableUrl = () => {
-  const navigate = useNavigate();
-  
-  const generateShareUrl = useCallback((path, params = {}) => {
-    const url = new URL(window.location.origin + path);
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== '' && value !== null && value !== undefined) {
-        url.searchParams.set(key, String(value));
-      }
-    });
-    return url.toString();
-  }, []);
-
-  const shareCurrentUrl = useCallback(async () => {
-    const url = window.location.href;
-    
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Dashboard',
-          url: url
-        });
-      } catch (e) {
-        // Fallback to clipboard
-        await navigator.clipboard.writeText(url);
-        // You could show a toast notification here
-      }
-    } else {
-      await navigator.clipboard.writeText(url);
-      // You could show a toast notification here
-    }
-  }, []);
-
-  const navigateWithParams = useCallback((path, params = {}) => {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== '' && value !== null && value !== undefined) {
-        searchParams.set(key, String(value));
-      }
-    });
-    
-    const search = searchParams.toString();
-    navigate(path + (search ? `?${search}` : ''));
-  }, [navigate]);
-
-  return { generateShareUrl, shareCurrentUrl, navigateWithParams };
-};
-
 // Hook for managing pagination with URL state
 export const usePagination = (totalItems, itemsPerPage = 50) => {
   const [searchParams, setSearchParams] = useSearchParams();

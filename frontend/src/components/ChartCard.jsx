@@ -1,6 +1,7 @@
 import { S } from '../utils/styles';
 import { AlertTriangle } from '../icons';
 import { LoadingSkeleton } from './LoadingSkeleton';
+
 export const ChartCard = ({ title, icon: Icon, loading, error, children, height = 300, legend }) => {
   if (error) {
     return (
@@ -44,6 +45,7 @@ export const ChartCard = ({ title, icon: Icon, loading, error, children, height 
       <h3 style={{
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
         fontSize: 16,
         fontWeight: 600,
@@ -51,7 +53,11 @@ export const ChartCard = ({ title, icon: Icon, loading, error, children, height 
       }}>
         {Icon && <Icon size={16} />} {title}
       </h3>
-      {legend}
+      {legend && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+          {legend}
+        </div>
+      )}
       <div style={{ width: '100%', height }}>
         {children}
       </div>

@@ -6,7 +6,8 @@ const { cache } = require('../utils/cache');
 const { 
   statsSchema, 
   panelStatsSchema, 
-  timeseriesSchema 
+  timeseriesSchema,
+  panelResearchSchema,
 } = require('../schemas/alertSchemas');
 const AlertService = require('../services/AlertService');
 const router = express.Router();
@@ -152,6 +153,82 @@ router.get('/by-panel', validateQuery(panelStatsSchema), async (req, res) => {
     }
 
     const result = await alertService.getPanelStats(params);
+    cache.set(cacheKey, result);
+    
+    res.json(result);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// Get list of all panels
+router.get('/panels', validateQuery(panelResearchSchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    const cacheKey = `panels:${JSON.stringify(params)}`;
+    
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json({ ...cached, meta: { ...cached.meta, cached: true } });
+    }
+
+    const result = await alertService.getPanelList(params);
+    cache.set(cacheKey, result);
+    
+    res.json(result);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// Get detailed panel analysis
+router.get('/panel-analysis', validateQuery(panelResearchSchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    
+    if (!params.panel_title) {
+      return res.status(400).json({
+        success: false,
+        error: 'panel_title query parameter is required'
+      });
+    }
+    
+    const cacheKey = `panel-analysis:${JSON.stringify(params)}`;
+    
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json({ ...cached, meta: { ...cached.meta, cached: true } });
+    }
+
+    const result = await alertService.getPanelAnalysis(params);
+    cache.set(cacheKey, result);
+    
+    res.json(result);
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// Get alert message breakdown for a panel
+router.get('/panel-messages', validateQuery(statsSchema), async (req, res) => {
+  try {
+    const params = req.validatedQuery;
+    
+    if (!params.panel_title) {
+      return res.status(400).json({
+        success: false,
+        error: 'panel_title query parameter is required'
+      });
+    }
+    
+    const cacheKey = `panel-messages:${JSON.stringify(params)}`;
+    
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json({ ...cached, meta: { ...cached.meta, cached: true } });
+    }
+
+    const result = await alertService.getAlertMessageBreakdown(params);
     cache.set(cacheKey, result);
     
     res.json(result);

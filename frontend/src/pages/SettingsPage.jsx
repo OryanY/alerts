@@ -1,9 +1,10 @@
-// pages/SettingsPage.jsx — Fixed input handling and layout
-import React, { useState, useEffect } from 'react';
+// pages/SettingsPage.jsx — Hebrew text with RTL direction
+import { useState, useEffect } from 'react';
 import { Settings, Save, RotateCcw, Info } from 'lucide-react';
 import { S } from '../utils/styles';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 import { useClientConfig } from '../contexts/ClientConfigContext';
+import LabeledInput from '../components/LabeledInput';
 
 const SettingsPage = () => {
   const { config, updateConfig, resetConfig } = useClientConfig();
@@ -51,72 +52,6 @@ const SettingsPage = () => {
     });
   };
 
-  // Fixed input component with proper state management
-  const LabeledInput = ({ 
-    label, 
-    value, 
-    onChange, 
-    type = 'number', 
-    min, 
-    max, 
-    placeholder, 
-    description 
-  }) => {
-    const [localValue, setLocalValue] = useState(value);
-
-    useEffect(() => {
-      setLocalValue(value);
-    }, [value]);
-
-    const handleChange = (e) => {
-      const newValue = e.target.value;
-      setLocalValue(newValue);
-    };
-
-    const handleBlur = () => {
-      if (type === 'number') {
-        const parsed = parseInt(localValue, 10);
-        if (!isNaN(parsed)) {
-          onChange(parsed);
-        } else if (localValue === '') {
-          onChange(min || 0);
-          setLocalValue(min || 0);
-        }
-      } else {
-        onChange(localValue);
-      }
-    };
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Enter') {
-        e.target.blur();
-      }
-    };
-
-    return (
-      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-        <label style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>
-          {label}
-          {description && (
-            <span style={{ fontSize: 12, fontWeight: 400, color: '#6B7280', marginLeft: 8 }}>
-              {description}
-            </span>
-          )}
-        </label>
-        <input
-          type="text"
-          value={localValue}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          min={min}
-          max={max}
-          placeholder={placeholder}
-          style={S.input}
-        />
-      </div>
-    );
-  };
 
   const ColorInput = ({ label, value, onChange }) => (
     <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
@@ -142,13 +77,13 @@ const SettingsPage = () => {
   );
 
   return (
-    <div>
+    <div style={{ direction: 'rtl' }}>
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 8px 0' }}>
-          Dashboard Settings
+          הגדרות לוח בקרה
         </h2>
         <p style={{ fontSize: 14, color: '#6B7280', margin: 0 }}>
-          Configure thresholds, shifts, and display preferences for the dashboard.
+          הגדר ספים, משמרות והעדפות תצוגה עבור לוח הבקרה.
         </p>
       </div>
 
@@ -161,10 +96,10 @@ const SettingsPage = () => {
             gap: 8, 
             fontSize: 18, 
             fontWeight: 600, 
-            margin: '0 0 16px 0' 
+            margin: '0 0 16px 0'
           }}>
             <Settings size={18} />
-            Shift Configuration
+            הגדרות משמרות
           </h3>
           
           <div style={{ 
@@ -173,40 +108,36 @@ const SettingsPage = () => {
             gap: 16 
           }}>
             <LabeledInput
-              label="Day Shift Start"
+              label="תחילת משמרת יום"
               value={localConfig.dayStart}
               onChange={(value) => updateLocalConfig('dayStart', value)}
               type="number"
               min={0}
               max={23}
-              description="Hour when day shift begins (0-23)"
             />
             <LabeledInput
-              label="Day Shift End"
+              label="סיום משמרת יום"
               value={localConfig.dayEnd}
               onChange={(value) => updateLocalConfig('dayEnd', value)}
               type="number"
               min={0}
               max={23}
-              description="Hour when day shift ends (0-23)"
             />
             <LabeledInput
-              label="Night Shift Start"
+              label="תחילת משמרת לילה"
               value={localConfig.nightStart}
               onChange={(value) => updateLocalConfig('nightStart', value)}
               type="number"
               min={0}
               max={23}
-              description="Hour when night shift begins (0-23)"
             />
             <LabeledInput
-              label="Night Shift End"
+              label="סיום משמרת לילה"
               value={localConfig.nightEnd}
               onChange={(value) => updateLocalConfig('nightEnd', value)}
               type="number"
               min={0}
               max={23}
-              description="Hour when night shift ends (0-23)"
             />
           </div>
 
@@ -215,17 +146,17 @@ const SettingsPage = () => {
             padding: 12, 
             background: '#EBF8FF', 
             borderRadius: 6, 
-            border: '1px solid #BFDBFE' 
+            border: '1px solid #BFDBFE'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <Info size={16} style={{ color: '#2563EB' }} />
               <span style={{ fontSize: 14, fontWeight: 600, color: '#1E40AF' }}>
-                Current Schedule
+                לוח זמנים נוכחי
               </span>
             </div>
             <div style={{ fontSize: 13, color: '#1E40AF' }}>
-              Day: {String(localConfig.dayStart || 0).padStart(2, '0')}:00 - {String(localConfig.dayEnd || 0).padStart(2, '0')}:00 • 
-              Night: {String(localConfig.nightStart || 0).padStart(2, '0')}:00 - {String(localConfig.nightEnd || 0).padStart(2, '0')}:00
+              יום: {String(localConfig.dayStart || 0).padStart(2, '0')}:00 - {String(localConfig.dayEnd || 0).padStart(2, '0')}:00 • 
+              לילה: {String(localConfig.nightStart || 0).padStart(2, '0')}:00 - {String(localConfig.nightEnd || 0).padStart(2, '0')}:00
             </div>
           </div>
         </div>
@@ -238,19 +169,19 @@ const SettingsPage = () => {
             gap: 8, 
             fontSize: 18, 
             fontWeight: 600, 
-            margin: '0 0 16px 0' 
+            margin: '0 0 16px 0'
           }}>
-            Alert Thresholds
+            ספי התראות
           </h3>
           
-          <div style={{ marginBottom: 16, maxWidth: 400 }}>
+          <div style={{ marginBottom: 16, maxWidth: 500 }}>
             <LabeledInput
-              label="False Wakeup Threshold"
+              label=" סף התראות שווא בשניות"
               value={localConfig.falseWakeupThreshold}
               onChange={(value) => updateLocalConfig('falseWakeupThreshold', value)}
               type="number"
               min={0}
-              description="Night alerts ≤ this duration (seconds) are considered false wakeups"
+              description=" התראות לילה הקטנות/שוות למשך זה נחשבות להתראות שווא"
             />
           </div>
         </div>
@@ -263,9 +194,9 @@ const SettingsPage = () => {
             gap: 8, 
             fontSize: 18, 
             fontWeight: 600, 
-            margin: '0 0 16px 0' 
+            margin: '0 0 16px 0'
           }}>
-            Duration Categories
+            קטגוריות משך זמן
           </h3>
           
           <div style={{ 
@@ -284,7 +215,7 @@ const SettingsPage = () => {
                   display: 'flex', 
                   alignItems: 'center', 
                   gap: 8, 
-                  marginBottom: 12 
+                  marginBottom: 12
                 }}>
                   <div style={{ 
                     width: 16, 
@@ -293,13 +224,13 @@ const SettingsPage = () => {
                     background: band.color || '#000000' 
                   }} />
                   <span style={{ fontWeight: 600, color: band.color || '#000000' }}>
-                    {band.label || 'Unnamed'}
+                    {band.label || 'ללא שם'}
                   </span>
                 </div>
                 
                 <div style={{ display: 'grid', gap: 12 }}>
                   <LabeledInput
-                    label="Label"
+                    label="תווית"
                     type="text"
                     value={band.label || ''}
                     onChange={(value) => updateLocalConfig(`bands.${idx}.label`, value)}
@@ -307,14 +238,14 @@ const SettingsPage = () => {
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <LabeledInput
-                      label="Min (seconds)"
+                      label="מינימום (שניות)"
                       value={band.min}
                       onChange={(value) => updateLocalConfig(`bands.${idx}.min`, value)}
                       type="number"
                       min={0}
                     />
                     <LabeledInput
-                      label="Max (seconds)"
+                      label="מקסימום (שניות)"
                       value={band.max}
                       onChange={(value) => updateLocalConfig(`bands.${idx}.max`, value)}
                       type="number"
@@ -323,7 +254,7 @@ const SettingsPage = () => {
                   </div>
                   
                   <ColorInput
-                    label="Color"
+                    label="צבע"
                     value={band.color || '#000000'}
                     onChange={(value) => updateLocalConfig(`bands.${idx}.color`, value)}
                   />
@@ -337,12 +268,12 @@ const SettingsPage = () => {
             padding: 12, 
             background: '#FEF3C7', 
             borderRadius: 6, 
-            border: '1px solid #FDE68A' 
+            border: '1px solid #FDE68A'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <Info size={16} style={{ color: '#D97706' }} />
               <span style={{ fontSize: 14, fontWeight: 600, color: '#92400E' }}>
-                Duration Band Preview
+                תצוגה מקדימה של טווחי משך
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
@@ -359,7 +290,7 @@ const SettingsPage = () => {
                   fontSize: 12
                 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: band.color || '#000000' }} />
-                  {band.label} ({band.min}-{band.max === 1e9 ? '∞' : band.max}s)
+                  {band.label} ({band.min}-{band.max === 1e9 ? '∞' : band.max}ש')
                 </span>
               ))}
             </div>
@@ -371,14 +302,14 @@ const SettingsPage = () => {
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between', 
-            alignItems: 'center' 
+            alignItems: 'center'
           }}>
             <div>
               <h3 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 4px 0' }}>
-                Actions
+                פעולות
               </h3>
               <p style={{ fontSize: 14, color: '#6B7280', margin: 0 }}>
-                Save your changes or reset to default configuration
+                שמור את השינויים שלך או אפס להגדרות ברירת מחדל
               </p>
             </div>
             
@@ -400,7 +331,7 @@ const SettingsPage = () => {
                 }}
               >
                 <RotateCcw size={16} />
-                Reset to Defaults
+                אפס לברירת מחדל
               </button>
               
               <button
@@ -421,7 +352,7 @@ const SettingsPage = () => {
                 }}
               >
                 <Save size={16} />
-                {hasUnsavedChanges ? 'Save Changes' : 'No Changes'}
+                {hasUnsavedChanges ? 'שמור שינויים' : 'אין שינויים'}
               </button>
             </div>
           </div>
@@ -432,10 +363,10 @@ const SettingsPage = () => {
               padding: 12, 
               background: '#FEF2F2', 
               borderRadius: 6, 
-              border: '1px solid #FCA5A5' 
+              border: '1px solid #FCA5A5'
             }}>
               <div style={{ fontSize: 14, color: '#991B1B' }}>
-                You have unsaved changes. Click "Save Changes" to apply them to the dashboard.
+                יש לך שינויים שלא נשמרו. לחץ על "שמור שינויים" כדי להחיל אותם על לוח הבקרה.
               </div>
             </div>
           )}

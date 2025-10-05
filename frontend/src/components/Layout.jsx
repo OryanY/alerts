@@ -1,11 +1,12 @@
 // components/Layout.jsx — Main layout with navigation
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Eye, Settings } from 'lucide-react';
+import { AlertTriangle, BarChart3, Eye, Settings,FileText } from 'lucide-react';
 import { S } from '../utils/styles';
 
 const navigationItems = [
   { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { path: '/explorer',  label: 'Explorer',  icon: Eye },
+  { path: '/research', label: 'Panel Research', icon: FileText },
   { path: '/settings',  label: 'Settings',  icon: Settings },
   { path: '/incident',  label: 'Incident Managment',  icon: AlertTriangle },
 

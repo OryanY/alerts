@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, Cell,Area, ComposedChart
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, Cell, Area, ComposedChart
 } from 'recharts';
 
 import { S } from '../utils/styles';
@@ -8,7 +8,7 @@ import { S } from '../utils/styles';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { useClientConfig } from '../contexts/ClientConfigContext'; 
-import { useDateRangeUrl, useShareableUrl } from '../hooks/useUrlState';
+import { useDateRangeUrl } from '../hooks/useUrlState';
 import {LoadingSpinner} from '../components/LoadingSpinner';
 import {DateRangePicker} from '../components/DateRangePicker';
 import {MetricCard} from '../components/MetricCard';
@@ -16,13 +16,11 @@ import {ChartCard} from '../components/ChartCard';
 import {WakeupGauge} from '../components/WakeupGauge';
 
 import { AlertTriangle, Clock, Moon, Sun, TrendingUp, Shield, Network } from '../icons';
-import { Share } from 'lucide-react';
 
 const NocDashboard = () => {
   const { config, getApiParams } = useClientConfig();
   const { dateRange, setDateRange, setPresetRange, selectedPreset } = useDateRangeUrl();
-  const { shareCurrentUrl } = useShareableUrl();
-  const { colorByDuration, Legend } = useDurationBands(config);
+  const { Legend } = useDurationBands(config);
 
   // Fix for "today" selection - adjust end_date to avoid validation error
   const adjustedDateRange = React.useMemo(() => {
@@ -69,8 +67,9 @@ const NocDashboard = () => {
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 20
+        justifyContent: 'center',
+        marginBottom: 20,
+        position: 'relative'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <DateRangePicker
@@ -92,64 +91,42 @@ const NocDashboard = () => {
             </span>
           )}
         </div>
-        
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={shareCurrentUrl}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 12px',
-              border: '1px solid #D1D5DB',
-              borderRadius: 6,
-              background: 'white',
-              cursor: 'pointer',
-              fontSize: 14
-            }}
-            title="Share current view"
-          >
-            <Share size={14} />
-            Share
-          </button>
-        </div>
+  
       </div>
 
       <Suspense fallback={<LoadingSpinner />}>
         {/* Enhanced KPI Cards */}
-        <div style={S.grid('repeat(auto-fit, minmax(280px, 1fr))')}>
-          <MetricCard
-            title="Total Alerts"
+            <div style={{ ...S.grid('repeat(auto-fit, minmax(200px, 1fr))'), direction: "rtl" }}>
+         <MetricCard
+            title="סך כל ההתראות"
             value={exec.data?.total_alerts ?? '—'}
-            subtitle="All alerts in selected period"
             icon={AlertTriangle}
             color="orange"
           />
           <MetricCard
-            title="Signal Ratio"
+            title="יחס התראות לפי זמנים"
             value={`${exec.data?.signal_ratio ?? '—'}%`}
-            subtitle="Long vs Short duration alerts"
+            subtitle="יחס התראות ארוכות לקצרות"
             icon={TrendingUp}
             color="blue"
           />
           <MetricCard
-            title="True Night Wakeups"
+            title="התראות אמיתיות"
             value={exec.data?.true_wakeups ?? '—'}
-            subtitle={`Alerts >${config.falseWakeupThreshold || 120}s at night`}
+            subtitle={`התראות שזמנן > ${config.falseWakeupThreshold || 120} ש' בלילה`}
             icon={Moon}
             color="purple"
           />
           <MetricCard
-            title="False Wakeup Rate"
+            title="אחוז התראות שווא"
             value={`${exec.data?.false_wakeup_rate ?? '—'}%`}
-            subtitle={`Quick-resolving (≤${config.falseWakeupThreshold || 120}s) night alerts`}
+            subtitle={`התראות שזמנן ≤ ${config.falseWakeupThreshold || 120} ש' בלילה`}
             icon={Shield}
             color="red"
           />
           <MetricCard
-            title="Avg Resolution Time"
-            value={`${overview.data?.avg_duration ?? '—'}s`}
-            subtitle="Mean time to resolve alerts"
+            title="ממוצע זמן התראה"
+            value={`${overview.data?.avg_duration ?? '—'} ש'`}
             icon={Clock}
             color="green"
           />
@@ -157,21 +134,21 @@ const NocDashboard = () => {
 
         {/* Charts Row 1 - Core Operations */}
         <div style={S.grid('1fr 1fr 1fr')}>
-          <ChartCard title="Shift Distribution" icon={Sun} loading={shifts.loading} error={shifts.error}>
+          <ChartCard title="התראות בוקר לעומת לילה" icon={Sun} loading={shifts.loading} error={shifts.error}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={shifts.data || []}>
+              <BarChart data={shifts.data || []} layout="horizontal">
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="shift" />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="alert_count" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="false_wakeups" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="alert_count" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Alert Count" />
+                <Bar dataKey="false_wakeups" fill="#EF4444" radius={[4, 4, 0, 0]} name="False Wakeups" />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
 
           <ChartCard
-            title="Duration Distribution"
+            title="התפלגות משכי התראות"
             icon={Clock}
             legend={<Legend />}
             loading={duration.loading}
@@ -183,7 +160,7 @@ const NocDashboard = () => {
                 <XAxis dataKey="range" />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} name="Count" />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -199,7 +176,7 @@ const NocDashboard = () => {
         {/* Charts Row 2 - Time Analysis */}
         <div style={S.grid('2fr 1fr')}>
           <ChartCard
-            title="Hourly Alert Distribution"
+            title="פילוח התראות לפי שעות"
             icon={Clock}
             loading={heatmap.loading}
             error={heatmap.error}
@@ -211,7 +188,7 @@ const NocDashboard = () => {
                 <YAxis yAxisId="left" />
                 <YAxis yAxisId="right" orientation="right" />
                 <Tooltip />
-                <Bar yAxisId="left" dataKey="count">
+                <Bar yAxisId="left" dataKey="count" name="Count">
                   {(heatmap.data || []).map((entry, idx) => (
                     <Cell key={idx} fill={entry?.is_night ? '#8B5CF6' : '#3B82F6'} />
                   ))}
@@ -223,55 +200,13 @@ const NocDashboard = () => {
                   stroke="#F59E0B" 
                   strokeWidth={2}
                   dot={{ fill: '#F59E0B', r: 3 }}
+                  name="Avg Duration"
                 />
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
-
-      
-        </div>
-
-        {/* Charts Row 3 - Trend and Pattern Analysis */}
-        <div style={S.grid('2fr 1fr')}>
+          
           <ChartCard
-            title="Weekly Trends & Patterns"
-            icon={TrendingUp}
-            loading={timeseries.loading}
-            error={timeseries.error}
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={timeseries.data || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date_il"
-                  tickFormatter={(d) =>
-                    new Date(d).toLocaleDateString('en-IL', { month: 'short', day: 'numeric' })
-                  }
-                />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
-                <Tooltip labelFormatter={(d) => new Date(d).toLocaleDateString('en-IL')} />
-                <Area
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="alert_count"
-                  fill="#3B82F6"
-                  fillOpacity={0.3}
-                  stroke="#3B82F6"
-                  strokeWidth={2}
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="avg_duration"
-                  stroke="#10B981"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </ChartCard>
-                 <ChartCard
             title="Top Alert Sources"
             icon={Network}
             loading={panelStats.loading}
@@ -320,6 +255,56 @@ const NocDashboard = () => {
                 </div>
               ))}
             </div>
+          </ChartCard>
+        </div>
+
+        {/* Charts Row 3 - Trend and Pattern Analysis */}
+        <div style={S.grid('2fr 1fr')}>
+          <ChartCard
+            title="כמות התראות לאורך זמן + ממוצע זמן התראה"
+            icon={TrendingUp}
+            loading={timeseries.loading}
+            error={timeseries.error}
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={timeseries.data || []}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="date_il"
+                  tickFormatter={(d) =>
+                    new Date(d).toLocaleDateString('en-IL', { 
+                      timeZone: 'Asia/Jerusalem',
+                      month: 'short', 
+                      day: 'numeric' 
+                    })
+                  }
+                />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
+                <Tooltip 
+                  labelFormatter={(d) => new Date(d).toLocaleDateString('en-IL')}
+                />
+                <Area
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="alert_count"
+                  fill="#3B82F6"
+                  fillOpacity={0.3}
+                  stroke="#3B82F6"
+                  strokeWidth={2}
+                  name="Alert Count"
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="avg_duration"
+                  stroke="#10B981"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  name="Avg Duration"
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
           </ChartCard>
         </div>   
       </Suspense>

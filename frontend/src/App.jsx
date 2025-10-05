@@ -6,6 +6,7 @@ import  SettingsPage  from './pages/SettingsPage';
 import  NotFoundPage  from './pages/NotFoundPage';
 import { ClientConfigProvider } from './contexts/ClientConfigContext';
 import IncidentManagment from './pages/IncidentManagment';
+import PanelResearchPage from './pages/PanelResearchPage';
 
 
 function App() {
@@ -28,6 +29,7 @@ function App() {
             
             
             <Route path="incident" element={<IncidentManagment />} />
+            <Route path="research" element={<PanelResearchPage />} />
 
             {/* 404 */}
             <Route path="*" element={<NotFoundPage />} />

@@ -12,14 +12,11 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
-    "express-rate-limit": "^8.0.1",
     "helmet": "^7.2.0",
     "joi": "^18.0.1",
     "luxon": "^3.7.2",
-    "module-alias": "^2.2.3",
     "mongodb": "^6.19.0",
-    "mssql": "^10.0.4",
-    "sequelize": "^6.37.7"
+    "mssql": "^10.0.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
