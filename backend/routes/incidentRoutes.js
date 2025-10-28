@@ -1,4 +1,4 @@
-// routes/incidentRoutes.js - Updated with system_failure support and improved validation
+// routes/incidentRoutes.js - Updated with u_system_failure support and improved validation
 const express = require('express');
 const Joi = require('joi');
 const incidentService = require('../services/incidentService');
@@ -18,7 +18,7 @@ const alertQuerySchema = Joi.object({
   network: Joi.string().trim().max(50).optional()
 });
 
-// Updated system mapping schema with system_failure
+// Updated system mapping schema with u_system_failure
 const systemMappingSchema = Joi.object({
   grafana_name: Joi.string().required().trim(),
   service_offering: Joi.string().required().trim(),
@@ -26,7 +26,7 @@ const systemMappingSchema = Joi.object({
   u_network: Joi.string().required().trim(),
   u_impact_technology: Joi.string().required().trim(),
   assignment_group: Joi.string().required().trim(),
-  system_failure: Joi.boolean().default(false) // New mandatory field
+  u_system_failure: Joi.boolean().default(false) // New mandatory field
 }).unknown(true); // Allow additional fields
 
 // Updated incident rule schema with all possible condition fields
@@ -65,7 +65,7 @@ const incidentRuleSchema = Joi.object({
   incident_overrides: Joi.object({
     short_description: Joi.string().optional(),
     description: Joi.string().optional(),
-    system_failure: Joi.boolean().optional()
+    u_system_failure: Joi.boolean().optional()
   }).unknown(true).optional(),
   enabled: Joi.boolean().default(true),
 });

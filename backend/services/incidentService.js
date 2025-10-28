@@ -1,4 +1,4 @@
-// services/incidentService.js - Updated with system_failure support and improved logic
+// services/incidentService.js - Updated with u_system_failure support and improved logic
 const { getMongoDb } = require('../database/connection');
 const { mongoConfig } = require('../config');
 const { ObjectId } = require('mongodb');
@@ -7,98 +7,70 @@ class IncidentService {
   constructor() {
     this.systemMappingsCollection = null;
     this.incidentRulesCollection = null;
-    this.requiredFieldsCollection = null;
+
+    // ServiceNow configuration
+    this.serviceNowUrl = process.env.SERVICENOW_URL;
+    this.serviceNowUsername = process.env.SERVICENOW_USERNAME;
+    this.serviceNowPassword = process.env.SERVICENOW_PASSWORD;
   }
 
   async initialize() {
     const db = getMongoDb();
     this.systemMappingsCollection = db.collection(mongoConfig.collections.systemMappings);
     this.incidentRulesCollection = db.collection('incident_rules');
-    this.requiredFieldsCollection = db.collection('service_offering_required_fields');
   }
 
-  // ================== REQUIRED FIELDS MANAGEMENT ==================
-
-  async getRequiredFieldsForServiceOffering(serviceOffering) {
-    // Base required fields including the new system_failure
-    const baseRequired = [
-      'grafana_name', 
-      'service_offering', 
-      'business_service', 
-      'u_network', 
-      'assignment_group',
-      'system_failure' // New mandatory field
-    ];
-    
-    if (!this.requiredFieldsCollection) await this.initialize();
+   async _sendToServiceNow(incidentData) {
+    if (!this.serviceNowEnabled || !this.serviceNowUrl) {
+      console.log('ServiceNow integration disabled or not configured');
+      return { 
+        success: false, 
+        message: 'ServiceNow integration disabled' 
+      };
+    }
 
     try {
-      const doc = await this.requiredFieldsCollection.findOne({ service_offering: serviceOffering });
-      const additionalFromStore = Array.isArray(doc?.fields) ? doc.fields : [];
-
-      // Get fields from existing mappings with this service offering
-      const mappings = await this.systemMappingsCollection
-        .find({ service_offering: serviceOffering })
-        .toArray();
-
-      const mappingFields = new Set();
-      mappings.forEach(mapping => {
-        Object.keys(mapping || {}).forEach(key => {
-          if (!['_id', 'created_at', 'updated_at'].includes(key)) {
-            mappingFields.add(key);
-          }
-        });
+      console.log('Sending to ServiceNow:', JSON.stringify(incidentData, null, 2));
+      
+      const response = await axios({
+        method: 'POST',
+        url: `${this.serviceNowUrl}/api/now/table/incident`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        auth: {
+          username: this.serviceNowUsername,
+          password: this.serviceNowPassword
+        },
+        data: incidentData,
+        timeout: 10000
       });
 
-      const allRequired = Array.from(new Set([
-        ...baseRequired, 
-        ...additionalFromStore, 
-        ...mappingFields
-      ]));
+      console.log('ServiceNow incident created:', response.data.result.number);
 
-      return { 
-        baseRequired, 
-        additionalRequired: additionalFromStore, 
-        allRequired 
+      return {
+        success: true,
+        incident_number: response.data.result.number,
+        sys_id: response.data.result.sys_id,
+        link: `${this.serviceNowUrl}/nav_to.do?uri=incident.do?sys_id=${response.data.result.sys_id}`
       };
+      
     } catch (error) {
-      console.error('Error fetching required fields:', error);
-      return { baseRequired, additionalRequired: [], allRequired: baseRequired };
-    }
-  }
-
-  async setRequiredFieldsForServiceOffering(serviceOffering, fields) {
-    if (!this.requiredFieldsCollection) await this.initialize();
-    
-    try {
-      const cleanFields = Array.from(new Set(
-        (fields || []).map(f => String(f).trim()).filter(Boolean)
-      ));
-
-      await this.requiredFieldsCollection.updateOne(
-        { service_offering: serviceOffering },
-        { 
-          $set: { 
-            service_offering: serviceOffering, 
-            fields: cleanFields, 
-            updated_at: new Date() 
-          }, 
-          $setOnInsert: { created_at: new Date() } 
-        },
-        { upsert: true }
-      );
-
-      return { service_offering: serviceOffering, fields: cleanFields };
-    } catch (error) {
-      console.error('Error setting required fields:', error);
-      throw error;
+      console.error('ServiceNow API Error:', error.response?.data || error.message);
+      
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message,
+        status: error.response?.status
+      };
     }
   }
 
   // ================== INCIDENT BUILDING ==================
   
   _buildIncidentData(systemMapping, ruleOverrides = {}, alertData) {
-    const baseRequired = ['service_offering', 'business_service', 'u_network', 'assignment_group', 'system_failure'];
+    const baseRequired = ['service_offering', 'business_service', 'u_network', 'assignment_group', 'u_system_failure'];
     const excludeFields = new Set(['_id', 'grafana_name', 'created_at', 'updated_at']);
     
     const incidentData = {};
@@ -110,12 +82,12 @@ class IncidentService {
         value = systemMapping[field];
       }
       
-      // Special handling for system_failure boolean
-      if (field === 'system_failure') {
+      // Special handling for u_system_failure boolean
+      if (field === 'u_system_failure') {
         incidentData[field] = Boolean(value);
-      } else if (!value && field !== 'system_failure') {
+      } else if (!value && field !== 'u_system_failure') {
         throw new Error(`Required field '${field}' is missing`);
-      } else if (field !== 'system_failure') {
+      } else if (field !== 'u_system_failure') {
         incidentData[field] = value;
       }
     });
@@ -133,7 +105,7 @@ class IncidentService {
     // 3. Apply rule overrides with template replacement
     Object.entries(ruleOverrides).forEach(([key, value]) => {
       if (!excludeFields.has(key)) {
-        if (key === 'system_failure') {
+        if (key === 'u_system_failure') {
           incidentData[key] = Boolean(value);
         } else if (value != null && String(value).trim() !== '') {
           incidentData[key] = this._replaceTemplateVariables(value, alertData);
@@ -154,7 +126,7 @@ Node: ${alertData.node_name}
 Message: ${alertData.message}
 Time: ${alertData.time_created}
 Operator: ${alertData.operator}
-System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
+System Failure: ${incidentData.u_system_failure ? 'YES' : 'NO'}`;
     }
     
     return incidentData;
@@ -214,10 +186,10 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
         throw new Error('Mapping for this grafana_name already exists');
       }
 
-      // Ensure system_failure is properly handled
+      // Ensure u_system_failure is properly handled
       const dataToInsert = {
         ...mappingData,
-        system_failure: Boolean(mappingData.system_failure),
+        u_system_failure: Boolean(mappingData.u_system_failure),
         created_at: new Date(),
         updated_at: new Date()
       };
@@ -238,9 +210,9 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
       const objectId = new ObjectId(id);
       const { _id, created_at, ...updateData } = mappingData;
       
-      // Ensure system_failure is properly handled
-      if ('system_failure' in updateData) {
-        updateData.system_failure = Boolean(updateData.system_failure);
+      // Ensure u_system_failure is properly handled
+      if ('u_system_failure' in updateData) {
+        updateData.u_system_failure = Boolean(updateData.u_system_failure);
       }
       
       const result = await this.systemMappingsCollection.updateOne(
@@ -333,8 +305,8 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
         throw new Error('System mapping not found');
       }
 
-      if (ruleData.incident_overrides?.system_failure !== undefined) {
-        ruleData.incident_overrides.system_failure = Boolean(ruleData.incident_overrides.system_failure);
+      if (ruleData.incident_overrides?.u_system_failure !== undefined) {
+        ruleData.incident_overrides.u_system_failure = Boolean(ruleData.incident_overrides.u_system_failure);
       }
 
       const dataToInsert = {
@@ -371,9 +343,9 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
         updateData.grafana_name = mapping.grafana_name;
       }
 
-      // Ensure system_failure in overrides is properly handled
-      if (updateData.incident_overrides?.system_failure !== undefined) {
-        updateData.incident_overrides.system_failure = Boolean(updateData.incident_overrides.system_failure);
+      // Ensure u_system_failure in overrides is properly handled
+      if (updateData.incident_overrides?.u_system_failure !== undefined) {
+        updateData.incident_overrides.u_system_failure = Boolean(updateData.incident_overrides.u_system_failure);
       }
       
       const result = await this.incidentRulesCollection.updateOne(
@@ -461,64 +433,75 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
     
     return results;
   }
+_doesAlertMatchRule(alertData, rule) {
+  const { conditions, logic_operator = 'OR' } = rule;
+  const { message, node_name, object_name, network, operator } = alertData;
+  
+  const conditionGroups = [];
 
-  _doesAlertMatchRule(alertData, rule) {
-    const { conditions, logic_operator = 'OR' } = rule;
-    const { message, node_name, object_name, network, operator } = alertData;
+  // Helper function to evaluate field results based on logic operator
+  const evaluateFieldResults = (results, fieldName) => {
+    if (results.length === 0) return null;
     
-    const conditionGroups = [];
-
-    // Message conditions
-    const messageResults = this._checkFieldConditions(message, conditions, 'message');
-    if (messageResults.length > 0) {
-      if (logic_operator === 'AND' && conditions.message_contains?.length > 1) {
-        // For AND logic with multiple message terms, ALL must match
-        conditionGroups.push(messageResults.every(result => result === true));
-      } else {
-        // For OR logic or single conditions, ANY can match
-        conditionGroups.push(messageResults.some(result => result === true));
-      }
+    // For AND logic with multiple conditions, ALL must match
+    if (logic_operator === 'AND' && results.length > 1) {
+      return results.every(result => result === true);
     }
+    // For OR logic or single conditions, ANY can match
+    return results.some(result => result === true);
+  };
 
-    // Node name conditions
-    const nodeResults = this._checkFieldConditions(node_name, conditions, 'node_name');
-    if (nodeResults.length > 0) {
-      conditionGroups.push(nodeResults.some(result => result === true));
-    }
-
-    // Object name conditions  
-    const objectResults = this._checkFieldConditions(object_name, conditions, 'object_name');
-    if (objectResults.length > 0) {
-      conditionGroups.push(objectResults.some(result => result === true));
-    }
-
-    // Network conditions (handle both new format and legacy)
-    const networkResults = this._checkFieldConditions(network, conditions, 'network');
-    if (networkResults.length > 0) {
-      conditionGroups.push(networkResults.some(result => result === true));
-    } else if (conditions.network) {
-      // Legacy network condition support
-      const networkMatches = network && network.toLowerCase().includes(conditions.network.toLowerCase());
-      conditionGroups.push(networkMatches);
-    }
-
-    // Operator conditions
-    const operatorResults = this._checkFieldConditions(operator, conditions, 'operator');
-    if (operatorResults.length > 0) {
-      conditionGroups.push(operatorResults.some(result => result === true));
-    }
-
-    if (conditionGroups.length === 0) {
-      return false;
-    }
-
-    // Apply the main logic operator to condition groups
-    if (logic_operator === 'AND') {
-      return conditionGroups.every(result => result === true);
-    } else {
-      return conditionGroups.some(result => result === true);
-    }
+  // Message conditions
+  const messageResults = this._checkFieldConditions(message, conditions, 'message');
+  const messageMatch = evaluateFieldResults(messageResults, 'message');
+  if (messageMatch !== null) {
+    conditionGroups.push(messageMatch);
   }
+
+  // Node name conditions
+  const nodeResults = this._checkFieldConditions(node_name, conditions, 'node_name');
+  const nodeMatch = evaluateFieldResults(nodeResults, 'node_name');
+  if (nodeMatch !== null) {
+    conditionGroups.push(nodeMatch);
+  }
+
+  // Object name conditions  
+  const objectResults = this._checkFieldConditions(object_name, conditions, 'object_name');
+  const objectMatch = evaluateFieldResults(objectResults, 'object_name');
+  if (objectMatch !== null) {
+    conditionGroups.push(objectMatch);
+  }
+
+  // Network conditions
+  const networkResults = this._checkFieldConditions(network, conditions, 'network');
+  const networkMatch = evaluateFieldResults(networkResults, 'network');
+  if (networkMatch !== null) {
+    conditionGroups.push(networkMatch);
+  } else if (conditions.network) {
+    // Legacy network condition support
+    const networkMatches = network && network.toLowerCase().includes(conditions.network.toLowerCase());
+    conditionGroups.push(networkMatches);
+  }
+
+  // Operator conditions
+  const operatorResults = this._checkFieldConditions(operator, conditions, 'operator');
+  const operatorMatch = evaluateFieldResults(operatorResults, 'operator');
+  if (operatorMatch !== null) {
+    conditionGroups.push(operatorMatch);
+  }
+
+  if (conditionGroups.length === 0) {
+    return false;
+  }
+
+  // Apply the main logic operator to condition groups
+  if (logic_operator === 'AND') {
+    return conditionGroups.every(result => result === true);
+  } else {
+    return conditionGroups.some(result => result === true);
+  }
+}
+
 
   // ================== INCIDENT CREATION ==================
 
@@ -528,8 +511,14 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
       
       // Find matching rules for this application
       const rules = await this.getIncidentRules(application);
-      const enabledRules = rules.filter(rule => rule.enabled);
-      
+      const enabledRules = rules
+        .filter(rule => rule.enabled)
+        .sort((a, b) => {
+          const countA = Object.keys(a.conditions || {}).length;
+          const countB = Object.keys(b.conditions || {}).length;
+          if (countA !== countB) return countB - countA;
+          return new Date(b.created_at) - new Date(a.created_at);
+        });      
       // Find the first matching rule (sorted by creation date - newest first)
       let matchingRule = null;
       for (const rule of enabledRules) {
@@ -569,22 +558,22 @@ System Failure: ${incidentData.system_failure ? 'YES' : 'NO'}`;
         incidentData = this._buildIncidentData(systemMapping, {}, alertData);
       }
       
-      // Add common metadata
-      incidentData.source_application = alertData.application;
-      incidentData.alert_time = alertData.time_created;
-      incidentData.grafana_operator = alertData.operator;
-      incidentData.alert_network = alertData.network;
-      incidentData.created_at = new Date();
-      
       console.log('Creating incident with data:', JSON.stringify(incidentData, null, 2));
       
-      return incidentData;
+      // Send to ServiceNow
+      const serviceNowResult = await this._sendToServiceNow(incidentData);
+      
+      return {
+        incidentData,
+        serviceNowResult
+      };
       
     } catch (error) {
       console.error('Error creating incident from alert:', error);
       throw error;
     }
   }
+
 
   async getDistinctValues(fieldName) {
     if (!this.systemMappingsCollection) await this.initialize();

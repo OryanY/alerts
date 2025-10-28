@@ -19,7 +19,7 @@ const IncidentMappings = () => {
     u_network: '',
     u_impact_technology: '',
     assignment_group: '',
-    system_failure: false, // New mandatory field
+    u_system_failure: false, // New mandatory field
   });
 
   const baseMandatoryFields = [
@@ -28,7 +28,7 @@ const IncidentMappings = () => {
     'u_network',
     'u_impact_technology',
     'assignment_group',
-    'system_failure'
+    'u_system_failure'
   ];
 
   const reset = () => {
@@ -39,7 +39,7 @@ const IncidentMappings = () => {
       u_network: '',
       u_impact_technology: '',
       assignment_group: '',
-      system_failure: false,
+      u_system_failure: false,
     });
     setEditingItem(null);
     setAdditionalFields({});
@@ -123,7 +123,7 @@ const IncidentMappings = () => {
       u_network: m.u_network || '',
       u_impact_technology: m.u_impact_technology || '',
       assignment_group: m.assignment_group || '',
-      system_failure: Boolean(m.system_failure), // Handle boolean
+      u_system_failure: Boolean(m.u_system_failure), // Handle boolean
     };
     
     // Add any additional fields from the mapping
@@ -575,8 +575,8 @@ const IncidentMappings = () => {
                     }}>
                       <input
                         type="checkbox"
-                        checked={form.system_failure}
-                        onChange={(e) => setForm(p => ({...p, system_failure: e.target.checked}))}
+                        checked={form.u_system_failure}
+                        onChange={(e) => setForm(p => ({...p, u_system_failure: e.target.checked}))}
                         style={{
                           width: 18,
                           height: 18,
@@ -789,7 +789,7 @@ const IncidentMappings = () => {
                       gap: 12
                     }}>
                       📊 {m.grafana_name}
-                      {m.system_failure && (
+                      {m.u_system_failure && (
                         <span style={{
                           background: '#fecaca',
                           color: '#dc2626',
@@ -925,7 +925,7 @@ const IncidentMappings = () => {
                 </div>
 
                 {/* Show additional fields if any */}
-                {Object.keys(m).filter(k => !['_id', 'grafana_name', 'service_offering', 'business_service', 'u_network', 'u_impact_technology', 'assignment_group', 'system_failure', 'created_at', 'updated_at'].includes(k)).length > 0 && (
+                {Object.keys(m).filter(k => !['_id', 'grafana_name', 'service_offering', 'business_service', 'u_network', 'u_impact_technology', 'assignment_group', 'u_system_failure', 'created_at', 'updated_at'].includes(k)).length > 0 && (
                   <div style={{
                     marginTop: 16,
                     padding: 16,
@@ -942,7 +942,7 @@ const IncidentMappings = () => {
                       gap: 12
                     }}>
                       {Object.entries(m)
-                        .filter(([k]) => !['_id', 'grafana_name', 'service_offering', 'business_service', 'u_network', 'u_impact_technology', 'assignment_group', 'system_failure', 'created_at', 'updated_at'].includes(k))
+                        .filter(([k]) => !['_id', 'grafana_name', 'service_offering', 'business_service', 'u_network', 'u_impact_technology', 'assignment_group', 'u_system_failure', 'created_at', 'updated_at'].includes(k))
                         .map(([k, v]) => (
                           <div key={k} style={{
                             background: 'white',

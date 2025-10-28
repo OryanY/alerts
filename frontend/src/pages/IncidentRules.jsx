@@ -38,7 +38,7 @@ const IncidentRules = () => {
     incident_overrides: {
       short_description: '',
       description: '',
-      system_failure: false
+      u_system_failure: false
     },
     enabled: true
   });
@@ -90,7 +90,7 @@ const IncidentRules = () => {
       incident_overrides: {
         short_description: '',
         description: '',
-        system_failure: false
+        u_system_failure: false
       },
       enabled: true
     });
@@ -156,14 +156,14 @@ const IncidentRules = () => {
 
       // Clean the incident_overrides - remove empty values
       const cleanOverrides = {};
-      Object.entries(form.incident_overrides).forEach(([key, value]) => {
-        if (key === 'system_failure') {
-          if (value === true) cleanOverrides[key] = true;
-        } else if (value && String(value).trim() !== '') {
-          cleanOverrides[key] = String(value).trim();
-        }
-      });
-
+          Object.entries(form.incident_overrides).forEach(([key, value]) => {
+            if (key === 'u_system_failure') {
+              // FIXED: Always send u_system_failure explicitly, whether true or false
+              cleanOverrides[key] = Boolean(value);
+            } else if (value && String(value).trim() !== '') {
+              cleanOverrides[key] = String(value).trim();
+            }
+          });
       const payload = {
         system_mapping_id: form.system_mapping_id,
         rule_name: form.rule_name,
@@ -354,10 +354,10 @@ const IncidentRules = () => {
       incident_overrides: {
         short_description: rule.incident_overrides?.short_description || '',
         description: rule.incident_overrides?.description || '',
-        system_failure: Boolean(rule.incident_overrides?.system_failure),
+        u_system_failure: Boolean(rule.incident_overrides?.u_system_failure),
         ...Object.fromEntries(
           Object.entries(rule.incident_overrides || {})
-            .filter(([k]) => !['short_description', 'description', 'system_failure'].includes(k))
+            .filter(([k]) => !['short_description', 'description', 'u_system_failure'].includes(k))
         )
       },
       enabled: rule.enabled !== false
@@ -1063,7 +1063,7 @@ const IncidentRules = () => {
                   </div>
 
                   {selectedMapping && Object.keys(selectedMapping)
-                    .filter(k => !['_id','grafana_name','service_offering','business_service','u_network','u_impact_technology','assignment_group','system_failure','created_at','updated_at'].includes(k))
+                    .filter(k => !['_id','grafana_name','service_offering','business_service','u_network','u_impact_technology','assignment_group','u_system_failure','created_at','updated_at'].includes(k))
                     .slice(0, 3)
                     .map(k => (
                       <div key={k}>
@@ -1113,12 +1113,12 @@ const IncidentRules = () => {
                     }}>
                       <input
                         type="checkbox"
-                        checked={form.incident_overrides.system_failure}
+                        checked={form.incident_overrides.u_system_failure}
                         onChange={(e) => setForm(p => ({
                           ...p,
                           incident_overrides: {
                             ...p.incident_overrides,
-                            system_failure: e.target.checked
+                            u_system_failure: e.target.checked
                           }
                         }))}
                         style={{
@@ -1252,7 +1252,7 @@ Please investigate and take appropriate action.`}
                         </div>
                       </div>
 
-                      {form.incident_overrides.system_failure && (
+                      {form.incident_overrides.u_system_failure && (
                         <div style={{
                           background: '#fef2f2',
                           padding: 12,
@@ -1663,7 +1663,7 @@ Please investigate and take appropriate action.`}
                         </div>
                       )}
 
-                      {rule.incident_overrides.system_failure && (
+                      {rule.incident_overrides.u_system_failure && (
                         <div style={{
                           background: '#fef2f2',
                           padding: 8,
@@ -1677,7 +1677,7 @@ Please investigate and take appropriate action.`}
                       )}
 
                       {Object.entries(rule.incident_overrides || {})
-                        .filter(([k]) => !['short_description', 'description', 'system_failure'].includes(k))
+                        .filter(([k]) => !['short_description', 'description', 'u_system_failure'].includes(k))
                         .map(([k, v]) => (
                           <div key={k} style={{
                             background: 'white',
