@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, Plus, Edit, Trash2, RefreshCw, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Settings, Plus, Edit, Trash2, RefreshCw, CheckCircle, AlertTriangle, X, PlusCircle, MinusCircle } from 'lucide-react';
 
 const API_BASE = 'http://localhost:5000/api/incidents';
 
@@ -9,8 +9,8 @@ const IncidentMappings = () => {
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [additionalFields, setAdditionalFields] = useState({});
-  const [loadingFields, setLoadingFields] = useState(false);
+  const [assignmentGroups, setAssignmentGroups] = useState([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
 
   const [form, setForm] = useState({
     grafana_name: '',
@@ -19,8 +19,11 @@ const IncidentMappings = () => {
     u_network: '',
     u_impact_technology: '',
     assignment_group: '',
-    u_system_failure: false, // New mandatory field
+    u_system_failure: false,
   });
+
+  // Custom fields structure: { fieldName: value }
+  const [customFields, setCustomFields] = useState({});
 
   const baseMandatoryFields = [
     'service_offering',
@@ -29,6 +32,14 @@ const IncidentMappings = () => {
     'u_impact_technology',
     'assignment_group',
     'u_system_failure'
+  ];
+
+  const excludeFromCustom = [
+    '_id',
+    'grafana_name',
+    'created_at',
+    'updated_at',
+    ...baseMandatoryFields
   ];
 
   const reset = () => {
@@ -41,8 +52,8 @@ const IncidentMappings = () => {
       assignment_group: '',
       u_system_failure: false,
     });
+    setCustomFields({});
     setEditingItem(null);
-    setAdditionalFields({});
   };
 
   const fetchMappings = async () => {
@@ -59,48 +70,81 @@ const IncidentMappings = () => {
     }
   };
 
-  const fetchAdditionalFields = async (serviceOffering) => {
-    if (!serviceOffering.trim()) {
-      setAdditionalFields({});
-      return;
-    }
-
+  const fetchAssignmentGroups = async () => {
     try {
-      setLoadingFields(true);
-      const res = await fetch(`${API_BASE}/servicenow-fields?service_offering=${encodeURIComponent(serviceOffering)}`);
+      setLoadingGroups(true);
+      const res = await fetch(`${API_BASE}/assignment-groups`);
       const data = await res.json();
-      
-      if (data.success && data.additionalFields) {
-        setAdditionalFields(data.additionalFields);
-        setForm(prev => ({
-          ...prev,
-          ...Object.keys(data.additionalFields).reduce((acc, key) => ({
-            ...acc,
-            [key]: prev[key] || ''
-          }), {})
-        }));
-      } else {
-        setAdditionalFields({});
+      if (data.success) {
+        setAssignmentGroups(data.data || []);
       }
     } catch (e) {
-      console.warn('Could not fetch additional fields:', e.message);
-      setAdditionalFields({});
+      console.warn('Could not fetch assignment groups:', e.message);
     } finally {
-      setLoadingFields(false);
+      setLoadingGroups(false);
     }
   };
 
-  useEffect(() => { fetchMappings(); }, []);
+  useEffect(() => { 
+    fetchMappings();
+    fetchAssignmentGroups();
+  }, []);
+
+  const addCustomField = () => {
+    const fieldName = prompt('Enter field name (e.g., u_eck_name, u_oracle_error):');
+    if (!fieldName) return;
+    
+    const sanitized = fieldName.trim().toLowerCase().replace(/\s+/g, '_');
+    
+    if (excludeFromCustom.includes(sanitized)) {
+      alert('This field name is reserved or already exists as a base field');
+      return;
+    }
+    
+    if (customFields[sanitized] !== undefined) {
+      alert('This custom field already exists');
+      return;
+    }
+
+    setCustomFields(prev => ({
+      ...prev,
+      [sanitized]: ''
+    }));
+  };
+
+  const removeCustomField = (fieldName) => {
+    setCustomFields(prev => {
+      const updated = { ...prev };
+      delete updated[fieldName];
+      return updated;
+    });
+  };
+
+  const updateCustomField = (fieldName, value) => {
+    setCustomFields(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  };
 
   const save = async (e) => {
     e.preventDefault();
+    
     try {
+      // Prepare data: base fields + custom field values
+      const dataToSave = { ...form };
+      
+      // Add custom field values to the main object
+      Object.entries(customFields).forEach(([fieldName, value]) => {
+        dataToSave[fieldName] = value;
+      });
+
       const url = editingItem ? `${API_BASE}/system-mappings/${editingItem._id}` : `${API_BASE}/system-mappings`;
       const method = editingItem ? 'PUT' : 'POST';
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
+        body: JSON.stringify(dataToSave)
       });
       const data = await res.json();
       if (data.success) {
@@ -123,25 +167,23 @@ const IncidentMappings = () => {
       u_network: m.u_network || '',
       u_impact_technology: m.u_impact_technology || '',
       assignment_group: m.assignment_group || '',
-      u_system_failure: Boolean(m.u_system_failure), // Handle boolean
+      u_system_failure: Boolean(m.u_system_failure),
     };
     
-    // Add any additional fields from the mapping
+    setForm(formData);
+
+    // Extract custom fields from the mapping
+    const custom = {};
     Object.keys(m).forEach(key => {
-      if (!baseMandatoryFields.includes(key) && !['_id', 'grafana_name', 'created_at', 'updated_at'].includes(key)) {
-        formData[key] = m[key] || '';
+      if (!excludeFromCustom.includes(key)) {
+        custom[key] = m[key] || '';
       }
     });
 
-    setForm(formData);
+    setCustomFields(custom);
     setEditingItem(m);
     setShowForm(true);
     
-    if (m.service_offering) {
-      fetchAdditionalFields(m.service_offering);
-    }
-
-    // Scroll to form
     setTimeout(() => {
       document.getElementById('mapping-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
@@ -173,7 +215,6 @@ const IncidentMappings = () => {
         <div style={{textAlign: 'center'}}>
           <RefreshCw size={32} style={{animation: 'spin 1s linear infinite', color: '#3b82f6', marginBottom: 16}} />
           <div style={{fontSize: 18, color: '#475569', fontWeight: 500}}>Loading your mappings...</div>
-          <div style={{fontSize: 14, color: '#64748b', marginTop: 8}}>This might take a moment</div>
         </div>
       </div>
     );
@@ -194,7 +235,7 @@ const IncidentMappings = () => {
         }}>
           <AlertTriangle size={20} color="#dc2626" />
           <div>
-            <div style={{fontWeight: 600, color: '#dc2626', marginBottom: 4}}>Oops! Something went wrong</div>
+            <div style={{fontWeight: 600, color: '#dc2626', marginBottom: 4}}>Error</div>
             <div style={{color: '#b91c1c', fontSize: 14}}>{error}</div>
           </div>
           <button
@@ -257,14 +298,6 @@ const IncidentMappings = () => {
               boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
               transition: 'all 0.2s ease'
             }}
-            onMouseOver={(e) => {
-              e.target.style.transform = 'translateY(-2px)';
-              e.target.style.boxShadow = '0 8px 20px rgba(59, 130, 246, 0.4)';
-            }}
-            onMouseOut={(e) => {
-              e.target.style.transform = 'translateY(0)';
-              e.target.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.3)';
-            }}
           >
             {showForm ? <X size={18} /> : <Plus size={18} />}
             {showForm ? 'Cancel' : 'Create New Mapping'}
@@ -285,14 +318,6 @@ const IncidentMappings = () => {
               fontSize: 14,
               fontWeight: 500,
               transition: 'all 0.2s ease'
-            }}
-            onMouseOver={(e) => {
-              e.target.style.borderColor = '#3b82f6';
-              e.target.style.color = '#3b82f6';
-            }}
-            onMouseOut={(e) => {
-              e.target.style.borderColor = '#e2e8f0';
-              e.target.style.color = '#475569';
             }}
           >
             <RefreshCw size={16} />
@@ -315,7 +340,6 @@ const IncidentMappings = () => {
             overflow: 'hidden'
           }}
         >
-          {/* Decorative header */}
           <div style={{
             position: 'absolute', 
             top: 0, 
@@ -337,7 +361,7 @@ const IncidentMappings = () => {
               gap: 12
             }}>
               {editingItem ? <Edit size={24} /> : <Plus size={24} />}
-              {editingItem ? 'Update Your Mapping' : 'Create New Mapping'}
+              {editingItem ? 'Update Mapping' : 'Create New Mapping'}
             </h3>
             <p style={{
               margin: 0, 
@@ -346,13 +370,13 @@ const IncidentMappings = () => {
               marginBottom: 32
             }}>
               {editingItem 
-                ? 'Make changes to how this app creates incidents' 
-                : 'Set up how alerts from this app should create ServiceNow incidents'
+                ? 'Update how this app creates incidents' 
+                : 'Configure how alerts from this app create ServiceNow incidents'
               }
             </p>
 
             <form onSubmit={save} style={{display: 'flex', flexDirection: 'column', gap: 32}}>
-              {/* App Name Section */}
+              {/* Grafana Name */}
               <div style={{
                 background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
                 padding: 24,
@@ -368,7 +392,7 @@ const IncidentMappings = () => {
                   alignItems: 'center', 
                   gap: 8
                 }}>
-                  🎯 Which Grafana App?
+                  🎯 Grafana Application Name
                 </h4>
                 <input 
                   style={{
@@ -384,14 +408,11 @@ const IncidentMappings = () => {
                   value={form.grafana_name} 
                   onChange={(e) => setForm(p => ({...p, grafana_name: e.target.value}))} 
                   required 
-                  placeholder="Type the exact app name from Grafana (e.g., eck, prometheus)" 
+                  placeholder="e.g., eck, prometheus, oracle" 
                 />
-                <p style={{margin: '8px 0 0 0', fontSize: 14, color: '#0369a1'}}>
-                  💡 This must match exactly what appears in your Grafana alerts
-                </p>
               </div>
 
-              {/* Service Info */}
+              {/* Service Offering */}
               <div style={{
                 background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
                 padding: 24,
@@ -402,12 +423,9 @@ const IncidentMappings = () => {
                   margin: '0 0 16px 0', 
                   fontSize: 18, 
                   fontWeight: 600,
-                  color: '#92400e',
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 8
+                  color: '#92400e'
                 }}>
-                  🏢 Service Details
+                  🏢 Service Offering
                 </h4>
                 <input 
                   style={{
@@ -420,18 +438,10 @@ const IncidentMappings = () => {
                     color: '#92400e'
                   }}
                   value={form.service_offering} 
-                  onChange={(e) => {
-                    setForm(p => ({...p, service_offering: e.target.value}));
-                    fetchAdditionalFields(e.target.value);
-                  }}
+                  onChange={(e) => setForm(p => ({...p, service_offering: e.target.value}))}
                   required 
-                  placeholder="What service does this app provide? (e.g., Elasticsearch - ECK)"
+                  placeholder="e.g., Elasticsearch - ECK"
                 />
-                {loadingFields && (
-                  <p style={{margin: '8px 0 0 0', fontSize: 14, color: '#d97706'}}>
-                    🔄 Checking for additional required fields...
-                  </p>
-                )}
               </div>
 
               {/* Required Fields */}
@@ -451,7 +461,7 @@ const IncidentMappings = () => {
                   gap: 8
                 }}>
                   <CheckCircle size={20} />
-                  Required Information
+                  Required Fields
                 </h4>
                 
                 <div style={{
@@ -507,7 +517,7 @@ const IncidentMappings = () => {
                       value={form.u_network} 
                       onChange={(e) => setForm(p => ({...p, u_network: e.target.value}))} 
                       required 
-                      placeholder="e.g., Network A" 
+                      placeholder="e.g., main" 
                     />
                   </div>
                   
@@ -547,20 +557,48 @@ const IncidentMappings = () => {
                     }}>
                       Assignment Group *
                     </label>
-                    <input 
-                      style={{
-                        width: '100%',
-                        padding: '10px 14px',
-                        border: '2px solid #bbf7d0',
-                        borderRadius: 6,
-                        fontSize: 14,
-                        background: 'white'
-                      }}
-                      value={form.assignment_group} 
-                      onChange={(e) => setForm(p => ({...p, assignment_group: e.target.value}))} 
-                      required 
-                      placeholder="e.g., Repository Team" 
-                    />
+                    {loadingGroups ? (
+                      <div style={{padding: '10px', color: '#64748b', fontSize: 14}}>
+                        Loading groups...
+                      </div>
+                    ) : assignmentGroups.length > 0 ? (
+                      <select
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          border: '2px solid #bbf7d0',
+                          borderRadius: 6,
+                          fontSize: 14,
+                          background: 'white',
+                          cursor: 'pointer'
+                        }}
+                        value={form.assignment_group}
+                        onChange={(e) => setForm(p => ({...p, assignment_group: e.target.value}))}
+                        required
+                      >
+                        <option value="">Select a team...</option>
+                        {assignmentGroups.map(group => (
+                          <option key={group.value} value={group.value}>
+                            {group.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input 
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          border: '2px solid #bbf7d0',
+                          borderRadius: 6,
+                          fontSize: 14,
+                          background: 'white'
+                        }}
+                        value={form.assignment_group} 
+                        onChange={(e) => setForm(p => ({...p, assignment_group: e.target.value}))} 
+                        required 
+                        placeholder="e.g., Repository Team" 
+                      />
+                    )}
                   </div>
 
                   <div>
@@ -583,76 +621,158 @@ const IncidentMappings = () => {
                           accentColor: '#22c55e'
                         }}
                       />
-                      System Failure?
+                      System Failure
                     </label>
                     <p style={{margin: '4px 0 0 30px', fontSize: 12, color: '#15803d'}}>
-                      Check if this represents a system failure
+                      Creates outage automatically
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Additional Fields */}
-              {Object.keys(additionalFields).length > 0 && (
+              {/* Custom Fields Section */}
+              <div style={{
+                background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)',
+                padding: 24,
+                borderRadius: 12,
+                border: '2px solid #a855f7'
+              }}>
                 <div style={{
-                  background: 'linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)',
-                  padding: 24,
-                  borderRadius: 12,
-                  border: '2px solid #fb923c'
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 20
                 }}>
                   <h4 style={{
-                    margin: '0 0 16px 0', 
+                    margin: 0, 
                     fontSize: 18, 
                     fontWeight: 600,
-                    color: '#ea580c',
+                    color: '#6b21a8',
                     display: 'flex', 
                     alignItems: 'center', 
                     gap: 8
                   }}>
-                    <AlertTriangle size={20} />
-                    Extra Fields for "{form.service_offering}"
+                    ⚙️ Custom Fields ({Object.keys(customFields).length})
                   </h4>
-                  
+                  <button
+                    type="button"
+                    onClick={addCustomField}
+                    style={{
+                      background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <PlusCircle size={16} />
+                    Add Field
+                  </button>
+                </div>
+
+                {Object.keys(customFields).length === 0 ? (
                   <div style={{
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-                    gap: 20
+                    textAlign: 'center',
+                    padding: '32px',
+                    color: '#9333ea',
+                    fontSize: 14
                   }}>
-                    {Object.entries(additionalFields).map(([fieldName, fieldInfo]) => (
-                      <div key={fieldName}>
-                        <label style={{
-                          display: 'block',
-                          fontSize: 14,
-                          fontWeight: 600,
-                          color: '#ea580c',
-                          marginBottom: 8
-                        }}>
-                          {fieldInfo.label || fieldName.replace(/_/g, ' ')} *
-                        </label>
-                        <input 
-                          style={{
-                            width: '100%',
-                            padding: '10px 14px',
-                            border: '2px solid #fed7aa',
-                            borderRadius: 6,
+                    No custom fields yet. Click "Add Field" to create service-specific fields like u_eck_name or ORA_error.
+                  </div>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 16
+                  }}>
+                    {Object.entries(customFields).map(([fieldName, value]) => (
+                      <div 
+                        key={fieldName}
+                        style={{
+                          background: 'white',
+                          padding: 16,
+                          borderRadius: 8,
+                          border: '2px solid #e9d5ff',
+                          display: 'grid',
+                          gridTemplateColumns: '200px 1fr 40px',
+                          gap: 12,
+                          alignItems: 'center'
+                        }}
+                      >
+                        <div>
+                          <div style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: '#9333ea',
+                            marginBottom: 4
+                          }}>
+                            Field Name
+                          </div>
+                          <div style={{
                             fontSize: 14,
-                            background: 'white'
+                            fontWeight: 600,
+                            color: '#6b21a8',
+                            fontFamily: 'monospace'
+                          }}>
+                            {fieldName}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{
+                            display: 'block',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: '#9333ea',
+                            marginBottom: 4
+                          }}>
+                            Default Value
+                          </label>
+                          <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => updateCustomField(fieldName, e.target.value)}
+                            placeholder={`Default value for ${fieldName}`}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              border: '2px solid #e9d5ff',
+                              borderRadius: 6,
+                              fontSize: 14,
+                              background: 'white'
+                            }}
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeCustomField(fieldName)}
+                          style={{
+                            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: 6,
+                            padding: 8,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                           }}
-                          value={form[fieldName] || ''}
-                          onChange={(e) => setForm(p => ({...p, [fieldName]: e.target.value}))}
-                          required
-                          placeholder={fieldInfo.placeholder || `Enter ${fieldName.replace(/_/g, ' ')}`}
-                        />
-                        {fieldInfo.description && (
-                          <p style={{margin: '4px 0 0 0', fontSize: 12, color: '#c2410c'}}>
-                            {fieldInfo.description}
-                          </p>
-                        )}
+                          title="Remove field"
+                        >
+                          <MinusCircle size={16} />
+                        </button>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               <div style={{
                 display: 'flex', 
@@ -712,19 +832,8 @@ const IncidentMappings = () => {
             No Mappings Yet
           </h3>
           <p style={{fontSize: 16, color: '#64748b', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px'}}>
-            Create your first system mapping to tell us how Grafana alerts should create ServiceNow incidents.
+            Create your first system mapping to configure how Grafana alerts create ServiceNow incidents.
           </p>
-          <div style={{
-            background: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)',
-            padding: 16,
-            borderRadius: 8,
-            fontSize: 14,
-            color: '#1e40af',
-            maxWidth: 400,
-            margin: '0 auto'
-          }}>
-            💡 <strong>How it works:</strong> Each Grafana app gets its own incident settings
-          </div>
         </div>
       ) : (
         <div>
@@ -739,242 +848,262 @@ const IncidentMappings = () => {
               margin: 0,
               fontSize: 20,
               fontWeight: 600,
-              color: '#1e293b',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
+              color: '#1e293b'
             }}>
               Your Mappings ({mappings.length})
             </h3>
           </div>
           
           <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
-            {mappings.map((m) => (
-              <div 
-                key={m._id} 
-                style={{
-                  background: 'white',
-                  borderRadius: 16,
-                  padding: 24,
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                  border: '1px solid #f1f5f9',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}
-              >
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 4,
-                  background: 'linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4)'
-                }} />
+            {mappings.map((m) => {
+              // Extract custom fields
+              const customFieldsInMapping = Object.keys(m).filter(k => 
+                !excludeFromCustom.includes(k)
+              );
+              
+              return (
+                <div 
+                  key={m._id} 
+                  style={{
+                    background: 'white',
+                    borderRadius: 16,
+                    padding: 24,
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                    border: '1px solid #f1f5f9',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 4,
+                    background: 'linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4)'
+                  }} />
 
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  marginBottom: 20,
-                  marginTop: 8
-                }}>
-                  <div style={{flex: 1}}>
-                    <h4 style={{
-                      margin: '0 0 8px 0',
-                      fontSize: 20,
-                      fontWeight: 700,
-                      color: '#1e293b',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12
-                    }}>
-                      📊 {m.grafana_name}
-                      {m.u_system_failure && (
-                        <span style={{
-                          background: '#fecaca',
-                          color: '#dc2626',
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          fontSize: 12,
-                          fontWeight: 600
-                        }}>
-                          SYSTEM FAILURE
-                        </span>
-                      )}
-                    </h4>
-                    <p style={{margin: 0, color: '#64748b', fontSize: 14}}>
-                      Alerts from this app will create incidents with these settings
-                    </p>
-                  </div>
-                  <div style={{display: 'flex', gap: 8}}>
-                    <button 
-                      onClick={() => startEdit(m)}
-                      style={{
-                        background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '8px 16px',
-                        fontSize: 14,
-                        fontWeight: 500,
-                        cursor: 'pointer',
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: 20,
+                    marginTop: 8
+                  }}>
+                    <div style={{flex: 1}}>
+                      <h4 style={{
+                        margin: '0 0 8px 0',
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: '#1e293b',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 6
-                      }}
-                    >
-                      <Edit size={14} />
-                      Edit
-                    </button>
-                    <button 
-                      onClick={() => del(m._id)}
-                      style={{
-                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '8px 16px',
-                        fontSize: 14,
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6
-                      }}
-                    >
-                      <Trash2 size={14} />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-                  gap: 16
-                }}>
-                  <div style={{
-                    background: '#f8fafc',
-                    padding: 16,
-                    borderRadius: 8,
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
-                      Assignment Group
+                        gap: 12
+                      }}>
+                        📊 {m.grafana_name}
+                        {m.u_system_failure && (
+                          <span style={{
+                            background: '#fecaca',
+                            color: '#dc2626',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 12,
+                            fontWeight: 600
+                          }}>
+                            SYSTEM FAILURE
+                          </span>
+                        )}
+                        {customFieldsInMapping.length > 0 && (
+                          <span style={{
+                            background: '#e9d5ff',
+                            color: '#9333ea',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 12,
+                            fontWeight: 600
+                          }}>
+                            {customFieldsInMapping.length} Custom Field{customFieldsInMapping.length > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </h4>
+                      <p style={{margin: 0, color: '#64748b', fontSize: 14}}>
+                        {m.service_offering}
+                      </p>
                     </div>
-                    <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
-                      {m.assignment_group}
-                    </div>
-                  </div>
-
-                  <div style={{
-                    background: '#f8fafc',
-                    padding: 16,
-                    borderRadius: 8,
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
-                      Service Offering
-                    </div>
-                    <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
-                      {m.service_offering}
-                    </div>
-                  </div>
-
-                  <div style={{
-                    background: '#f8fafc',
-                    padding: 16,
-                    borderRadius: 8,
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
-                      Business Service
-                    </div>
-                    <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
-                      {m.business_service}
-                    </div>
-                  </div>
-
-                  <div style={{
-                    background: '#f8fafc',
-                    padding: 16,
-                    borderRadius: 8,
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
-                      Network
-                    </div>
-                    <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
-                      {m.u_network}
+                    <div style={{display: 'flex', gap: 8}}>
+                      <button 
+                        onClick={() => startEdit(m)}
+                        style={{
+                          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '8px 16px',
+                          fontSize: 14,
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <Edit size={14} />
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => del(m._id)}
+                        style={{
+                          background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '8px 16px',
+                          fontSize: 14,
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
                     </div>
                   </div>
 
+                  {/* Base Required Fields */}
                   <div style={{
-                    background: '#f8fafc',
-                    padding: 16,
-                    borderRadius: 8,
-                    border: '1px solid #e2e8f0'
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                    gap: 16,
+                    marginBottom: customFieldsInMapping.length > 0 ? 16 : 0
                   }}>
-                    <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
-                      Impact Technology
-                    </div>
-                    <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
-                      {m.u_impact_technology}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Show additional fields if any */}
-                {Object.keys(m).filter(k => !['_id', 'grafana_name', 'service_offering', 'business_service', 'u_network', 'u_impact_technology', 'assignment_group', 'u_system_failure', 'created_at', 'updated_at'].includes(k)).length > 0 && (
-                  <div style={{
-                    marginTop: 16,
-                    padding: 16,
-                    background: 'linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%)',
-                    borderRadius: 8,
-                    border: '1px solid #fb923c'
-                  }}>
-                    <div style={{fontSize: 12, fontWeight: 600, color: '#ea580c', marginBottom: 12}}>
-                      Additional ServiceNow Fields:
-                    </div>
                     <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                      gap: 12
+                      background: '#f8fafc',
+                      padding: 16,
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0'
                     }}>
-                      {Object.entries(m)
-                        .filter(([k]) => !['_id', 'grafana_name', 'service_offering', 'business_service', 'u_network', 'u_impact_technology', 'assignment_group', 'u_system_failure', 'created_at', 'updated_at'].includes(k))
-                        .map(([k, v]) => (
-                          <div key={k} style={{
+                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                        Assignment Group
+                      </div>
+                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
+                        {assignmentGroups.find(g => g.value === m.assignment_group)?.label || m.assignment_group}
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: '#f8fafc',
+                      padding: 16,
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0'
+                    }}>
+                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                        Business Service
+                      </div>
+                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
+                        {m.business_service}
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: '#f8fafc',
+                      padding: 16,
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0'
+                    }}>
+                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                        Network
+                      </div>
+                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
+                        {m.u_network}
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: '#f8fafc',
+                      padding: 16,
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0'
+                    }}>
+                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                        Impact Technology
+                      </div>
+                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
+                        {m.u_impact_technology}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Custom Fields Display */}
+                  {customFieldsInMapping.length > 0 && (
+                    <div style={{
+                      padding: 16,
+                      background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)',
+                      borderRadius: 8,
+                      border: '2px solid #e9d5ff'
+                    }}>
+                      <div style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#9333ea',
+                        marginBottom: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}>
+                        ⚙️ Custom Fields:
+                      </div>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: 12
+                      }}>
+                        {customFieldsInMapping.map(fieldName => (
+                          <div key={fieldName} style={{
                             background: 'white',
                             padding: 12,
                             borderRadius: 6,
-                            border: '1px solid #fed7aa'
+                            border: '1px solid #e9d5ff'
                           }}>
-                            <div style={{fontSize: 12, fontWeight: 600, color: '#ea580c', marginBottom: 4}}>
-                              {k.replace(/_/g, ' ')}
+                            <div style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: '#9333ea',
+                              marginBottom: 4,
+                              fontFamily: 'monospace'
+                            }}>
+                              {fieldName}
                             </div>
-                            <div style={{fontSize: 14, color: '#9a3412'}}>
-                              {v}
+                            <div style={{fontSize: 14, color: '#6b21a8', fontWeight: 500}}>
+                              {m[fieldName] || <span style={{color: '#cbd5e1'}}>—</span>}
                             </div>
                           </div>
                         ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {m.created_at && (
-                  <div style={{
-                    marginTop: 16,
-                    paddingTop: 16,
-                    borderTop: '1px solid #f1f5f9',
-                    fontSize: 12,
-                    color: '#94a3b8'
-                  }}>
-                    Created: {new Date(m.created_at).toLocaleString()}
-                  </div>
-                )}
-              </div>
-            ))}
+                  {m.created_at && (
+                    <div style={{
+                      marginTop: 16,
+                      paddingTop: 16,
+                      borderTop: '1px solid #f1f5f9',
+                      fontSize: 12,
+                      color: '#94a3b8'
+                    }}>
+                      Created: {new Date(m.created_at).toLocaleString()}
+                      {m.updated_at && m.updated_at !== m.created_at && (
+                        <span style={{marginLeft: 16}}>
+                          • Updated: {new Date(m.updated_at).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

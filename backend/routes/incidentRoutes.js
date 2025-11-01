@@ -1,4 +1,4 @@
-// routes/incidentRoutes.js - Updated with u_system_failure support and improved validation
+// routes/incidentRoutes.js - Simplified without _custom_required_fields
 const express = require('express');
 const Joi = require('joi');
 const incidentService = require('../services/incidentService');
@@ -7,7 +7,6 @@ const router = express.Router();
 
 // ================== VALIDATION SCHEMAS ==================
 
-// Secure alert schema for GET request (query parameters)
 const alertQuerySchema = Joi.object({
   application: Joi.string().required().trim().max(100),
   object_name: Joi.string().required().trim().max(100),
@@ -18,7 +17,7 @@ const alertQuerySchema = Joi.object({
   network: Joi.string().trim().max(50).optional()
 });
 
-// Updated system mapping schema with u_system_failure
+// Simplified system mapping schema - just allow unknown fields (custom fields)
 const systemMappingSchema = Joi.object({
   grafana_name: Joi.string().required().trim(),
   service_offering: Joi.string().required().trim(),
@@ -26,37 +25,27 @@ const systemMappingSchema = Joi.object({
   u_network: Joi.string().required().trim(),
   u_impact_technology: Joi.string().required().trim(),
   assignment_group: Joi.string().required().trim(),
-  u_system_failure: Joi.boolean().default(false) // New mandatory field
-}).unknown(true); // Allow additional fields
+  u_system_failure: Joi.boolean().default(false)
+}).unknown(true); // Allow any additional custom fields
 
-// Updated incident rule schema with all possible condition fields
 const incidentRuleSchema = Joi.object({
   system_mapping_id: Joi.string().required(),
   rule_name: Joi.string().required().trim(),
   description: Joi.string().optional().trim(),
   conditions: Joi.object({
-    // Message conditions
     message_contains: Joi.array().items(Joi.string().trim()).optional(),
     message_regex: Joi.string().optional(),
     message_exact: Joi.string().optional(),
-    
-    // Node name conditions
     node_name_contains: Joi.array().items(Joi.string().trim()).optional(),
     node_name_regex: Joi.string().optional(),
     node_name_exact: Joi.string().optional(),
-    
-    // Object name conditions
     object_name_contains: Joi.array().items(Joi.string().trim()).optional(),
     object_name_regex: Joi.string().optional(),
     object_name_exact: Joi.string().optional(),
-    
-    // Network conditions
     network_contains: Joi.array().items(Joi.string().trim()).optional(),
     network_regex: Joi.string().optional(),
     network_exact: Joi.string().optional(),
-    network: Joi.string().optional(), // Legacy support
-    
-    // Operator conditions
+    network: Joi.string().optional(),
     operator_contains: Joi.array().items(Joi.string().trim()).optional(),
     operator_regex: Joi.string().optional(),
     operator_exact: Joi.string().optional()
@@ -66,7 +55,7 @@ const incidentRuleSchema = Joi.object({
     short_description: Joi.string().optional(),
     description: Joi.string().optional(),
     u_system_failure: Joi.boolean().optional()
-  }).unknown(true).optional(),
+  }).unknown(true).optional(), // Allow custom field overrides
   enabled: Joi.boolean().default(true),
 });
 
@@ -107,9 +96,24 @@ const handleError = (res, error, message = 'Internal server error') => {
   });
 };
 
-// ================== INCIDENT CREATION - SECURE GET REQUEST ==================
+// ================== ASSIGNMENT GROUPS ENDPOINT ==================
 
-// GET endpoint for Grafana webhooks - using query parameters for security
+router.get('/assignment-groups', async (req, res) => {
+  try {
+    const groups = await incidentService.getAssignmentGroups();
+    
+    res.json({
+      success: true,
+      data: groups,
+      count: groups.length
+    });
+  } catch (error) {
+    handleError(res, error, 'Error fetching assignment groups');
+  }
+});
+
+// ================== INCIDENT CREATION ==================
+
 router.get('/alert', validateQuery(alertQuerySchema), async (req, res) => {
   try {
     const alertData = req.validatedQuery;
@@ -130,7 +134,7 @@ router.get('/alert', validateQuery(alertQuerySchema), async (req, res) => {
         details: error.message
       });
     }
-    if (error.message.includes('Required field') && error.message.includes('is missing')) {
+    if (error.message.includes('Required field')) {
       return res.status(400).json({
         success: false,
         error: 'Missing required field',
@@ -138,93 +142,6 @@ router.get('/alert', validateQuery(alertQuerySchema), async (req, res) => {
       });
     }
     handleError(res, error, 'Error creating incident');
-  }
-});
-
-// ================== REQUIRED FIELDS MANAGEMENT ==================
-
-router.get('/required-fields', async (req, res) => {
-  try {
-    const { service_offering } = req.query;
-    
-    if (!service_offering) {
-      return res.status(400).json({
-        success: false,
-        error: 'service_offering parameter is required'
-      });
-    }
-
-    const requiredFields = await incidentService.getRequiredFieldsForServiceOffering(service_offering);
-    
-    res.json({
-      success: true,
-      data: requiredFields
-    });
-  } catch (error) {
-    handleError(res, error, 'Error fetching required fields');
-  }
-});
-
-router.post('/required-fields', async (req, res) => {
-  try {
-    const { service_offering, fields } = req.body;
-    
-    if (!service_offering) {
-      return res.status(400).json({
-        success: false,
-        error: 'service_offering is required'
-      });
-    }
-
-    if (!Array.isArray(fields)) {
-      return res.status(400).json({
-        success: false,
-        error: 'fields must be an array'
-      });
-    }
-
-    const result = await incidentService.setRequiredFieldsForServiceOffering(service_offering, fields);
-    
-    res.json({
-      success: true,
-      message: 'Required fields updated successfully',
-      data: result
-    });
-  } catch (error) {
-    handleError(res, error, 'Error setting required fields');
-  }
-});
-
-// New endpoint to get additional fields for service offering (for frontend)
-router.get('/servicenow-fields', async (req, res) => {
-  try {
-    const { service_offering } = req.query;
-    
-    if (!service_offering) {
-      return res.status(400).json({
-        success: false,
-        error: 'service_offering parameter is required'
-      });
-    }
-
-    const requiredFields = await incidentService.getRequiredFieldsForServiceOffering(service_offering);
-    
-    // Convert additional fields to frontend format
-    const additionalFields = {};
-    requiredFields.additionalRequired.forEach(field => {
-      additionalFields[field] = {
-        label: field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        placeholder: `Enter ${field.replace(/_/g, ' ')}`,
-        description: `Additional field required for ${service_offering}`
-      };
-    });
-    
-    res.json({
-      success: true,
-      additionalFields
-    });
-  } catch (error) {
-    handleError(res, error, 'Error fetching ServiceNow fields');
   }
 });
 
@@ -352,6 +269,13 @@ router.post('/incident-rules', validateBody(incidentRuleSchema), async (req, res
         details: error.message
       });
     }
+    if (error.message.includes('Invalid regex')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid regex pattern',
+        details: error.message
+      });
+    }
     handleError(res, error, 'Error creating incident rule');
   }
 });
@@ -373,6 +297,13 @@ router.put('/incident-rules/:id', validateBody(incidentRuleSchema.fork(['system_
       return res.status(404).json({
         success: false,
         error: 'Rule not found',
+        details: error.message
+      });
+    }
+    if (error.message.includes('Invalid regex')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid regex pattern',
         details: error.message
       });
     }
