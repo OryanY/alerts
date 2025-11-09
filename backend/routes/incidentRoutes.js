@@ -1,4 +1,4 @@
-// routes/incidentRoutes.js - Simplified without _custom_required_fields
+// routes/incidentRoutes.js - Updated for multiple Grafana names
 const express = require('express');
 const Joi = require('joi');
 const incidentService = require('../services/incidentService');
@@ -17,15 +17,44 @@ const alertQuerySchema = Joi.object({
   network: Joi.string().trim().max(50).optional()
 });
 
-// Simplified system mapping schema - just allow unknown fields (custom fields)
+// Updated system mapping schema - support multiple Grafana names
 const systemMappingSchema = Joi.object({
-  grafana_name: Joi.string().required().trim(),
+  // Support both old and new field names for backward compatibility
+  grafana_name: Joi.alternatives()
+    .try(
+      Joi.string().trim(),
+      Joi.array().items(Joi.string().trim()).min(1)
+    )
+    .optional(),
+  grafana_names: Joi.alternatives()
+    .try(
+      Joi.string().trim(), // Support comma-separated string
+      Joi.array().items(Joi.string().trim()).min(1) // Or array
+    )
+    .optional(),
   service_offering: Joi.string().required().trim(),
   business_service: Joi.string().required().trim(),
   u_network: Joi.string().required().trim(),
   u_impact_technology: Joi.string().required().trim(),
   assignment_group: Joi.string().required().trim(),
   u_system_failure: Joi.boolean().default(false)
+}).custom((value, helpers) => {
+  // Ensure at least one of grafana_name or grafana_names is provided
+  if (!value.grafana_name && !value.grafana_names) {
+    return helpers.error('any.required', { 
+      message: 'Either grafana_name or grafana_names is required' 
+    });
+  }
+  
+  // Convert old format to new format if needed
+  if (value.grafana_name && !value.grafana_names) {
+    value.grafana_names = Array.isArray(value.grafana_name) 
+      ? value.grafana_name 
+      : [value.grafana_name];
+    delete value.grafana_name;
+  }
+  
+  return value;
 }).unknown(true); // Allow any additional custom fields
 
 const incidentRuleSchema = Joi.object({
@@ -119,12 +148,12 @@ router.get('/alert', validateQuery(alertQuerySchema), async (req, res) => {
     const alertData = req.validatedQuery;
     console.log('Creating incident from alert (GET):', alertData);
     
-    const incidentData = await incidentService.createIncidentFromAlert(alertData);
+    const result = await incidentService.createIncidentFromAlert(alertData);
     
     res.json({
       success: true,
       message: 'Incident created successfully',
-      data: incidentData
+      data: result
     });
   } catch (error) {
     if (error.message.includes('No system mapping') || error.message.includes('not found')) {
@@ -171,10 +200,17 @@ router.post('/system-mappings', validateBody(systemMappingSchema), async (req, r
       data: newMapping
     });
   } catch (error) {
-    if (error.message.includes('already exists')) {
+    if (error.message.includes('already exist')) {
       return res.status(409).json({
         success: false,
         error: 'Mapping already exists',
+        details: error.message
+      });
+    }
+    if (error.message.includes('Invalid Grafana names')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid input',
         details: error.message
       });
     }
@@ -182,7 +218,7 @@ router.post('/system-mappings', validateBody(systemMappingSchema), async (req, r
   }
 });
 
-router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafana_name'], (schema) => schema.optional())), async (req, res) => {
+router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafana_names'], (schema) => schema.optional())), async (req, res) => {
   try {
     const { id } = req.params;
     const mappingData = req.validatedBody;
@@ -199,6 +235,13 @@ router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafa
       return res.status(404).json({
         success: false,
         error: 'System mapping not found',
+        details: error.message
+      });
+    }
+    if (error.message.includes('already exist')) {
+      return res.status(409).json({
+        success: false,
+        error: 'Conflict with existing mapping',
         details: error.message
       });
     }

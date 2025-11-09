@@ -1,4 +1,4 @@
-// services/incidentService.js - Simplified without _custom_required_fields
+// services/incidentService.js - Support multiple Grafana names per mapping
 const { getMongoDb } = require('../database/connection');
 const { mongoConfig } = require('../config');
 const { ObjectId } = require('mongodb');
@@ -8,14 +8,10 @@ class IncidentService {
   constructor() {
     this.systemMappingsCollection = null;
     this.incidentRulesCollection = null;
-
-    // ServiceNow configuration
     this.serviceNowUrl = process.env.SERVICENOW_URL;
     this.serviceNowUsername = process.env.SERVICENOW_USERNAME;
     this.serviceNowPassword = process.env.SERVICENOW_PASSWORD;
     this.serviceNowEnabled = Boolean(this.serviceNowUrl);
-    
-    // Cache for assignment groups
     this.assignmentGroupsCache = null;
     this.assignmentGroupsCacheTime = null;
     this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -27,13 +23,17 @@ class IncidentService {
     this.incidentRulesCollection = db.collection('incident_rules');
     
     try {
-      await this.systemMappingsCollection.createIndex({ grafana_name: 1 }, { unique: true });
-      await this.incidentRulesCollection.createIndex({ grafana_name: 1 });
+      // Create index on grafana_names array
+      await this.systemMappingsCollection.createIndex({ grafana_names: 1 });
+      await this.incidentRulesCollection.createIndex({ grafana_names: 1 });
       await this.incidentRulesCollection.createIndex({ enabled: 1 });
+      console.log('✅ Database indexes created successfully');
     } catch (error) {
-      console.warn('Index creation warning:', error.message);
+      console.warn('⚠️  Index creation warning:', error.message);
     }
   }
+
+  // ================== UTILITY METHODS ==================
 
   _parseBoolean(value) {
     if (typeof value === 'boolean') return value;
@@ -43,17 +43,51 @@ class IncidentService {
     return Boolean(value);
   }
 
+  _sanitizeGrafanaNames(names) {
+    if (!names) return [];
+    
+    // Handle both string (comma-separated) and array inputs
+    let namesArray = Array.isArray(names) ? names : names.split(',');
+    
+    // Clean, deduplicate, and sort
+    return [...new Set(
+      namesArray
+        .map(name => String(name).trim().toLowerCase())
+        .filter(name => name.length > 0)
+    )].sort();
+  }
+
+  _validateGrafanaNames(names) {
+    const sanitized = this._sanitizeGrafanaNames(names);
+    
+    if (sanitized.length === 0) {
+      throw new Error('At least one Grafana application name is required');
+    }
+
+    // Check for invalid characters
+    const invalidNames = sanitized.filter(name => 
+      /[^a-z0-9_-]/.test(name)
+    );
+    
+    if (invalidNames.length > 0) {
+      throw new Error(
+        `Invalid Grafana names (only lowercase letters, numbers, hyphens, and underscores allowed): ${invalidNames.join(', ')}`
+      );
+    }
+
+    return sanitized;
+  }
+
+  // ================== SERVICENOW INTEGRATION ==================
+
   async _sendToServiceNow(incidentData) {
     if (!this.serviceNowEnabled || !this.serviceNowUrl) {
-      console.log('ServiceNow integration disabled or not configured');
-      return { 
-        success: false, 
-        message: 'ServiceNow integration disabled' 
-      };
+      console.log('❌ ServiceNow integration disabled or not configured');
+      return { success: false, message: 'ServiceNow integration disabled' };
     }
 
     try {
-      console.log('Sending to ServiceNow:', JSON.stringify(incidentData, null, 2));
+      console.log('📤 Sending to ServiceNow:', JSON.stringify(incidentData, null, 2));
       
       const response = await axios({
         method: 'POST',
@@ -70,7 +104,7 @@ class IncidentService {
         timeout: 10000
       });
 
-      console.log('ServiceNow incident created:', response.data.result.number);
+      console.log('✅ ServiceNow incident created:', response.data.result.number);
 
       return {
         success: true,
@@ -80,7 +114,7 @@ class IncidentService {
       };
       
     } catch (error) {
-      console.error('ServiceNow API Error:', error.response?.data || error.message);
+      console.error('❌ ServiceNow API Error:', error.response?.data || error.message);
       
       return {
         success: false,
@@ -90,24 +124,19 @@ class IncidentService {
     }
   }
 
-  // ================== ASSIGNMENT GROUPS FROM SERVICENOW (WITH CACHING) ==================
-
   async getAssignmentGroups() {
     if (!this.serviceNowEnabled) {
       return [];
     }
 
-    // Check cache
     const now = Date.now();
     if (this.assignmentGroupsCache && 
         this.assignmentGroupsCacheTime && 
         (now - this.assignmentGroupsCacheTime) < this.CACHE_TTL) {
-      console.log('Returning cached assignment groups');
       return this.assignmentGroupsCache;
     }
 
     try {
-      console.log('Fetching fresh assignment groups from ServiceNow...');
       const response = await axios({
         method: 'GET',
         url: `${this.serviceNowUrl}/api/now/table/sys_user_group`,
@@ -116,9 +145,7 @@ class IncidentService {
           sysparm_fields: 'sys_id,name',
           sysparm_limit: 1000
         },
-        headers: {
-          'Accept': 'application/json'
-        },
+        headers: { 'Accept': 'application/json' },
         auth: {
           username: this.serviceNowUsername,
           password: this.serviceNowPassword
@@ -131,37 +158,46 @@ class IncidentService {
         label: group.name
       }));
 
-      // Update cache
       this.assignmentGroupsCache = groups;
       this.assignmentGroupsCacheTime = Date.now();
       
-      console.log(`Cached ${groups.length} assignment groups`);
+      console.log(`✅ Cached ${groups.length} assignment groups`);
       return groups;
     } catch (error) {
-      console.error('Error fetching assignment groups:', error.message);
-      // Return cached data if available, even if expired
+      console.error('❌ Error fetching assignment groups:', error.message);
       if (this.assignmentGroupsCache) {
-        console.warn('Using stale cache due to API error');
+        console.warn('⚠️  Using stale cache due to API error');
         return this.assignmentGroupsCache;
       }
       return [];
     }
   }
 
-  // ================== INCIDENT BUILDING WITH CUSTOM FIELDS ==================
+  // ================== INCIDENT BUILDING ==================
   
+  _replaceTemplateVariables(template, alertData) {
+    if (!template || typeof template !== 'string') return template;
+    
+    const validFields = ['application', 'object_name', 'node_name', 'message', 'time_created', 'operator', 'network'];
+    let result = template;
+    
+    validFields.forEach(field => {
+      const regex = new RegExp(`\\{\\{${field}\\}\\}`, 'g');
+      result = result.replace(regex, alertData[field] || '');
+    });
+    
+    return result;
+  }
+
   _buildIncidentData(systemMapping, ruleOverrides = {}, alertData) {
     const baseRequired = ['service_offering', 'business_service', 'u_network', 'assignment_group', 'u_system_failure'];
-    const excludeFields = new Set(['_id', 'grafana_name', 'created_at', 'updated_at']);
+    const excludeFields = new Set(['_id', 'grafana_names', 'created_at', 'updated_at']);
     
     const incidentData = {};
     
     // 1. Add base required fields
     baseRequired.forEach(field => {
-      let value = ruleOverrides[field];
-      if (value === undefined) {
-        value = systemMapping[field];
-      }
+      let value = ruleOverrides[field] !== undefined ? ruleOverrides[field] : systemMapping[field];
       
       if (field === 'u_system_failure') {
         incidentData[field] = this._parseBoolean(value);
@@ -172,7 +208,7 @@ class IncidentService {
       }
     });
     
-    // 2. Add all other fields from mapping (including custom fields)
+    // 2. Add all custom fields from mapping
     Object.entries(systemMapping).forEach(([key, value]) => {
       if (!excludeFields.has(key) && 
           !baseRequired.includes(key) && 
@@ -199,8 +235,7 @@ class IncidentService {
     }
     
     if (!incidentData.description) {
-      // Build description with custom fields if they exist
-      let descParts = [
+      const descParts = [
         `Alert Details:`,
         `Application: ${alertData.application}`,
         `Object: ${alertData.object_name}`,
@@ -226,28 +261,7 @@ class IncidentService {
     return incidentData;
   }
 
-  _replaceTemplateVariables(template, alertData) {
-    if (!template || typeof template !== 'string') return template;
-    
-    const validFields = ['application', 'object_name', 'node_name', 'message', 'time_created', 'operator', 'network'];
-    let result = template;
-    
-    // Replace valid template variables
-    validFields.forEach(field => {
-      const regex = new RegExp(`\\{\\{${field}\\}\\}`, 'g');
-      result = result.replace(regex, alertData[field] || '');
-    });
-    
-    // Warn about invalid template variables
-    const invalidVars = result.match(/\{\{([^}]+)\}\}/g);
-    if (invalidVars) {
-      console.warn('Invalid template variables found:', invalidVars.join(', '));
-    }
-    
-    return result;
-  }
-
-  // ================== SYSTEM MAPPINGS WITH CUSTOM FIELDS ==================
+  // ================== SYSTEM MAPPINGS (MULTIPLE GRAFANA NAMES) ==================
   
   async getSystemMappings() {
     if (!this.systemMappingsCollection) await this.initialize();
@@ -256,7 +270,7 @@ class IncidentService {
       const mappings = await this.systemMappingsCollection.find({}).toArray();
       return mappings;
     } catch (error) {
-      console.error('Error fetching system mappings:', error);
+      console.error('❌ Error fetching system mappings:', error);
       throw new Error('Failed to fetch system mappings');
     }
   }
@@ -269,12 +283,16 @@ class IncidentService {
         throw new Error('Invalid grafana_name');
       }
       
+      const normalizedName = grafanaName.trim().toLowerCase();
+      
+      // Find mapping where grafana_names array contains this name
       const mapping = await this.systemMappingsCollection.findOne({ 
-        grafana_name: String(grafanaName) 
+        grafana_names: normalizedName
       });
+      
       return mapping;
     } catch (error) {
-      console.error('Error fetching mapping by application:', error);
+      console.error('❌ Error fetching mapping by application:', error);
       throw new Error('Failed to fetch mapping');
     }
   }
@@ -283,29 +301,52 @@ class IncidentService {
     if (!this.systemMappingsCollection) await this.initialize();
     
     try {
-      if (!mappingData.grafana_name) {
-        throw new Error('grafana_name is required');
+      // Handle backward compatibility - convert grafana_name to grafana_names
+      let namesToUse = mappingData.grafana_names;
+      
+      if (!namesToUse && mappingData.grafana_name) {
+        namesToUse = mappingData.grafana_name;
+        console.log('⚠️  Converting old grafana_name format to grafana_names');
+      }
+      
+      if (!namesToUse) {
+        throw new Error('Either grafana_name or grafana_names must be provided');
       }
 
-      const existing = await this.systemMappingsCollection.findOne({ 
-        grafana_name: mappingData.grafana_name 
+      // Validate and sanitize grafana_names
+      const sanitizedNames = this._validateGrafanaNames(namesToUse);
+
+      // Check for existing mappings with any of these names
+      const existingMapping = await this.systemMappingsCollection.findOne({
+        grafana_names: { $in: sanitizedNames }
       });
-      if (existing) {
-        throw new Error('Mapping for this grafana_name already exists');
+
+      if (existingMapping) {
+        const conflictingNames = sanitizedNames.filter(name => 
+          existingMapping.grafana_names.includes(name)
+        );
+        throw new Error(
+          `Grafana name(s) already exist in another mapping: ${conflictingNames.join(', ')}`
+        );
       }
 
       const dataToInsert = {
         ...mappingData,
+        grafana_names: sanitizedNames,
         u_system_failure: this._parseBoolean(mappingData.u_system_failure),
         created_at: new Date(),
         updated_at: new Date()
       };
+      
+      // Remove old field if it exists
+      delete dataToInsert.grafana_name;
 
       const result = await this.systemMappingsCollection.insertOne(dataToInsert);
 
+      console.log(`✅ Created system mapping with names: ${sanitizedNames.join(', ')}`);
       return { _id: result.insertedId, ...dataToInsert };
     } catch (error) {
-      console.error('Error creating system mapping:', error);
+      console.error('❌ Error creating system mapping:', error);
       throw error;
     }
   }
@@ -316,6 +357,28 @@ class IncidentService {
     try {
       const objectId = new ObjectId(id);
       const { _id, created_at, ...updateData } = mappingData;
+      
+      // If updating grafana_names, validate and check for conflicts
+      if (updateData.grafana_names) {
+        const sanitizedNames = this._validateGrafanaNames(updateData.grafana_names);
+        
+        // Check for conflicts with other mappings (excluding current one)
+        const conflictingMapping = await this.systemMappingsCollection.findOne({
+          _id: { $ne: objectId },
+          grafana_names: { $in: sanitizedNames }
+        });
+
+        if (conflictingMapping) {
+          const conflictingNames = sanitizedNames.filter(name => 
+            conflictingMapping.grafana_names.includes(name)
+          );
+          throw new Error(
+            `Grafana name(s) already exist in another mapping: ${conflictingNames.join(', ')}`
+          );
+        }
+
+        updateData.grafana_names = sanitizedNames;
+      }
       
       if ('u_system_failure' in updateData) {
         updateData.u_system_failure = this._parseBoolean(updateData.u_system_failure);
@@ -330,9 +393,10 @@ class IncidentService {
         throw new Error('System mapping not found');
       }
 
+      console.log(`✅ Updated system mapping: ${id}`);
       return await this.systemMappingsCollection.findOne({ _id: objectId });
     } catch (error) {
-      console.error('Error updating system mapping:', error);
+      console.error('❌ Error updating system mapping:', error);
       throw error;
     }
   }
@@ -358,9 +422,10 @@ class IncidentService {
         throw new Error('System mapping not found');
       }
 
+      console.log(`✅ Deleted system mapping: ${id}`);
       return { message: 'System mapping deleted successfully' };
     } catch (error) {
-      console.error('Error deleting system mapping:', error);
+      console.error('❌ Error deleting system mapping:', error);
       throw error;
     }
   }
@@ -371,7 +436,7 @@ class IncidentService {
     if (!this.incidentRulesCollection) await this.initialize();
     
     try {
-      const filter = grafanaName ? { grafana_name: grafanaName } : {};
+      const filter = grafanaName ? { grafana_names: grafanaName.trim().toLowerCase() } : {};
       const rules = await this.incidentRulesCollection
         .aggregate([
           { $match: filter },
@@ -395,7 +460,7 @@ class IncidentService {
       
       return rules;
     } catch (error) {
-      console.error('Error fetching incident rules:', error);
+      console.error('❌ Error fetching incident rules:', error);
       throw new Error('Failed to fetch incident rules');
     }
   }
@@ -420,16 +485,18 @@ class IncidentService {
       const dataToInsert = {
         ...ruleData,
         system_mapping_id: mappingId,
-        grafana_name: mapping.grafana_name,
+        grafana_names: mapping.grafana_names, // Store array of names
         logic_operator: ruleData.logic_operator || 'OR',
         created_at: new Date(),
         updated_at: new Date()
       };
 
       const result = await this.incidentRulesCollection.insertOne(dataToInsert);
+      
+      console.log(`✅ Created incident rule for applications: ${mapping.grafana_names.join(', ')}`);
       return { _id: result.insertedId, ...dataToInsert };
     } catch (error) {
-      console.error('Error creating incident rule:', error);
+      console.error('❌ Error creating incident rule:', error);
       throw error;
     }
   }
@@ -462,7 +529,7 @@ class IncidentService {
           throw new Error('System mapping not found');
         }
         updateData.system_mapping_id = mappingId;
-        updateData.grafana_name = mapping.grafana_name;
+        updateData.grafana_names = mapping.grafana_names;
       }
 
       if (updateData.conditions) {
@@ -482,9 +549,10 @@ class IncidentService {
         throw new Error('Incident rule not found');
       }
 
+      console.log(`✅ Updated incident rule: ${id}`);
       return await this.incidentRulesCollection.findOne({ _id: objectId });
     } catch (error) {
-      console.error('Error updating incident rule:', error);
+      console.error('❌ Error updating incident rule:', error);
       throw error;
     }
   }
@@ -500,9 +568,10 @@ class IncidentService {
         throw new Error('Incident rule not found');
       }
 
+      console.log(`✅ Deleted incident rule: ${id}`);
       return { message: 'Incident rule deleted successfully' };
     } catch (error) {
-      console.error('Error deleting incident rule:', error);
+      console.error('❌ Error deleting incident rule:', error);
       throw error;
     }
   }
@@ -521,24 +590,21 @@ class IncidentService {
         throw new Error('Incident rule not found');
       }
 
+      console.log(`✅ Toggled incident rule ${id}: ${enabled ? 'enabled' : 'disabled'}`);
       return { message: `Incident rule ${enabled ? 'enabled' : 'disabled'} successfully` };
     } catch (error) {
-      console.error('Error toggling incident rule:', error);
+      console.error('❌ Error toggling incident rule:', error);
       throw error;
     }
   }
 
-  // ================== RULE MATCHING - MOST CONDITIONS WINS ==================
+  // ================== RULE MATCHING ==================
 
   _calculateRuleSpecificity(rule) {
     const { conditions } = rule;
     let score = 0;
     
-    const weights = {
-      exact: 10,
-      regex: 7,
-      contains: 3
-    };
+    const weights = { exact: 10, regex: 7, contains: 3 };
     
     Object.keys(conditions).forEach(key => {
       if (key.endsWith('_exact')) score += weights.exact;
@@ -569,7 +635,7 @@ class IncidentService {
         const regex = new RegExp(conditions[`${fieldPrefix}_regex`], 'i');
         results.push(value && regex.test(value));
       } catch (e) {
-        console.warn(`Invalid regex in rule for ${fieldPrefix}:`, conditions[`${fieldPrefix}_regex`]);
+        console.warn(`⚠️  Invalid regex in rule for ${fieldPrefix}:`, conditions[`${fieldPrefix}_regex`]);
         results.push(false);
       }
     }
@@ -583,7 +649,7 @@ class IncidentService {
     
     const conditionGroups = [];
 
-    const evaluateFieldResults = (results, fieldName) => {
+    const evaluateFieldResults = (results) => {
       if (results.length === 0) return null;
       
       if (logic_operator === 'AND' && results.length > 1) {
@@ -592,38 +658,28 @@ class IncidentService {
       return results.some(result => result === true);
     };
 
-    const messageResults = this._checkFieldConditions(message, conditions, 'message');
-    const messageMatch = evaluateFieldResults(messageResults, 'message');
-    if (messageMatch !== null) conditionGroups.push(messageMatch);
+    // Evaluate all field conditions
+    ['message', 'node_name', 'object_name', 'operator'].forEach(field => {
+      const value = alertData[field];
+      const results = this._checkFieldConditions(value, conditions, field);
+      const match = evaluateFieldResults(results);
+      if (match !== null) conditionGroups.push(match);
+    });
 
-    const nodeResults = this._checkFieldConditions(node_name, conditions, 'node_name');
-    const nodeMatch = evaluateFieldResults(nodeResults, 'node_name');
-    if (nodeMatch !== null) conditionGroups.push(nodeMatch);
-
-    const objectResults = this._checkFieldConditions(object_name, conditions, 'object_name');
-    const objectMatch = evaluateFieldResults(objectResults, 'object_name');
-    if (objectMatch !== null) conditionGroups.push(objectMatch);
-
+    // Network special handling
     const networkResults = this._checkFieldConditions(network, conditions, 'network');
-    const networkMatch = evaluateFieldResults(networkResults, 'network');
+    const networkMatch = evaluateFieldResults(networkResults);
     if (networkMatch !== null) {
       conditionGroups.push(networkMatch);
     } else if (conditions.network) {
-      const networkMatches = network && network.toLowerCase().includes(conditions.network.toLowerCase());
-      conditionGroups.push(networkMatches);
+      conditionGroups.push(network && network.toLowerCase().includes(conditions.network.toLowerCase()));
     }
-
-    const operatorResults = this._checkFieldConditions(operator, conditions, 'operator');
-    const operatorMatch = evaluateFieldResults(operatorResults, 'operator');
-    if (operatorMatch !== null) conditionGroups.push(operatorMatch);
 
     if (conditionGroups.length === 0) return false;
 
-    if (logic_operator === 'AND') {
-      return conditionGroups.every(result => result === true);
-    } else {
-      return conditionGroups.some(result => result === true);
-    }
+    return logic_operator === 'AND' 
+      ? conditionGroups.every(result => result === true)
+      : conditionGroups.some(result => result === true);
   }
 
   // ================== INCIDENT CREATION ==================
@@ -632,6 +688,11 @@ class IncidentService {
     try {
       const { application } = alertData;
       
+      if (!application) {
+        throw new Error('Alert must have an application field');
+      }
+
+      // Get rules for this application (rules are stored with grafana_names array)
       const rules = await this.getIncidentRules(application);
       const enabledRules = rules
         .filter(rule => rule.enabled)
@@ -660,7 +721,7 @@ class IncidentService {
           throw new Error(`System mapping not found for rule: ${matchingRule.rule_name}`);
         }
         
-        console.log(`Using incident rule: ${matchingRule.rule_name} (specificity: ${this._calculateRuleSpecificity(matchingRule)})`);
+        console.log(`✅ Using incident rule: ${matchingRule.rule_name} (specificity: ${this._calculateRuleSpecificity(matchingRule)})`);
         incidentData = this._buildIncidentData(systemMapping, matchingRule.incident_overrides, alertData);
         
         incidentData.matched_rule_id = matchingRule._id;
@@ -668,27 +729,32 @@ class IncidentService {
         incidentData.matched_rule_logic = matchingRule.logic_operator || 'OR';
         
       } else {
+        // Fallback to basic system mapping
         systemMapping = await this.getMappingByApplication(application);
         
         if (!systemMapping) {
-          throw new Error(`No system mapping or incident rules found for application: ${application}`);
+          throw new Error(
+            `No system mapping or incident rules found for application: ${application}. ` +
+            `Available mappings cover: ${(await this.getSystemMappings()).map(m => m.grafana_names.join(', ')).join(' | ')}`
+          );
         }
         
-        console.log(`Using basic system mapping for: ${application}`);
+        console.log(`ℹ️  Using basic system mapping for: ${application} (from ${systemMapping.grafana_names.join(', ')})`);
         incidentData = this._buildIncidentData(systemMapping, {}, alertData);
       }
       
-      console.log('Creating incident with data:', JSON.stringify(incidentData, null, 2));
+      console.log('📋 Creating incident with data:', JSON.stringify(incidentData, null, 2));
       
       const serviceNowResult = await this._sendToServiceNow(incidentData);
       
       return {
         incidentData,
-        serviceNowResult
+        serviceNowResult,
+        matched_applications: systemMapping.grafana_names
       };
       
     } catch (error) {
-      console.error('Error creating incident from alert:', error);
+      console.error('❌ Error creating incident from alert:', error);
       throw error;
     }
   }
@@ -700,7 +766,7 @@ class IncidentService {
       const values = await this.systemMappingsCollection.distinct(fieldName);
       return values.filter(v => v != null && v !== '');
     } catch (error) {
-      console.error(`Error fetching distinct values for ${fieldName}:`, error);
+      console.error(`❌ Error fetching distinct values for ${fieldName}:`, error);
       throw error;
     }
   }

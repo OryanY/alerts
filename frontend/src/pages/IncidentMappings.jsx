@@ -13,7 +13,7 @@ const IncidentMappings = () => {
   const [loadingGroups, setLoadingGroups] = useState(false);
 
   const [form, setForm] = useState({
-    grafana_name: '',
+    grafana_names: [],
     service_offering: '',
     business_service: '',
     u_network: '',
@@ -22,8 +22,8 @@ const IncidentMappings = () => {
     u_system_failure: false,
   });
 
-  // Custom fields structure: { fieldName: value }
   const [customFields, setCustomFields] = useState({});
+  const [newGrafanaName, setNewGrafanaName] = useState('');
 
   const baseMandatoryFields = [
     'service_offering',
@@ -36,7 +36,7 @@ const IncidentMappings = () => {
 
   const excludeFromCustom = [
     '_id',
-    'grafana_name',
+    'grafana_names',
     'created_at',
     'updated_at',
     ...baseMandatoryFields
@@ -44,7 +44,7 @@ const IncidentMappings = () => {
 
   const reset = () => {
     setForm({
-      grafana_name: '',
+      grafana_names: [],
       service_offering: '',
       business_service: '',
       u_network: '',
@@ -53,6 +53,7 @@ const IncidentMappings = () => {
       u_system_failure: false,
     });
     setCustomFields({});
+    setNewGrafanaName('');
     setEditingItem(null);
   };
 
@@ -89,6 +90,50 @@ const IncidentMappings = () => {
     fetchMappings();
     fetchAssignmentGroups();
   }, []);
+
+  // ================== GRAFANA NAMES MANAGEMENT ==================
+
+  const addGrafanaName = () => {
+    const trimmed = newGrafanaName.trim().toLowerCase();
+    
+    if (!trimmed) {
+      alert('Please enter a Grafana application name');
+      return;
+    }
+
+    // Validate format
+    if (!/^[a-z0-9_-]+$/.test(trimmed)) {
+      alert('Grafana names can only contain lowercase letters, numbers, hyphens, and underscores');
+      return;
+    }
+
+    if (form.grafana_names.includes(trimmed)) {
+      alert('This name is already in the list');
+      return;
+    }
+
+    setForm(prev => ({
+      ...prev,
+      grafana_names: [...prev.grafana_names, trimmed].sort()
+    }));
+    setNewGrafanaName('');
+  };
+
+  const removeGrafanaName = (name) => {
+    setForm(prev => ({
+      ...prev,
+      grafana_names: prev.grafana_names.filter(n => n !== name)
+    }));
+  };
+
+  const handleGrafanaNameKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addGrafanaName();
+    }
+  };
+
+  // ================== CUSTOM FIELDS MANAGEMENT ==================
 
   const addCustomField = () => {
     const fieldName = prompt('Enter field name (e.g., u_eck_name, u_oracle_error):');
@@ -127,17 +172,21 @@ const IncidentMappings = () => {
     }));
   };
 
+  // ================== CRUD OPERATIONS ==================
+
   const save = async (e) => {
     e.preventDefault();
     
+    if (form.grafana_names.length === 0) {
+      setError('Please add at least one Grafana application name');
+      return;
+    }
+
     try {
-      // Prepare data: base fields + custom field values
-      const dataToSave = { ...form };
-      
-      // Add custom field values to the main object
-      Object.entries(customFields).forEach(([fieldName, value]) => {
-        dataToSave[fieldName] = value;
-      });
+      const dataToSave = { 
+        ...form,
+        ...customFields // Merge custom fields into the main object
+      };
 
       const url = editingItem ? `${API_BASE}/system-mappings/${editingItem._id}` : `${API_BASE}/system-mappings`;
       const method = editingItem ? 'PUT' : 'POST';
@@ -147,10 +196,12 @@ const IncidentMappings = () => {
         body: JSON.stringify(dataToSave)
       });
       const data = await res.json();
+      
       if (data.success) {
         await fetchMappings();
         reset();
         setShowForm(false);
+        setError(null);
       } else {
         setError(data.details || 'Failed to save mapping');
       }
@@ -161,7 +212,7 @@ const IncidentMappings = () => {
 
   const startEdit = (m) => {
     const formData = {
-      grafana_name: m.grafana_name || '',
+      grafana_names: Array.isArray(m.grafana_names) ? m.grafana_names : [],
       service_offering: m.service_offering || '',
       business_service: m.business_service || '',
       u_network: m.u_network || '',
@@ -172,7 +223,7 @@ const IncidentMappings = () => {
     
     setForm(formData);
 
-    // Extract custom fields from the mapping
+    // Extract custom fields
     const custom = {};
     Object.keys(m).forEach(key => {
       if (!excludeFromCustom.includes(key)) {
@@ -194,12 +245,18 @@ const IncidentMappings = () => {
     try {
       const res = await fetch(`${API_BASE}/system-mappings/${id}`, { method: 'DELETE' });
       const data = await res.json();
-      if (data.success) await fetchMappings();
-      else setError(data.details || 'Failed to delete mapping');
+      if (data.success) {
+        await fetchMappings();
+        setError(null);
+      } else {
+        setError(data.details || 'Failed to delete mapping');
+      }
     } catch (e) {
       setError('Error deleting mapping: ' + e.message);
     }
   };
+
+  // ================== RENDER ==================
 
   if (loading) {
     return (
@@ -234,7 +291,7 @@ const IncidentMappings = () => {
           gap: 12
         }}>
           <AlertTriangle size={20} color="#dc2626" />
-          <div>
+          <div style={{flex: 1}}>
             <div style={{fontWeight: 600, color: '#dc2626', marginBottom: 4}}>Error</div>
             <div style={{color: '#b91c1c', fontSize: 14}}>{error}</div>
           </div>
@@ -276,6 +333,9 @@ const IncidentMappings = () => {
             <Settings size={28} />
             System Mappings
           </h2>
+          <p style={{margin: '8px 0 0 40px', fontSize: 14, color: '#64748b'}}>
+            Map multiple Grafana applications to ServiceNow incident fields
+          </p>
         </div>
 
         <div style={{display: 'flex', gap: 12}}>
@@ -370,13 +430,13 @@ const IncidentMappings = () => {
               marginBottom: 32
             }}>
               {editingItem 
-                ? 'Update how this app creates incidents' 
-                : 'Configure how alerts from this app create ServiceNow incidents'
+                ? 'Update how these applications create incidents' 
+                : 'Configure how alerts from multiple Grafana applications create ServiceNow incidents'
               }
             </p>
 
             <form onSubmit={save} style={{display: 'flex', flexDirection: 'column', gap: 32}}>
-              {/* Grafana Name */}
+              {/* Grafana Application Names */}
               <div style={{
                 background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
                 padding: 24,
@@ -392,24 +452,115 @@ const IncidentMappings = () => {
                   alignItems: 'center', 
                   gap: 8
                 }}>
-                  🎯 Grafana Application Name
+                  🎯 Grafana Application Names
                 </h4>
-                <input 
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #bae6fd',
-                    borderRadius: 8,
-                    fontSize: 16,
-                    fontWeight: 500,
+                <p style={{margin: '0 0 16px 0', fontSize: 14, color: '#0369a1'}}>
+                  Add multiple application names (e.g., mongo, mongok, mgk). All will use the same incident configuration.
+                </p>
+
+                {/* Input for new name */}
+                <div style={{display: 'flex', gap: 8, marginBottom: 16}}>
+                  <input 
+                    type="text"
+                    style={{
+                      flex: 1,
+                      padding: '12px 16px',
+                      border: '2px solid #bae6fd',
+                      borderRadius: 8,
+                      fontSize: 16,
+                      fontWeight: 500,
+                      background: 'white',
+                      color: '#0c4a6e'
+                    }}
+                    value={newGrafanaName} 
+                    onChange={(e) => setNewGrafanaName(e.target.value)}
+                    onKeyPress={handleGrafanaNameKeyPress}
+                    placeholder="e.g., mongo, eck, prometheus" 
+                  />
+                  <button
+                    type="button"
+                    onClick={addGrafanaName}
+                    style={{
+                      background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '12px 20px',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    <PlusCircle size={16} />
+                    Add Name
+                  </button>
+                </div>
+
+                {/* Display added names */}
+                {form.grafana_names.length > 0 ? (
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    padding: 16,
                     background: 'white',
-                    color: '#0c4a6e'
-                  }}
-                  value={form.grafana_name} 
-                  onChange={(e) => setForm(p => ({...p, grafana_name: e.target.value}))} 
-                  required 
-                  placeholder="e.g., eck, prometheus, oracle" 
-                />
+                    borderRadius: 8,
+                    border: '2px solid #bae6fd'
+                  }}>
+                    {form.grafana_names.map(name => (
+                      <div
+                        key={name}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                          color: 'white',
+                          padding: '6px 12px',
+                          borderRadius: 20,
+                          fontSize: 14,
+                          fontWeight: 600
+                        }}
+                      >
+                        <span>{name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeGrafanaName(name)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.2)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: 20,
+                            height: 20,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            padding: 0
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: 24,
+                    background: 'white',
+                    borderRadius: 8,
+                    border: '2px dashed #bae6fd',
+                    color: '#0369a1',
+                    fontSize: 14
+                  }}>
+                    No application names added yet. Add at least one to continue.
+                  </div>
+                )}
               </div>
 
               {/* Service Offering */}
@@ -799,16 +950,19 @@ const IncidentMappings = () => {
                 </button>
                 <button 
                   type="submit" 
+                  disabled={form.grafana_names.length === 0}
                   style={{
-                    background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                    color: 'white',
+                    background: form.grafana_names.length > 0 
+                      ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                      : '#e5e7eb',
+                    color: form.grafana_names.length > 0 ? 'white' : '#9ca3af',
                     border: 'none',
                     borderRadius: 8,
                     padding: '12px 32px',
                     fontSize: 16,
                     fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)'
+                    cursor: form.grafana_names.length > 0 ? 'pointer' : 'not-allowed',
+                    boxShadow: form.grafana_names.length > 0 ? '0 4px 12px rgba(34, 197, 94, 0.3)' : 'none'
                   }}
                 >
                   {editingItem ? '✅ Update Mapping' : '🚀 Create Mapping'}
@@ -832,7 +986,7 @@ const IncidentMappings = () => {
             No Mappings Yet
           </h3>
           <p style={{fontSize: 16, color: '#64748b', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px'}}>
-            Create your first system mapping to configure how Grafana alerts create ServiceNow incidents.
+            Create your first system mapping to configure how multiple Grafana applications create ServiceNow incidents.
           </p>
         </div>
       ) : (
@@ -856,7 +1010,6 @@ const IncidentMappings = () => {
           
           <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
             {mappings.map((m) => {
-              // Extract custom fields
               const customFieldsInMapping = Object.keys(m).filter(k => 
                 !excludeFromCustom.includes(k)
               );
@@ -898,9 +1051,25 @@ const IncidentMappings = () => {
                         color: '#1e293b',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 12
+                        gap: 12,
+                        flexWrap: 'wrap'
                       }}>
-                        📊 {m.grafana_name}
+                        <span>📊 Applications:</span>
+                        {(m.grafana_names || []).map(name => (
+                          <span 
+                            key={name}
+                            style={{
+                              background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                              color: 'white',
+                              padding: '4px 12px',
+                              borderRadius: 12,
+                              fontSize: 14,
+                              fontWeight: 600
+                            }}
+                          >
+                            {name}
+                          </span>
+                        ))}
                         {m.u_system_failure && (
                           <span style={{
                             background: '#fecaca',
