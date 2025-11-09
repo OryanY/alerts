@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Target, ArrowRight, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Settings, Target, CheckCircle } from 'lucide-react';
 
 // Import the updated components
 import IncidentMappings from './IncidentMappings.jsx';

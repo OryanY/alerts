@@ -770,6 +770,36 @@ class IncidentService {
       throw error;
     }
   }
+
+  // Direct Alert creation (ServiceNow only, no incident rules)
+  async createServiceNowAlert(alertData) {
+    try {
+      const { application } = alertData;
+      if (!application) throw new Error('Alert must have an application field');
+      // Find basic system mapping for this application
+      const systemMapping = await this.getMappingByApplication(application);
+      if (!systemMapping) {
+        throw new Error(
+          `No system mapping found for application: ${application}. ` +
+          `Available mappings cover: ${(await this.getSystemMappings()).map(m => m.grafana_names.join(', ')).join(' | ')}`
+        );
+      }
+      // Build incident data from mapping, no rule overrides
+      const alertIncidentData = this._buildIncidentData(systemMapping, {}, alertData);
+      // Actually send to ServiceNow (could use severity, etc)
+      const serviceNowResult = await this._sendToServiceNow(alertIncidentData);
+      return {
+        alertIncidentData,
+        serviceNowResult,
+        matched_applications: systemMapping.grafana_names
+      };
+    } catch (error) {
+      console.error('❌ Error creating ServiceNow alert:', error);
+      throw error;
+    }
+}
+
+
 }
 
 module.exports = new IncidentService();
