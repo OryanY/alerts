@@ -3,12 +3,7 @@ const express = require('express');
 const { validateQuery } = require('../middleware/validation');
 const { handleError } = require('../middleware/errorHandler');
 const { cache } = require('../utils/cache');
-const { 
-  statsSchema, 
-  panelStatsSchema, 
-  timeseriesSchema,
-  panelResearchSchema,
-} = require('../schemas/alertSchemas');
+const { statsSchema, panelStatsSchema, timeseriesSchema,panelResearchSchema} = require('../schemas/alertSchemas');
 const AlertService = require('../services/AlertService');
 const router = express.Router();
 const alertService = new AlertService();
@@ -77,7 +72,7 @@ router.get('/hourly-heatmap', validateQuery(statsSchema), async (req, res) => {
   }
 });
 
-// Time series data (per IL day)
+// Time series data
 router.get('/timeseries', validateQuery(timeseriesSchema), async (req, res) => {
   try {
     const params = req.validatedQuery;

@@ -82,21 +82,11 @@ const panelResearchSchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100000).optional()
 });
 
-// Schema for recent alerts endpoint
-const recentSchema = Joi.object({
-  hours: Joi.number().integer().min(1).max(168).default(24), // Max 1 week
-  limit: Joi.number().integer().min(1).max(1000).default(100),
-  
-  // Include basic configuration
-  day_start: baseSchema.day_start,
-  day_end: baseSchema.day_end,
-  dur_short_max: baseSchema.dur_short_max,
-  dur_medium_max: baseSchema.dur_medium_max
-});
-
 // Schema for statistics endpoints
 const statsSchema = Joi.object({
-  ...baseSchema
+  ...baseSchema,
+  panel_title: Joi.string().trim().max(100).optional()
+
 }).custom((value, helpers) => {
   // Validate date range
   if (value.start_date && value.end_date) {
@@ -124,7 +114,7 @@ const panelStatsSchema = Joi.object({
 // Schema for time series data
 const timeseriesSchema = Joi.object({
   ...baseSchema,
-  
+  panel_title: Joi.string().trim().max(100).optional(),
   // Time series specific parameters
   granularity: Joi.string().valid('hour', 'day').default('day'),
   fill_gaps: Joi.boolean().default(false)
@@ -143,7 +133,7 @@ const timeseriesSchema = Joi.object({
   }
   
   // Limit time range for performance (max 1 year)
-  const maxDays = 365;
+  const maxDays = 730;
   const daysDiff = (end - start) / (1000 * 60 * 60 * 24);
   if (daysDiff > maxDays) {
     return helpers.error('any.invalid', { 
@@ -167,7 +157,6 @@ const patternSchema = Joi.object({
 
 module.exports = {
   alertsSchema,
-  recentSchema,
   statsSchema,
   panelStatsSchema,
   timeseriesSchema,

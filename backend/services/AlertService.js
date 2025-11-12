@@ -79,7 +79,7 @@ class AlertService {
 
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
     const whereParts = [];
-    
+
     if (range?.start) {
       request.input('startDate', this._getSqlType('DateTime2'), range.start);
       whereParts.push('time_fired >= @startDate');
@@ -88,9 +88,13 @@ class AlertService {
       request.input('endDate', this._getSqlType('DateTime2'), range.end);
       whereParts.push('time_fired <= @endDate');
     }
+    if (params.panel_title) {
+      request.input('panelTitle', this._getSqlType('NVarChar'), params.panel_title);
+      whereParts.push('panel_title = @panelTitle');
+    }
 
     const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-    const limit = Math.min(params.limit || 100000, 100000); // Safety cap
+    const limit = Math.min(params.limit || 100000, 100000);
     request.input('cap', this._getSqlType('Int'), limit);
 
     const sqlText = `
@@ -102,9 +106,9 @@ class AlertService {
 
     const result = await request.query(sqlText);
     const kpis = this._computeKPIs(result.recordset, params);
-    
     return ResponseFormatter.success(kpis);
   }
+
 
 
 
@@ -113,7 +117,7 @@ class AlertService {
     const request = pool.request();
     
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
+    const where = this._buildWhereClause(request, range, params.panel_title);
     const cap = Math.min(params.limit || 100000, 100000);
     request.input('cap', this._getSqlType('Int'), cap);
 
@@ -137,9 +141,8 @@ class AlertService {
   async getShiftAnalysis(params) {
     const pool = this.getPool();
     const request = pool.request();
-    
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
+    const where = this._buildWhereClause(request, range, params.panel_title);
     const cap = Math.min(params.limit || 100000, 100000);
     request.input('cap', this._getSqlType('Int'), cap);
 
@@ -158,9 +161,10 @@ class AlertService {
   async _getBasicAlertData(params) {
     const pool = this.getPool();
     const request = pool.request();
-    
+
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
+    const where = this._buildWhereClause(request, range, params.panel_title);
+
     const cap = Math.min(params.limit || 100000, 100000);
     request.input('cap', this._getSqlType('Int'), cap);
 
@@ -172,7 +176,8 @@ class AlertService {
     `);
   }
 
-  _buildDateWhereClause(request, range) {
+
+  _buildWhereClause(request, range, panel_title) {
     const where = [];
     if (range?.start) {
       request.input('start', this._getSqlType('DateTime2'), range.start);
@@ -182,14 +187,19 @@ class AlertService {
       request.input('end', this._getSqlType('DateTime2'), range.end);
       where.push('time_fired <= @end');
     }
+    if (panel_title) {
+      request.input('panelTitle', this._getSqlType('NVarChar'), panel_title);
+      where.push('panel_title = @panelTitle');
+    }
     return where;
   }
+
 
   async getOverviewStats(params) {
     const pool = this.getPool();
     const request = pool.request();
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
+    const where = this._buildWhereClause(request, range, params.panel_title);
     const cap = Math.min(params.limit || 100000, 100000);
     request.input('cap', this._getSqlType('Int'), cap);
 
@@ -216,13 +226,14 @@ class AlertService {
     const data = await this._getBasicAlertData(params);
     const timeseries = this._computeTimeseriesStats(data.recordset, params);
     return ResponseFormatter.success(timeseries);
-  } async getPanelList(params) {
+  }
+
+  async getPanelList(params) {
     const pool = this.getPool();
     const request = pool.request();
     
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
-
+    const where = this._buildWhereClause (request, range);
     const result = await request.query(`
       SELECT 
         panel_title,
@@ -245,7 +256,7 @@ class AlertService {
     const request = pool.request();
     
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
+    const where = this._buildWhereClause (request, range);
     
     // Add panel filter
     if (!params.panel_title) {
@@ -276,7 +287,7 @@ class AlertService {
     const request = pool.request();
     
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
+    const where = this._buildWhereClause (request, range);
     
     if (!params.panel_title) {
       throw new Error('panel_title is required');
@@ -477,125 +488,13 @@ class AlertService {
     };
   }
 
-  // Generate intelligent recommendations
-  _generateRecommendations(metrics, params) {
-    const recommendations = [];
-    const {
-      total, falsePositives, nightWakeups, nightFalseWakeups,
-      shortAlerts, alertsPerDay, trendDirection, topNoisyAlerts, hourlyHeatmap
-    } = metrics;
-
-    const falsePositiveRate = total ? (falsePositives * 100) / total : 0;
-
-    // Rule 1: High false positive rate
-    if (falsePositiveRate > 60) {
-      recommendations.push({
-        severity: 'high',
-        category: 'threshold',
-        message: `${falsePositiveRate.toFixed(1)}% of alerts are false positives (<${params.false_wakeup_threshold || 120}s)`,
-        action: 'Consider increasing alert threshold or implementing correlation rules',
-        impact: 'High team disruption with low-value alerts'
-      });
-    } else if (falsePositiveRate > 40) {
-      recommendations.push({
-        severity: 'medium',
-        category: 'threshold',
-        message: `${falsePositiveRate.toFixed(1)}% false positive rate detected`,
-        action: 'Review alert thresholds for top noisy sources',
-        impact: 'Moderate noise affecting team efficiency'
-      });
-    }
-
-    // Rule 2: Night disruption analysis
-    if (nightFalseWakeups > 20) {
-      recommendations.push({
-        severity: 'high',
-        category: 'night-operations',
-        message: `${nightFalseWakeups} false night wakeups detected`,
-        action: 'Implement night-specific thresholds or suppress non-critical alerts during night hours',
-        impact: 'Team fatigue and reduced on-call effectiveness'
-      });
-    }
-
-    if (nightWakeups > 50) {
-      recommendations.push({
-        severity: 'medium',
-        category: 'night-operations',
-        message: `${nightWakeups} legitimate night wakeups (high frequency)`,
-        action: 'Review SRE practices and automation opportunities to reduce night incidents',
-        impact: 'Unsustainable on-call load'
-      });
-    }
-
-    // Rule 3: Alert volume trend
-    if (trendDirection === 'increasing') {
-      recommendations.push({
-        severity: 'medium',
-        category: 'trend',
-        message: 'Alert volume is trending upward',
-        action: 'Investigate root causes - possible system degradation or monitoring misconfiguration',
-        impact: 'Increasing operational burden'
-      });
-    }
-
-    // Rule 4: High alert velocity
-    if (alertsPerDay > 50) {
-      recommendations.push({
-        severity: 'high',
-        category: 'velocity',
-        message: `${alertsPerDay.toFixed(1)} alerts per day (high volume)`,
-        action: 'Review alert definitions and consider implementing alert aggregation',
-        impact: 'Alert fatigue and potential for missed critical issues'
-      });
-    }
-
-    // Rule 5: Noisy alert concentration
-    if (topNoisyAlerts.length > 0 && topNoisyAlerts[0].count > total * 0.25) {
-      recommendations.push({
-        severity: 'high',
-        category: 'noise-concentration',
-        message: `Single alert type "${topNoisyAlerts[0].message}" accounts for ${((topNoisyAlerts[0].count * 100) / total).toFixed(1)}% of all alerts`,
-        action: 'Priority: Address this specific alert - likely misconfigured threshold or needs correlation',
-        impact: 'Extreme noise from single source'
-      });
-    }
-
-    // Rule 6: Time pattern analysis
-    const nightHours = hourlyHeatmap.filter(h => h.is_night);
-    const nightTotal = nightHours.reduce((sum, h) => sum + h.count, 0);
-    const peakNightHour = nightHours.reduce((max, h) => h.count > max.count ? h : max, nightHours[0] || { count: 0 });
-    
-    if (peakNightHour && peakNightHour.count > nightTotal * 0.4) {
-      recommendations.push({
-        severity: 'medium',
-        category: 'time-pattern',
-        message: `Peak night activity at ${peakNightHour.hour}:00 (${peakNightHour.count} alerts)`,
-        action: 'Investigate scheduled jobs or batch processes that may be causing alerts',
-        impact: 'Predictable disruption pattern'
-      });
-    }
-
-    // Rule 7: Positive feedback
-    if (falsePositiveRate < 20 && nightWakeups < 20) {
-      recommendations.push({
-        severity: 'low',
-        category: 'health',
-        message: 'Panel health looks good - low false positive rate and minimal night disruption',
-        action: 'Continue current monitoring practices',
-        impact: 'Well-tuned alerting'
-      });
-    }
-
-    return recommendations;
-  }
-
   async getPanelStats(params) {
     const pool = this.getPool();
     const request = pool.request();
 
     // 1. Validate and parameterize date range
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildDateWhereClause(request, range);
+    const where = this._buildWhereClause (request, range);
 
     // 2. Parameterize numeric filters
     const limit = params.limit || null;
@@ -912,46 +811,46 @@ class AlertService {
 
   _computeKPIs(records, params) {
     console.log('Computing KPIs with params:', params);
-  const {
-    night_start = params.night_start || 22,
-    night_end = params.night_end || 8,
-    dur_short_max = params.dur_short_max || 30,
-    false_wakeup_threshold = params.false_wakeup_threshold || 120  // This should come from client settings
-  } = params;
+    const {
+      night_start = params.night_start || 22,
+      night_end = params.night_end || 8,
+      dur_short_max = params.dur_short_max || 30,
+      false_wakeup_threshold = params.false_wakeup_threshold || 120  // This should come from client settings
+    } = params;
 
-  let total = 0, noise = 0, night = 0, trueWakeups = 0, falseWakeups = 0;
+    let total = 0, noise = 0, night = 0, trueWakeups = 0, falseWakeups = 0;
 
-  for (const record of records) {
-    total++;
-    const ilHour = TimeUtils.getILHour(record.time_fired);
-    const isNight = ilHour >= night_start || ilHour < night_end;
+    for (const record of records) {
+      total++;
+      const ilHour = TimeUtils.getILHour(record.time_fired);
+      const isNight = ilHour >= night_start || ilHour < night_end;
 
-    if (record.duration_sec <= dur_short_max) noise++;
-    
-    if (isNight) {
-      night++;
-      if (record.duration_sec > false_wakeup_threshold) {
-        trueWakeups++;
-      } else {
-        falseWakeups++;
+      if (record.duration_sec <= dur_short_max) noise++;
+      
+      if (isNight) {
+        night++;
+        if (record.duration_sec > false_wakeup_threshold) {
+          trueWakeups++;
+        } else {
+          falseWakeups++;
+        }
       }
     }
-  }
 
-  const signalRatio = total > 0 ? +((total - noise) * 100 / total).toFixed(1) : 0;
-  const falseWakeRate = (trueWakeups + falseWakeups) > 0 
-    ? +(falseWakeups * 100 / (trueWakeups + falseWakeups)).toFixed(1) 
-    : 0;
+    const signalRatio = total > 0 ? +((total - noise) * 100 / total).toFixed(1) : 0;
+    const falseWakeRate = (trueWakeups + falseWakeups) > 0 
+      ? +(falseWakeups * 100 / (trueWakeups + falseWakeups)).toFixed(1) 
+      : 0;
 
-  return {
-    total_alerts: total,
-    noise_alerts: noise,
-    night_alerts: night,
-    true_wakeups: trueWakeups,
-    false_wakeups: falseWakeups,
-    signal_ratio: signalRatio,
-    false_wakeup_rate: falseWakeRate,
-  };
+    return {
+      total_alerts: total,
+      noise_alerts: noise,
+      night_alerts: night,
+      true_wakeups: trueWakeups,
+      false_wakeups: falseWakeups,
+      signal_ratio: signalRatio,
+      false_wakeup_rate: falseWakeRate,
+    };
   }
 
   _computeDurationHistogram(records, params) {
@@ -988,188 +887,10 @@ class AlertService {
     }));
   }
 
-  // Helper: Compute detailed panel analysis
-  _computePanelAnalysis(records, params) {
-    const {
-      day_start = 8, day_end = 22,
-      dur_short_max = 30,
-      dur_medium_max = 300,
-      false_wakeup_threshold = 120,
-      night_start = 22,
-      night_end = 8
-    } = params;
-
-    if (!records || records.length === 0) {
-      return {
-        summary: {
-          total_alerts: 0,
-          avg_duration: 0,
-          false_positive_count: 0,
-          false_positive_rate: 0,
-          night_alerts: 0,
-          night_wakeups: 0,
-          night_false_wakeups: 0,
-          day_alerts: 0,
-          alerts_per_day: 0,
-          trend_direction: 'stable'
-        },
-        duration_distribution: [],
-        daily_trend: [],
-        hourly_heatmap: [],
-        top_noisy_alerts: [],
-        recommendations: []
-      };
-    }
-
-    // Basic metrics
-    let total = 0, sumDuration = 0;
-    let shortAlerts = 0, mediumAlerts = 0, longAlerts = 0;
-    let falsePositives = 0, nightAlerts = 0, dayAlerts = 0;
-    let nightWakeups = 0, nightFalseWakeups = 0;
-    
-    const dailyCount = new Map();
-    const hourlyCount = Array(24).fill(0);
-    const durationBuckets = Array(24).fill(0).map(() => ({ sum: 0, count: 0 }));
-    const messageFrequency = new Map();
-
-    for (const record of records) {
-      total++;
-      sumDuration += record.duration_sec;
-      
-      // Duration categories
-      if (record.duration_sec <= dur_short_max) shortAlerts++;
-      else if (record.duration_sec <= dur_medium_max) mediumAlerts++;
-      else longAlerts++;
-
-      // False positives
-      if (record.duration_sec <= false_wakeup_threshold) {
-        falsePositives++;
-      }
-
-      // Time analysis
-      const hour = TimeUtils.getILHour(record.time_fired);
-      const date = TimeUtils.getILDate(record.time_fired);
-      const isNight = hour >= night_start || hour < night_end;
-
-      if (isNight) {
-        nightAlerts++;
-        if (record.duration_sec > false_wakeup_threshold) {
-          nightWakeups++;
-        } else {
-          nightFalseWakeups++;
-        }
-      } else {
-        dayAlerts++;
-      }
-
-      // Hourly distribution
-      if (hour !== null) {
-        hourlyCount[hour]++;
-        durationBuckets[hour].sum += record.duration_sec;
-        durationBuckets[hour].count++;
-      }
-
-      // Daily trend
-      if (date) {
-        dailyCount.set(date, (dailyCount.get(date) || 0) + 1);
-      }
-
-      // Message frequency
-      if (record.message) {
-        const current = messageFrequency.get(record.message) || { count: 0, durations: [] };
-        current.count++;
-        current.durations.push(record.duration_sec);
-        messageFrequency.set(record.message, current);
-      }
-    }
-
-    // Calculate trends
-    const dailyTrend = Array.from(dailyCount.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, count]) => ({ date, count }));
-
-    const hourlyHeatmap = hourlyCount.map((count, hour) => ({
-      hour,
-      count,
-      avg_duration: durationBuckets[hour].count 
-        ? +(durationBuckets[hour].sum / durationBuckets[hour].count).toFixed(2)
-        : 0,
-      is_night: hour >= night_start || hour < night_end
-    }));
-
-    // Top noisy messages
-    const topNoisyAlerts = Array.from(messageFrequency.entries())
-      .map(([message, data]) => ({
-        message,
-        count: data.count,
-        avg_duration: +(data.durations.reduce((a, b) => a + b, 0) / data.durations.length).toFixed(2),
-        false_positive_rate: +((data.durations.filter(d => d <= false_wakeup_threshold).length * 100) / data.count).toFixed(1)
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    // Duration distribution
-    const durationDistribution = [
-      { category: 'Short', range: `≤${dur_short_max}s`, count: shortAlerts },
-      { category: 'Medium', range: `${dur_short_max + 1}-${dur_medium_max}s`, count: mediumAlerts },
-      { category: 'Long', range: `>${dur_medium_max}s`, count: longAlerts }
-    ];
-
-    // Calculate velocity (alerts per day)
-    const daysInRange = dailyTrend.length || 1;
-    const alertsPerDay = +(total / daysInRange).toFixed(2);
-
-    // Trend analysis (first half vs second half)
-    let trendDirection = 'stable';
-    if (dailyTrend.length >= 4) {
-      const midpoint = Math.floor(dailyTrend.length / 2);
-      const firstHalf = dailyTrend.slice(0, midpoint);
-      const secondHalf = dailyTrend.slice(midpoint);
-      const firstAvg = firstHalf.reduce((sum, d) => sum + d.count, 0) / firstHalf.length;
-      const secondAvg = secondHalf.reduce((sum, d) => sum + d.count, 0) / secondHalf.length;
-      const change = ((secondAvg - firstAvg) / firstAvg) * 100;
-      
-      if (change > 15) trendDirection = 'increasing';
-      else if (change < -15) trendDirection = 'decreasing';
-    }
-
-    return {
-      summary: {
-        total_alerts: total,
-        avg_duration: total ? +(sumDuration / total).toFixed(2) : 0,
-        false_positive_count: falsePositives,
-        false_positive_rate: total ? +((falsePositives * 100) / total).toFixed(1) : 0,
-        night_alerts: nightAlerts,
-        night_wakeups: nightWakeups,
-        night_false_wakeups: nightFalseWakeups,
-        day_alerts: dayAlerts,
-        alerts_per_day: alertsPerDay,
-        trend_direction: trendDirection
-      },
-      duration_distribution: durationDistribution,
-      daily_trend: dailyTrend,
-      hourly_heatmap: hourlyHeatmap,
-      top_noisy_alerts: topNoisyAlerts,
-      recommendations: this._generateRecommendations({
-        total,
-        falsePositives,
-        nightWakeups,
-        nightFalseWakeups,
-        shortAlerts,
-        alertsPerDay,
-        trendDirection,
-        topNoisyAlerts,
-        hourlyHeatmap
-      }, params)
-    };
-  }
-
-  // Generate intelligent recommendations
   _generateRecommendations(metrics, params) {
     const recommendations = [];
     const {
-      total, falsePositives, nightWakeups, nightFalseWakeups,
-      shortAlerts, alertsPerDay, trendDirection, topNoisyAlerts, hourlyHeatmap
+      total, falsePositives, nightWakeups, nightFalseWakeups,alertsPerDay, trendDirection, topNoisyAlerts, hourlyHeatmap
     } = metrics;
 
     const falsePositiveRate = total ? (falsePositives * 100) / total : 0;
