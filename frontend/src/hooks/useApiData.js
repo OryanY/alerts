@@ -2,17 +2,27 @@ import { useEffect, useState } from 'react';
 import { API_BASE } from '../utils/constants';
 
 export const useApiData = (endpoint, params = {}) => {
-  const [data, setData]   = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
     try {
+      // No-op when params are null (skip fetch)
+      if (params === null) {
+        setData(null);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setError(null);
 
       const queryString = new URLSearchParams(
-        Object.entries(params).filter(([_, v]) => v !== '' && v != null)
+        Object.entries(params)
+          .filter(([_, v]) => v !== '' && v != null)
+          .map(([k, v]) => [k, String(v)])
       ).toString();
 
       const url = `${API_BASE}${endpoint}${queryString ? `?${queryString}` : ''}`;
@@ -24,10 +34,10 @@ export const useApiData = (endpoint, params = {}) => {
       }
 
       const json = await res.json();
-      setData(json.data || json);
+      setData(json?.data ?? json);
     } catch (e) {
       setError({
-        message: e.message || 'Unknown error',
+        message: e?.message || 'Unknown error',
         endpoint,
         params,
         timestamp: new Date().toISOString(),
@@ -38,6 +48,11 @@ export const useApiData = (endpoint, params = {}) => {
     }
   };
 
-  useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, [endpoint, JSON.stringify(params)]);
+  // Trigger fetch. Dependency uses a stable token when params === null
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint, params === null ? 'NULL' : JSON.stringify(params)]);
+
   return { data, loading, error, refetch: fetchData };
 };

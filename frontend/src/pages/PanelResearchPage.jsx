@@ -11,7 +11,6 @@ import {
 
 import { S } from '../utils/styles';
 import { useClientConfig } from '../contexts/ClientConfigContext';
-import { useDateRangeUrl } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { DateRangePicker } from '../components/DateRangePicker';
@@ -20,8 +19,13 @@ import { ErrorCallout } from '../components/ErrorCallout';
 import { ChartCard } from '../components/ChartCard';
 
 const PanelResearchPage = () => {
-  const { config, getApiParams } = useClientConfig();
-  const { dateRange, setDateRange, setPresetRange } = useDateRangeUrl();
+  const { 
+    config, 
+    getApiParams,
+    dateRange,
+    setDateRange,
+    setPresetRange
+  } = useClientConfig();
   const { colorByDuration } = useDurationBands(config);
   
   const [selectedPanel, setSelectedPanel] = useState(null);

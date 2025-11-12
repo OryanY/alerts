@@ -1,103 +1,214 @@
-import React, { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, Cell, Area, ComposedChart
 } from 'recharts';
 
 import { S } from '../utils/styles';
-
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
-import { useClientConfig } from '../contexts/ClientConfigContext'; 
-import { useDateRangeUrl } from '../hooks/useUrlState';
-import {LoadingSpinner} from '../components/LoadingSpinner';
-import {DateRangePicker} from '../components/DateRangePicker';
-import {MetricCard} from '../components/MetricCard';
-import {ChartCard} from '../components/ChartCard';
-import {WakeupGauge} from '../components/WakeupGauge';
-
-import { AlertTriangle, Clock, Moon, Sun, TrendingUp, Shield, Network } from '../icons';
+import { useClientConfig } from '../contexts/ClientConfigContext';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+import { DateRangePicker } from '../components/DateRangePicker';
+import { MetricCard } from '../components/MetricCard';
+import { ChartCard } from '../components/ChartCard';
+import { WakeupGauge } from '../components/WakeupGauge';
+import { AlertTriangle, Clock, Moon, Sun, TrendingUp, Shield, Network, Filter, X } from '../icons';
 
 const NocDashboard = () => {
-  const { config, getApiParams } = useClientConfig();
-  const { dateRange, setDateRange, setPresetRange, selectedPreset } = useDateRangeUrl();
+  const {
+    config,
+    getApiParams,
+    dateRange,
+    setDateRange,
+    setPresetRange,
+    selectedPanel,
+    setSelectedPanel
+  } = useClientConfig();
+
   const { Legend } = useDurationBands(config);
 
-  // Fix for "today" selection - adjust end_date to avoid validation error
-  const adjustedDateRange = React.useMemo(() => {
-    if (dateRange.start_date && dateRange.end_date && dateRange.start_date === dateRange.end_date) {
+  const adjustedDateRange = useMemo(() => {
+    if (
+      dateRange.start_date &&
+      dateRange.end_date &&
+      dateRange.start_date === dateRange.end_date
+    ) {
       return {
         start_date: dateRange.start_date,
-        end_date: `${dateRange.end_date}T23:59:59`
+        end_date: `${dateRange.end_date}T23:59:59`,
       };
     }
     return dateRange;
   }, [dateRange]);
 
-  // API params with false wakeup threshold from config
-  const baseApiParams = {
-    ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
-    ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date })
-  };
+  // Build API params with optional panel filter
+  const apiParams = useMemo(() => {
+    const params = {
+      ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
+      ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date }),
+      false_wakeup_threshold: config.falseWakeupThreshold || 120,
+      ...getApiParams(),
+    };
 
-  const configParams = getApiParams();
-  const apiParams = {
-    ...baseApiParams,
-    // Include false wakeup threshold from settings
-    false_wakeup_threshold: config.falseWakeupThreshold || 120,
-    ...(configParams.day_start !== 8 && { day_start: configParams.day_start }),
-    ...(configParams.day_end !== 22 && { day_end: configParams.day_end }),
-    ...(configParams.dur_short_max !== 30 && { dur_short_max: configParams.dur_short_max }),
-    ...(configParams.dur_medium_max !== 300 && { dur_medium_max: configParams.dur_medium_max })
-  };
+    if (selectedPanel) {
+      params.panel_title = selectedPanel;
+    }
 
-  // Existing API calls
+    return params;
+  }, [adjustedDateRange, config.falseWakeupThreshold, getApiParams, selectedPanel]);
+
+  // Fetch data with panel filter applied
   const exec = useApiData('/stats/executive-kpis', apiParams);
   const shifts = useApiData('/stats/shift-analysis', apiParams);
   const duration = useApiData('/stats/duration-histogram', apiParams);
   const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
-  const panelStats = useApiData('/stats/by-panel', { ...apiParams, limit: 20 });
+
+  // Skip /stats/by-panel when a specific panel is selected
+  const panelStats = useApiData(
+    '/stats/by-panel',
+    selectedPanel ? null : { ...apiParams, limit: 20 }
+  );
+
   const timeseries = useApiData('/stats/timeseries', apiParams);
   const overview = useApiData('/stats/overview', apiParams);
+
+  // Fetch panel list for dropdown (without panel filter)
+  const panelListParams = useMemo(
+    () => ({
+      ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
+      ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date }),
+      ...getApiParams(),
+    }),
+    [adjustedDateRange, getApiParams]
+  );
+  const { data: panelsList } = useApiData('/stats/panels', panelListParams);
 
   const isLoading = exec.loading || shifts.loading || duration.loading || heatmap.loading;
 
   return (
     <div>
-      {/* Date Range Picker with selected preset indicator */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 20,
-        position: 'relative'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {/* Header Controls */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 20,
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        {/* Date Range Picker */}
+        <div style={{ flex: '1 1 auto', minWidth: 300 }}>
           <DateRangePicker
             dateRange={dateRange}
             onChange={setDateRange}
             setPresetRange={setPresetRange}
+            /* Panel Filter DropDown */
+            rightSlot={
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ position: 'relative' }}>
+                  <Filter
+                    size={16}
+                    style={{
+                      position: 'absolute',
+                      left: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: '#6B7280',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                  <select
+                    value={selectedPanel || ''}
+                    onChange={(e) => setSelectedPanel(e.target.value || null)}
+                    style={{
+                      ...S.select,
+                      paddingLeft: 36,
+                      minWidth: 200,
+                      background: selectedPanel ? '#EBF8FF' : 'white',
+                      borderColor: selectedPanel ? '#3B82F6' : '#D1D5DB',
+                      fontWeight: selectedPanel ? 600 : 400,
+                    }}
+                  >
+                    <option value="">All Panels</option>
+                    {(panelsList || []).map((panel) => (
+                      <option key={panel.panel_title} value={panel.panel_title}>
+                        {panel.panel_title} ({panel.alert_count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedPanel && (
+                  <button
+                    onClick={() => setSelectedPanel(null)}
+                    style={{
+                      padding: '8px 12px',
+                      border: '1px solid #DC2626',
+                      borderRadius: 6,
+                      background: 'white',
+                      color: '#DC2626',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                    title="Clear panel filter"
+                  >
+                    <X size={16} />
+                    Clear
+                  </button>
+                )}
+              </div>
+            }
           />
-          {selectedPreset && (
-            <span style={{ 
-              padding: '4px 8px', 
-              background: '#EBF8FF', 
-              color: '#2563EB',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              border: '1px solid #BFDBFE'
-            }}>
-              {selectedPreset} Selected
-            </span>
-          )}
         </div>
-  
       </div>
 
+      {/* Active Filter Indicator */}
+      {selectedPanel && (
+        <div
+          style={{
+            marginBottom: 20,
+            padding: 12,
+            background: '#EBF8FF',
+            border: '2px solid #3B82F6',
+            borderRadius: 8,
+            alignItems: 'center',
+          }}
+        >
+          <div dir="rtl" style={{ display: 'flex', gap: 8}}>
+            <Filter size={16} style={{ color: '#1E40AF' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#1E40AF' }}>
+              נתונים לפי <strong>{selectedPanel}</strong>
+            </span>
+            <button
+              onClick={() => setSelectedPanel(null)}
+              style={{
+                marginInlineStart: 12,
+                padding: '4px 12px',
+                border: 'none',
+                borderRadius: 4,
+                background: '#1E40AF',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              View All Panels
+            </button>
+          </div>
+        </div>
+      )}
+
       <Suspense fallback={<LoadingSpinner />}>
-        {/* Enhanced KPI Cards */}
-            <div style={{ ...S.grid('repeat(auto-fit, minmax(200px, 1fr))'), direction: "rtl" }}>
-         <MetricCard
+        {/* KPI Cards */}
+        <div style={{ ...S.grid('repeat(auto-fit, minmax(200px, 1fr))'), direction: 'rtl' }}>
+          <MetricCard
             title="סך כל ההתראות"
             value={exec.data?.total_alerts ?? '—'}
             icon={AlertTriangle}
@@ -113,7 +224,7 @@ const NocDashboard = () => {
           <MetricCard
             title="התראות אמיתיות"
             value={exec.data?.true_wakeups ?? '—'}
-            subtitle={`התראות שזמנן > ${config.falseWakeupThreshold || 120} ש' בלילה`}
+            subtitle={`התראות שזמנן ≤ ${config.falseWakeupThreshold || 120} ש' בלילה`}
             icon={Moon}
             color="purple"
           />
@@ -132,7 +243,7 @@ const NocDashboard = () => {
           />
         </div>
 
-        {/* Charts Row 1 - Core Operations */}
+        {/* Charts Row 1 */}
         <div style={S.grid('1fr 1fr 1fr')}>
           <ChartCard title="התראות בוקר לעומת לילה" icon={Sun} loading={shifts.loading} error={shifts.error}>
             <ResponsiveContainer width="100%" height="100%">
@@ -165,22 +276,17 @@ const NocDashboard = () => {
             </ResponsiveContainer>
           </ChartCard>
 
-          <WakeupGauge 
-            shiftData={shifts.data} 
-            loading={shifts.loading} 
+          <WakeupGauge
+            shiftData={shifts.data}
+            loading={shifts.loading}
             error={shifts.error}
             falseWakeupThreshold={config.falseWakeupThreshold || 120}
           />
         </div>
 
-        {/* Charts Row 2 - Time Analysis */}
+        {/* Charts Row 2 */}
         <div style={S.grid('2fr 1fr')}>
-          <ChartCard
-            title="פילוח התראות לפי שעות"
-            icon={Clock}
-            loading={heatmap.loading}
-            error={heatmap.error}
-          >
+          <ChartCard title="פילוח התראות לפי שעות" icon={Clock} loading={heatmap.loading} error={heatmap.error}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={heatmap.data || []}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -193,11 +299,11 @@ const NocDashboard = () => {
                     <Cell key={idx} fill={entry?.is_night ? '#8B5CF6' : '#3B82F6'} />
                   ))}
                 </Bar>
-                <Line 
-                  yAxisId="right" 
-                  type="monotone" 
-                  dataKey="avg_duration" 
-                  stroke="#F59E0B" 
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="avg_duration"
+                  stroke="#F59E0B"
                   strokeWidth={2}
                   dot={{ fill: '#F59E0B', r: 3 }}
                   name="Avg Duration"
@@ -205,60 +311,66 @@ const NocDashboard = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
-          
-          <ChartCard
-            title="Top Alert Sources"
-            icon={Network}
-            loading={panelStats.loading}
-            error={panelStats.error}
-          >
-            <div style={{
-              maxHeight: 300,
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8
-            }}>
-              {(panelStats.data || []).slice(0, 12).map((p, idx) => (
-                <div
-                  key={`${p.panel_title}-${idx}`}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: 10,
-                    background: idx < 3 ? '#FEF2F2' : '#F9FAFB',
-                    borderRadius: 6,
-                    border: `1px solid ${idx < 3 ? '#FCA5A5' : '#F3F4F6'}`
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ 
-                      fontWeight: 600, 
-                      fontSize: 13,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}>
-                      {p.panel_title}
+
+          {/* Hidden when selectedPanel is truthy */}
+          {!selectedPanel && (
+            <ChartCard
+              title="Top Alert Sources"
+              icon={Network}
+              loading={panelStats.loading}
+              error={panelStats.error}
+            >
+              <div
+                style={{
+                  maxHeight: 300,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                {(panelStats.data || []).slice(0, 12).map((p, idx) => (
+                  <div
+                    key={`${p.panel_title}-${idx}`}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: 10,
+                      background: idx < 3 ? '#FEF2F2' : '#F9FAFB',
+                      borderRadius: 6,
+                      border: `1px solid ${idx < 3 ? '#FCA5A5' : '#F3F4F6'}`,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setSelectedPanel(p.panel_title)}
+                    title="Click to filter dashboard by this panel"
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 13,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {p.panel_title}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#6B7280' }}>{p.application}</div>
                     </div>
-                    <div style={{ fontSize: 11, color: '#6B7280' }}>
-                      {p.application}
+                    <div style={{ textAlign: 'right', marginLeft: 8 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{p.alert_count}</div>
+                      <div style={{ fontSize: 10, color: '#6B7280' }}>{p.avg_duration}s avg</div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right', marginLeft: 8 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{p.alert_count}</div>
-                    <div style={{ fontSize: 10, color: '#6B7280' }}>
-                      {p.avg_duration}s avg
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ChartCard>
+                ))}
+              </div>
+            </ChartCard>
+          )}
         </div>
 
-        {/* Charts Row 3 - Trend and Pattern Analysis */}
+        {/* Charts Row 3 */}
         <div style={S.grid('2fr 1fr')}>
           <ChartCard
             title="כמות התראות לאורך זמן + ממוצע זמן התראה"
@@ -272,18 +384,16 @@ const NocDashboard = () => {
                 <XAxis
                   dataKey="date_il"
                   tickFormatter={(d) =>
-                    new Date(d).toLocaleDateString('en-IL', { 
+                    new Date(d).toLocaleDateString('en-IL', {
                       timeZone: 'Asia/Jerusalem',
-                      month: 'short', 
-                      day: 'numeric' 
+                      month: 'short',
+                      day: 'numeric',
                     })
                   }
                 />
                 <YAxis yAxisId="left" />
                 <YAxis yAxisId="right" orientation="right" />
-                <Tooltip 
-                  labelFormatter={(d) => new Date(d).toLocaleDateString('en-IL')}
-                />
+                <Tooltip labelFormatter={(d) => new Date(d).toLocaleDateString('en-IL')} />
                 <Area
                   yAxisId="left"
                   type="monotone"
@@ -306,37 +416,43 @@ const NocDashboard = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
-        </div>   
+        </div>
       </Suspense>
 
       {/* Global Loading Overlay */}
       {isLoading && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: 'white',
-            padding: 24,
-            borderRadius: 8,
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
             display: 'flex',
             alignItems: 'center',
-            gap: 16,
-            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
-          }}>
-            <div style={{
-              width: 20,
-              height: 20,
-              border: '2px solid #E5E7EB',
-              borderTop: '2px solid #3B82F6',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }} />
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: 'white',
+              padding: 24,
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+            }}
+          >
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                border: '2px solid #E5E7EB',
+                borderTop: '2px solid #3B82F6',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+              }}
+            />
             <span>Loading dashboard data…</span>
           </div>
         </div>

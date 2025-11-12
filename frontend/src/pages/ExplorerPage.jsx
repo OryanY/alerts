@@ -3,7 +3,7 @@ import { Search, Filter, Download, RefreshCw, X } from 'lucide-react';
 
 import { S } from '../utils/styles';
 import { useClientConfig } from '../contexts/ClientConfigContext';
-import { useDateRangeUrl, useExplorerFilters } from '../hooks/useUrlState';
+import { useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 
@@ -15,8 +15,14 @@ const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 50;
 
 const ExplorerPage = () => {
-  const { config, getApiParams } = useClientConfig();
-  const { dateRange, setDateRange, setPresetRange, selectedPreset } = useDateRangeUrl();
+  const { 
+    config, 
+    getApiParams,
+    dateRange,
+    setDateRange,
+    setPresetRange
+  } = useClientConfig();
+  
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { colorByDuration } = useDurationBands(config);
 
@@ -226,19 +232,6 @@ const ExplorerPage = () => {
             </h2>
             <p style={{ fontSize: 14, color: '#6B7280', margin: '4px 0 0 0' }}>
               {loading ? 'Loading...' : `${processedAlerts.length} alerts found`}
-              {selectedPreset && (
-                <span style={{ 
-                  marginLeft: 8, 
-                  padding: '2px 6px', 
-                  background: '#EBF8FF', 
-                  color: '#2563EB',
-                  borderRadius: 4,
-                  fontSize: 12,
-                  fontWeight: 600
-                }}>
-                  {selectedPreset}
-                </span>
-              )}
             </p>
           </div>
 
@@ -282,24 +275,24 @@ const ExplorerPage = () => {
               <Download size={14} />
               Export Filtered CSV ({processedAlerts.length} records)
             </button>
-
           </div>
         </div>
+        
         <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 20,
-              position: 'relative'
-            }}>
-                <DateRangePicker
-                  dateRange={dateRange}
-                  onChange={setDateRange}
-                  setPresetRange={setPresetRange}
-                />
-          </div>
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 20,
+          position: 'relative'
+        }}>
+          <DateRangePicker
+            dateRange={dateRange}
+            onChange={setDateRange}
+            setPresetRange={setPresetRange}
+          />
         </div>
-      {/* Rest of the component remains the same... */}
+      </div>
+
       {/* Filters */}
       <div style={{ ...S.card(), marginBottom: 20 }}>
         <div style={{
