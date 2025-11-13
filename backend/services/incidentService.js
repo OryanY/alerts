@@ -261,7 +261,7 @@ class IncidentService {
     return incidentData;
   }
 
-  // ================== SYSTEM MAPPINGS (MULTIPLE GRAFANA NAMES) ==================
+  // ================== SYSTEM MAPPINGS ==================
   
   async getSystemMappings() {
     if (!this.systemMappingsCollection) await this.initialize();
@@ -275,6 +275,86 @@ class IncidentService {
     }
   }
 
+  _matchesGrafanaPattern(applicationName, pattern) {
+    const normalizedApp = applicationName.toLowerCase();
+    const normalizedPattern = pattern.value.toLowerCase();
+
+    switch (pattern.type) {
+      case 'exact':
+        return normalizedApp === normalizedPattern;
+      
+      case 'contains':
+        return normalizedApp.includes(normalizedPattern);
+      
+      case 'regex':
+        try {
+          const regex = new RegExp(normalizedPattern, 'i');
+          return regex.test(applicationName);
+        } catch (e) {
+          console.warn(`Invalid regex pattern ${normalizedPattern}:`, e);
+          return false;
+        }
+      
+      default:
+        return normalizedApp === normalizedPattern;
+    }
+  }
+
+  _validateGrafanaPatterns(patterns) {
+    if (!Array.isArray(patterns) && typeof patterns === 'string') {
+      // Convert old format
+      patterns = patterns.split(',').map(p => p.trim()).filter(Boolean);
+    }
+
+    if (!Array.isArray(patterns) || patterns.length === 0) {
+      throw new Error('At least one Grafana application pattern is required');
+    }
+
+    const sanitized = patterns.map(p => this._sanitizeGrafanaPattern(p));
+
+    // Validate each pattern
+    for (const pattern of sanitized) {
+      if (!pattern.value) {
+        throw new Error('Pattern value cannot be empty');
+      }
+
+      // Validate based on type
+      if (pattern.type === 'regex') {
+        try {
+          new RegExp(pattern.value, 'i');
+        } catch (e) {
+          throw new Error(`Invalid regex pattern "${pattern.value}": ${e.message}`);
+        }
+      } else if (pattern.type === 'exact') {
+        // Only exact matches need strict character validation
+        if (!/^[a-z0-9_-]+$/.test(pattern.value)) {
+          throw new Error(
+            `Invalid exact match pattern "${pattern.value}": only lowercase letters, numbers, hyphens, and underscores allowed`
+          );
+        }
+      }
+      // 'contains' type can have any characters
+    }
+
+    return sanitized;
+  }
+
+  _sanitizeGrafanaPattern(pattern) {
+    if (!pattern || typeof pattern === 'string') {
+      // Legacy support: string becomes exact match
+      return {
+        value: (pattern || '').trim().toLowerCase(),
+        type: 'exact'
+      };
+    }
+    
+    return {
+      value: (pattern.value || '').trim().toLowerCase(),
+      type: pattern.type || 'exact'
+    };
+  }
+
+
   async getMappingByApplication(grafanaName) {
     if (!this.systemMappingsCollection) await this.initialize();
     
@@ -283,14 +363,26 @@ class IncidentService {
         throw new Error('Invalid grafana_name');
       }
       
-      const normalizedName = grafanaName.trim().toLowerCase();
+      // Get all mappings
+      const allMappings = await this.systemMappingsCollection.find({}).toArray();
       
-      // Find mapping where grafana_names array contains this name
-      const mapping = await this.systemMappingsCollection.findOne({ 
-        grafana_names: normalizedName
-      });
+      // Find the first mapping where any pattern matches
+      for (const mapping of allMappings) {
+        if (!mapping.grafana_names) continue;
+        
+        for (const pattern of mapping.grafana_names) {
+          // Handle legacy string format
+          const patternObj = typeof pattern === 'string' 
+            ? { value: pattern, type: 'exact' } 
+            : pattern;
+          
+          if (this._matchesGrafanaPattern(grafanaName, patternObj)) {
+            return mapping;
+          }
+        }
+      }
       
-      return mapping;
+      return null;
     } catch (error) {
       console.error('❌ Error fetching mapping by application:', error);
       throw new Error('Failed to fetch mapping');
@@ -301,49 +393,57 @@ class IncidentService {
     if (!this.systemMappingsCollection) await this.initialize();
     
     try {
-      // Handle backward compatibility - convert grafana_name to grafana_names
       let namesToUse = mappingData.grafana_names;
       
       if (!namesToUse && mappingData.grafana_name) {
         namesToUse = mappingData.grafana_name;
-        console.log('⚠️  Converting old grafana_name format to grafana_names');
       }
       
       if (!namesToUse) {
-        throw new Error('Either grafana_name or grafana_names must be provided');
+        throw new Error('grafana_names is required');
       }
 
-      // Validate and sanitize grafana_names
-      const sanitizedNames = this._validateGrafanaNames(namesToUse);
+      // Validate and sanitize patterns
+      const sanitizedPatterns = this._validateGrafanaPatterns(namesToUse);
 
-      // Check for existing mappings with any of these names
-      const existingMapping = await this.systemMappingsCollection.findOne({
-        grafana_names: { $in: sanitizedNames }
-      });
+      // Check for exact conflicts only (regex/contains can overlap intentionally)
+      const exactPatterns = sanitizedPatterns.filter(p => p.type === 'exact');
+      if (exactPatterns.length > 0) {
+        const exactValues = exactPatterns.map(p => p.value);
+        const existingMapping = await this.systemMappingsCollection.findOne({
+          'grafana_names.value': { $in: exactValues },
+          'grafana_names.type': 'exact'
+        });
 
-      if (existingMapping) {
-        const conflictingNames = sanitizedNames.filter(name => 
-          existingMapping.grafana_names.includes(name)
-        );
-        throw new Error(
-          `Grafana name(s) already exist in another mapping: ${conflictingNames.join(', ')}`
-        );
+        if (existingMapping) {
+          const conflicts = exactValues.filter(val =>
+            existingMapping.grafana_names.some(
+              p => (typeof p === 'string' ? p : p.value) === val
+            )
+          );
+          throw new Error(
+            `Exact match pattern(s) already exist: ${conflicts.join(', ')}`
+          );
+        }
       }
 
       const dataToInsert = {
         ...mappingData,
-        grafana_names: sanitizedNames,
+        grafana_names: sanitizedPatterns,
         u_system_failure: this._parseBoolean(mappingData.u_system_failure),
         created_at: new Date(),
         updated_at: new Date()
       };
       
-      // Remove old field if it exists
       delete dataToInsert.grafana_name;
 
       const result = await this.systemMappingsCollection.insertOne(dataToInsert);
 
-      console.log(`✅ Created system mapping with names: ${sanitizedNames.join(', ')}`);
+      const patternSummary = sanitizedPatterns.map(p => 
+        `${p.value} (${p.type})`
+      ).join(', ');
+      console.log(`✅ Created system mapping with patterns: ${patternSummary}`);
+      
       return { _id: result.insertedId, ...dataToInsert };
     } catch (error) {
       console.error('❌ Error creating system mapping:', error);
@@ -358,26 +458,32 @@ class IncidentService {
       const objectId = new ObjectId(id);
       const { _id, created_at, ...updateData } = mappingData;
       
-      // If updating grafana_names, validate and check for conflicts
       if (updateData.grafana_names) {
-        const sanitizedNames = this._validateGrafanaNames(updateData.grafana_names);
+        const sanitizedPatterns = this._validateGrafanaPatterns(updateData.grafana_names);
         
-        // Check for conflicts with other mappings (excluding current one)
-        const conflictingMapping = await this.systemMappingsCollection.findOne({
-          _id: { $ne: objectId },
-          grafana_names: { $in: sanitizedNames }
-        });
+        // Check for exact conflicts with other mappings
+        const exactPatterns = sanitizedPatterns.filter(p => p.type === 'exact');
+        if (exactPatterns.length > 0) {
+          const exactValues = exactPatterns.map(p => p.value);
+          const conflictingMapping = await this.systemMappingsCollection.findOne({
+            _id: { $ne: objectId },
+            'grafana_names.value': { $in: exactValues },
+            'grafana_names.type': 'exact'
+          });
 
-        if (conflictingMapping) {
-          const conflictingNames = sanitizedNames.filter(name => 
-            conflictingMapping.grafana_names.includes(name)
-          );
-          throw new Error(
-            `Grafana name(s) already exist in another mapping: ${conflictingNames.join(', ')}`
-          );
+          if (conflictingMapping) {
+            const conflicts = exactValues.filter(val =>
+              conflictingMapping.grafana_names.some(
+                p => (typeof p === 'string' ? p : p.value) === val
+              )
+            );
+            throw new Error(
+              `Exact match pattern(s) already exist: ${conflicts.join(', ')}`
+            );
+          }
         }
 
-        updateData.grafana_names = sanitizedNames;
+        updateData.grafana_names = sanitizedPatterns;
       }
       
       if ('u_system_failure' in updateData) {

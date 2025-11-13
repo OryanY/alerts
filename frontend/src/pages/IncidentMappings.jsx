@@ -1,7 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, Plus, Edit, Trash2, RefreshCw, CheckCircle, AlertTriangle, X, PlusCircle, MinusCircle } from 'lucide-react';
+import { Settings, Plus, Edit, Trash2, RefreshCw, CheckCircle, AlertTriangle, X, PlusCircle, MinusCircle, Target, Info, Zap, Search, Check } from 'lucide-react';
 
 const API_BASE = 'http://localhost:5000/api/incidents';
+
+const PATTERN_TYPES = {
+  exact: { 
+    label: 'Exact Match', 
+    icon: '🎯', 
+    color: '#3b82f6',
+    description: 'Matches exactly this application name',
+    example: 'mongo',
+    placeholder: 'e.g., mongo, elasticsearch'
+  },
+  contains: { 
+    label: 'Contains', 
+    icon: '🔍', 
+    color: '#8b5cf6',
+    description: 'Matches any application containing this text',
+    example: 'db (matches: mongodb, cassandra-db, db-prod)',
+    placeholder: 'e.g., db, prod, cache'
+  },
+  regex: { 
+    label: 'Regex Pattern', 
+    icon: '⚡', 
+    color: '#f59e0b',
+    description: 'Matches applications using regular expressions',
+    example: '^db-.*$ (matches: db-prod, db-test)',
+    placeholder: 'e.g., ^mongo.*, .*-prod$, db-[0-9]+'
+  }
+};
 
 const IncidentMappings = () => {
   const [mappings, setMappings] = useState([]);
@@ -11,6 +38,8 @@ const IncidentMappings = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [assignmentGroups, setAssignmentGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [showPatternHelp, setShowPatternHelp] = useState(false);
+  const [testInput, setTestInput] = useState('');
 
   const [form, setForm] = useState({
     grafana_names: [],
@@ -23,7 +52,7 @@ const IncidentMappings = () => {
   });
 
   const [customFields, setCustomFields] = useState({});
-  const [newGrafanaName, setNewGrafanaName] = useState('');
+  const [newPattern, setNewPattern] = useState({ value: '', type: 'exact' });
 
   const baseMandatoryFields = [
     'service_offering',
@@ -53,8 +82,10 @@ const IncidentMappings = () => {
       u_system_failure: false,
     });
     setCustomFields({});
-    setNewGrafanaName('');
+    setNewPattern({ value: '', type: 'exact' });
     setEditingItem(null);
+    setTestInput('');
+    setShowPatternHelp(false);
   };
 
   const fetchMappings = async () => {
@@ -91,46 +122,94 @@ const IncidentMappings = () => {
     fetchAssignmentGroups();
   }, []);
 
-  // ================== GRAFANA NAMES MANAGEMENT ==================
+  // ================== PATTERN MANAGEMENT ==================
 
-  const addGrafanaName = () => {
-    const trimmed = newGrafanaName.trim().toLowerCase();
+  const addPattern = () => {
+    const trimmed = newPattern.value.trim();
     
     if (!trimmed) {
-      alert('Please enter a Grafana application name');
+      alert('Please enter a pattern value');
       return;
     }
 
-    // Validate format
-    if (!/^[a-z0-9_-]+$/.test(trimmed)) {
-      alert('Grafana names can only contain lowercase letters, numbers, hyphens, and underscores');
+    // Validate regex if type is regex
+    if (newPattern.type === 'regex') {
+      try {
+        new RegExp(trimmed, 'i');
+      } catch (e) {
+        alert(`Invalid regex pattern: ${e.message}`);
+        return;
+      }
+    }
+
+    // Validate exact match format
+    if (newPattern.type === 'exact' && !/^[a-z0-9_-]+$/i.test(trimmed)) {
+      alert('Exact match can only contain lowercase letters, numbers, hyphens, and underscores');
       return;
     }
 
-    if (form.grafana_names.includes(trimmed)) {
-      alert('This name is already in the list');
+    // Check for duplicates
+    const isDuplicate = form.grafana_names.some(p => 
+      p.value.toLowerCase() === trimmed.toLowerCase() && p.type === newPattern.type
+    );
+    
+    if (isDuplicate) {
+      alert('This pattern already exists');
       return;
     }
 
     setForm(prev => ({
       ...prev,
-      grafana_names: [...prev.grafana_names, trimmed].sort()
+      grafana_names: [...prev.grafana_names, {
+        value: newPattern.type === 'exact' ? trimmed.toLowerCase() : trimmed,
+        type: newPattern.type
+      }]
     }));
-    setNewGrafanaName('');
+    setNewPattern({ value: '', type: 'exact' });
   };
 
-  const removeGrafanaName = (name) => {
+  const removePattern = (index) => {
     setForm(prev => ({
       ...prev,
-      grafana_names: prev.grafana_names.filter(n => n !== name)
+      grafana_names: prev.grafana_names.filter((_, i) => i !== index)
     }));
   };
 
-  const handleGrafanaNameKeyPress = (e) => {
+  const handlePatternKeyPress = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      addGrafanaName();
+      addPattern();
     }
+  };
+
+  const testPattern = (pattern, input) => {
+    if (!input) return false;
+    
+    const normalizedInput = input.toLowerCase();
+    const normalizedPattern = pattern.value.toLowerCase();
+
+    switch (pattern.type) {
+      case 'exact':
+        return normalizedInput === normalizedPattern;
+      case 'contains':
+        return normalizedInput.includes(normalizedPattern);
+      case 'regex':
+        try {
+          const regex = new RegExp(normalizedPattern, 'i');
+          return regex.test(input);
+        } catch {
+          return false;
+        }
+      default:
+        return false;
+    }
+  };
+
+  const testAllPatterns = () => {
+    if (!testInput.trim()) return null;
+    
+    const matches = form.grafana_names.filter(p => testPattern(p, testInput));
+    return matches.length > 0 ? matches : null;
   };
 
   // ================== CUSTOM FIELDS MANAGEMENT ==================
@@ -178,14 +257,14 @@ const IncidentMappings = () => {
     e.preventDefault();
     
     if (form.grafana_names.length === 0) {
-      setError('Please add at least one Grafana application name');
+      setError('Please add at least one Grafana application pattern');
       return;
     }
 
     try {
       const dataToSave = { 
         ...form,
-        ...customFields // Merge custom fields into the main object
+        ...customFields
       };
 
       const url = editingItem ? `${API_BASE}/system-mappings/${editingItem._id}` : `${API_BASE}/system-mappings`;
@@ -211,8 +290,16 @@ const IncidentMappings = () => {
   };
 
   const startEdit = (m) => {
+    // Convert old string format to pattern objects if needed
+    const patterns = (m.grafana_names || []).map(item => {
+      if (typeof item === 'string') {
+        return { value: item, type: 'exact' };
+      }
+      return item;
+    });
+
     const formData = {
-      grafana_names: Array.isArray(m.grafana_names) ? m.grafana_names : [],
+      grafana_names: patterns,
       service_offering: m.service_offering || '',
       business_service: m.business_service || '',
       u_network: m.u_network || '',
@@ -255,6 +342,17 @@ const IncidentMappings = () => {
       setError('Error deleting mapping: ' + e.message);
     }
   };
+
+  // ================== RENDER HELPERS ==================
+
+  const formatPatternDisplay = (pattern) => {
+    if (typeof pattern === 'string') {
+      return { value: pattern, type: 'exact' };
+    }
+    return pattern;
+  };
+
+  const matchResult = testAllPatterns();
 
   // ================== RENDER ==================
 
@@ -334,7 +432,7 @@ const IncidentMappings = () => {
             System Mappings
           </h2>
           <p style={{margin: '8px 0 0 40px', fontSize: 14, color: '#64748b'}}>
-            Map multiple Grafana applications to ServiceNow incident fields
+            Map Grafana applications to ServiceNow incident fields using exact match, contains, or regex patterns
           </p>
         </div>
 
@@ -431,136 +529,436 @@ const IncidentMappings = () => {
             }}>
               {editingItem 
                 ? 'Update how these applications create incidents' 
-                : 'Configure how alerts from multiple Grafana applications create ServiceNow incidents'
+                : 'Configure how alerts from Grafana applications create ServiceNow incidents'
               }
             </p>
 
             <form onSubmit={save} style={{display: 'flex', flexDirection: 'column', gap: 32}}>
-              {/* Grafana Application Names */}
+              {/* Grafana Application Patterns */}
               <div style={{
                 background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
-                padding: 24,
+                padding: 28,
                 borderRadius: 12,
                 border: '2px solid #0ea5e9'
               }}>
-                <h4 style={{
-                  margin: '0 0 16px 0', 
-                  fontSize: 18, 
-                  fontWeight: 600,
-                  color: '#0c4a6e',
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 8
+                {/* Header with Help Toggle */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  marginBottom: 20
                 }}>
-                  🎯 Grafana Application Names
-                </h4>
-                <p style={{margin: '0 0 16px 0', fontSize: 14, color: '#0369a1'}}>
-                  Add multiple application names (e.g., mongo, mongok, mgk). All will use the same incident configuration.
-                </p>
+                  <div style={{flex: 1}}>
+                    <h4 style={{
+                      margin: '0 0 8px 0',
+                      fontSize: 20,
+                      fontWeight: 700,
+                      color: '#0c4a6e',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10
+                    }}>
+                      <Target size={24} />
+                      Grafana Application Patterns
+                    </h4>
+                    <p style={{margin: 0, fontSize: 14, color: '#0369a1', lineHeight: 1.5}}>
+                      Define which Grafana applications should use this mapping using exact names, wildcards, or regex patterns.
+                    </p>
+                  </div>
 
-                {/* Input for new name */}
-                <div style={{display: 'flex', gap: 8, marginBottom: 16}}>
-                  <input 
-                    type="text"
-                    style={{
-                      flex: 1,
-                      padding: '12px 16px',
-                      border: '2px solid #bae6fd',
-                      borderRadius: 8,
-                      fontSize: 16,
-                      fontWeight: 500,
-                      background: 'white',
-                      color: '#0c4a6e'
-                    }}
-                    value={newGrafanaName} 
-                    onChange={(e) => setNewGrafanaName(e.target.value)}
-                    onKeyPress={handleGrafanaNameKeyPress}
-                    placeholder="e.g., mongo, eck, prometheus" 
-                  />
                   <button
                     type="button"
-                    onClick={addGrafanaName}
+                    onClick={() => setShowPatternHelp(!showPatternHelp)}
                     style={{
-                      background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-                      color: 'white',
-                      border: 'none',
+                      background: showPatternHelp ? '#0ea5e9' : 'white',
+                      color: showPatternHelp ? 'white' : '#0ea5e9',
+                      border: '2px solid #0ea5e9',
                       borderRadius: 8,
-                      padding: '12px 20px',
-                      fontSize: 14,
+                      padding: '8px 16px',
+                      fontSize: 13,
                       fontWeight: 600,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
+                      transition: 'all 0.2s ease',
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    <PlusCircle size={16} />
-                    Add Name
+                    <Info size={16} />
+                    {showPatternHelp ? 'Hide Help' : 'Show Help'}
                   </button>
                 </div>
 
-                {/* Display added names */}
-                {form.grafana_names.length > 0 ? (
+                {/* Help Section */}
+                {showPatternHelp && (
                   <div style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 8,
-                    padding: 16,
                     background: 'white',
-                    borderRadius: 8,
-                    border: '2px solid #bae6fd'
+                    padding: 20,
+                    borderRadius: 12,
+                    border: '2px solid #bae6fd',
+                    marginBottom: 20
                   }}>
-                    {form.grafana_names.map(name => (
-                      <div
-                        key={name}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-                          color: 'white',
-                          padding: '6px 12px',
-                          borderRadius: 20,
-                          fontSize: 14,
-                          fontWeight: 600
-                        }}
-                      >
-                        <span>{name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeGrafanaName(name)}
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.2)',
-                            border: 'none',
-                            borderRadius: '50%',
-                            width: 20,
-                            height: 20,
+                    <h5 style={{margin: '0 0 16px 0', fontSize: 16, fontWeight: 600, color: '#0c4a6e'}}>
+                      Pattern Types Explained
+                    </h5>
+                    
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 16}}>
+                      {Object.entries(PATTERN_TYPES).map(([type, info]) => (
+                        <div key={type} style={{
+                          background: '#f8fafc',
+                          padding: 16,
+                          borderRadius: 8,
+                          borderLeft: `4px solid ${info.color}`
+                        }}>
+                          <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            padding: 0
+                            gap: 8,
+                            marginBottom: 8
+                          }}>
+                            <span style={{fontSize: 20}}>{info.icon}</span>
+                            <span style={{fontWeight: 700, color: info.color, fontSize: 15}}>
+                              {info.label}
+                            </span>
+                          </div>
+                          <p style={{margin: '0 0 8px 0', fontSize: 13, color: '#475569'}}>
+                            {info.description}
+                          </p>
+                          <div style={{
+                            background: 'white',
+                            padding: 8,
+                            borderRadius: 4,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: '#0c4a6e',
+                            border: '1px solid #e2e8f0'
+                          }}>
+                            <strong>Example:</strong> {info.example}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pattern Input */}
+                <div style={{
+                  background: 'white',
+                  padding: 20,
+                  borderRadius: 12,
+                  border: '2px solid #bae6fd',
+                  marginBottom: 20
+                }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '140px 1fr auto',
+                    gap: 12,
+                    alignItems: 'end'
+                  }}>
+                    {/* Pattern Type Selector */}
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#0369a1',
+                        marginBottom: 6
+                      }}>
+                        Pattern Type
+                      </label>
+                      <select
+                        value={newPattern.type}
+                        onChange={(e) => setNewPattern(prev => ({ ...prev, type: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '2px solid #bae6fd',
+                          borderRadius: 6,
+                          fontSize: 14,
+                          fontWeight: 600,
+                          background: 'white',
+                          cursor: 'pointer',
+                          color: PATTERN_TYPES[newPattern.type].color
+                        }}
+                      >
+                        {Object.entries(PATTERN_TYPES).map(([type, info]) => (
+                          <option key={type} value={type}>
+                            {info.icon} {info.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Pattern Value Input */}
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#0369a1',
+                        marginBottom: 6
+                      }}>
+                        Pattern Value
+                      </label>
+                      <input
+                        type="text"
+                        value={newPattern.value}
+                        onChange={(e) => setNewPattern(prev => ({ ...prev, value: e.target.value }))}
+                        onKeyPress={handlePatternKeyPress}
+                        placeholder={PATTERN_TYPES[newPattern.type].placeholder}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          border: '2px solid #bae6fd',
+                          borderRadius: 6,
+                          fontSize: 14,
+                          background: 'white',
+                          fontFamily: newPattern.type === 'regex' ? 'monospace' : 'inherit'
+                        }}
+                      />
+                    </div>
+
+                    {/* Add Button */}
+                    <button
+                      type="button"
+                      onClick={addPattern}
+                      style={{
+                        background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '10px 20px',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)'
+                      }}
+                    >
+                      <Plus size={16} />
+                      Add Pattern
+                    </button>
+                  </div>
+                </div>
+
+                {/* Pattern List */}
+                {form.grafana_names.length > 0 ? (
+                  <div style={{
+                    background: 'white',
+                    padding: 20,
+                    borderRadius: 12,
+                    border: '2px solid #bae6fd',
+                    marginBottom: 20
+                  }}>
+                    <h5 style={{
+                      margin: '0 0 16px 0',
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: '#0c4a6e'
+                    }}>
+                      Active Patterns ({form.grafana_names.length})
+                    </h5>
+
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10
+                    }}>
+                      {form.grafana_names.map((pattern, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            padding: 12,
+                            background: '#f8fafc',
+                            borderRadius: 8,
+                            border: `2px solid ${PATTERN_TYPES[pattern.type].color}20`,
+                            borderLeft: `4px solid ${PATTERN_TYPES[pattern.type].color}`
                           }}
                         >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
+                          <span style={{fontSize: 18}}>
+                            {PATTERN_TYPES[pattern.type].icon}
+                          </span>
+
+                          <div style={{flex: 1}}>
+                            <div style={{
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color: PATTERN_TYPES[pattern.type].color,
+                              marginBottom: 2
+                            }}>
+                              {PATTERN_TYPES[pattern.type].label}
+                            </div>
+                            <div style={{
+                              fontSize: 14,
+                              fontFamily: pattern.type === 'regex' ? 'monospace' : 'inherit',
+                              color: '#1e293b',
+                              fontWeight: 500
+                            }}>
+                              {pattern.value}
+                            </div>
+                          </div>
+
+                          {testInput && testPattern(pattern, testInput) && (
+                            <div style={{
+                              background: '#dcfce7',
+                              color: '#166534',
+                              padding: '4px 10px',
+                              borderRadius: 12,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}>
+                              <Check size={12} />
+                              MATCH
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => removePattern(index)}
+                            style={{
+                              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: 6,
+                              padding: 6,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <div style={{
-                    textAlign: 'center',
-                    padding: 24,
                     background: 'white',
-                    borderRadius: 8,
+                    padding: 32,
+                    borderRadius: 12,
                     border: '2px dashed #bae6fd',
+                    textAlign: 'center',
                     color: '#0369a1',
-                    fontSize: 14
+                    marginBottom: 20
                   }}>
-                    No application names added yet. Add at least one to continue.
+                    <Search size={32} color="#0ea5e9" style={{marginBottom: 12, opacity: 0.5}} />
+                    <p style={{margin: 0, fontSize: 14, fontWeight: 500}}>
+                      No patterns added yet. Add at least one pattern to continue.
+                    </p>
                   </div>
                 )}
+
+                {/* Pattern Tester */}
+                <div style={{
+                  background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                  padding: 20,
+                  borderRadius: 12,
+                  border: '2px solid #f59e0b'
+                }}>
+                  <h5 style={{
+                    margin: '0 0 12px 0',
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: '#92400e',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}>
+                    <Zap size={18} />
+                    Test Your Patterns
+                  </h5>
+
+                  <div style={{display: 'flex', gap: 12, alignItems: 'end'}}>
+                    <div style={{flex: 1}}>
+                      <label style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#92400e',
+                        marginBottom: 6
+                      }}>
+                        Test Application Name
+                      </label>
+                      <input
+                        type="text"
+                        value={testInput}
+                        onChange={(e) => setTestInput(e.target.value)}
+                        placeholder="e.g., mongodb-prod, db-cache-01"
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          border: '2px solid #fcd34d',
+                          borderRadius: 6,
+                          fontSize: 14,
+                          background: 'white'
+                        }}
+                      />
+                    </div>
+
+                    {matchResult !== null && (
+                      <div style={{
+                        background: matchResult ? '#dcfce7' : '#fee2e2',
+                        color: matchResult ? '#166534' : '#dc2626',
+                        padding: '10px 20px',
+                        borderRadius: 8,
+                        fontSize: 14,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {matchResult ? (
+                          <>
+                            <Check size={18} />
+                            Matches {matchResult.length} pattern{matchResult.length > 1 ? 's' : ''}
+                          </>
+                        ) : (
+                          <>
+                            <X size={18} />
+                            No Match
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {matchResult && matchResult.length > 0 && (
+                    <div style={{
+                      marginTop: 12,
+                      padding: 12,
+                      background: 'white',
+                      borderRadius: 6,
+                      border: '2px solid #a3e635'
+                    }}>
+                      <div style={{fontSize: 12, fontWeight: 600, color: '#3f6212', marginBottom: 8}}>
+                        Matching patterns:
+                      </div>
+                      {matchResult.map((pattern, i) => (
+                        <div key={i} style={{
+                          fontSize: 13,
+                          color: '#4d7c0f',
+                          fontFamily: pattern.type === 'regex' ? 'monospace' : 'inherit',
+                          marginBottom: 4
+                        }}>
+                          {PATTERN_TYPES[pattern.type].icon} <strong>{pattern.type}:</strong> {pattern.value}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Service Offering */}
@@ -986,7 +1384,7 @@ const IncidentMappings = () => {
             No Mappings Yet
           </h3>
           <p style={{fontSize: 16, color: '#64748b', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px'}}>
-            Create your first system mapping to configure how multiple Grafana applications create ServiceNow incidents.
+            Create your first system mapping to configure how Grafana applications create ServiceNow incidents.
           </p>
         </div>
       ) : (
@@ -1045,39 +1443,53 @@ const IncidentMappings = () => {
                   }}>
                     <div style={{flex: 1}}>
                       <h4 style={{
-                        margin: '0 0 8px 0',
+                        margin: '0 0 12px 0',
                         fontSize: 20,
                         fontWeight: 700,
-                        color: '#1e293b',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        flexWrap: 'wrap'
+                        color: '#1e293b'
                       }}>
-                        <span>📊 Applications:</span>
-                        {(m.grafana_names || []).map(name => (
-                          <span 
-                            key={name}
-                            style={{
-                              background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-                              color: 'white',
-                              padding: '4px 12px',
-                              borderRadius: 12,
-                              fontSize: 14,
-                              fontWeight: 600
-                            }}
-                          >
-                            {name}
-                          </span>
-                        ))}
+                        {m.service_offering}
+                      </h4>
+                      
+                      <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 8,
+                        marginBottom: 8
+                      }}>
+                        {(m.grafana_names || []).map((pattern, idx) => {
+                          const p = formatPatternDisplay(pattern);
+                          return (
+                            <span 
+                              key={idx}
+                              style={{
+                                background: `linear-gradient(135deg, ${PATTERN_TYPES[p.type].color}15, ${PATTERN_TYPES[p.type].color}25)`,
+                                color: PATTERN_TYPES[p.type].color,
+                                padding: '6px 12px',
+                                borderRadius: 12,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                border: `2px solid ${PATTERN_TYPES[p.type].color}`,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                fontFamily: p.type === 'regex' ? 'monospace' : 'inherit'
+                              }}
+                            >
+                              <span>{PATTERN_TYPES[p.type].icon}</span>
+                              <span>{p.value}</span>
+                            </span>
+                          );
+                        })}
                         {m.u_system_failure && (
                           <span style={{
                             background: '#fecaca',
                             color: '#dc2626',
-                            padding: '2px 8px',
-                            borderRadius: 4,
+                            padding: '6px 12px',
+                            borderRadius: 12,
                             fontSize: 12,
-                            fontWeight: 600
+                            fontWeight: 600,
+                            border: '2px solid #dc2626'
                           }}>
                             SYSTEM FAILURE
                           </span>
@@ -1086,18 +1498,16 @@ const IncidentMappings = () => {
                           <span style={{
                             background: '#e9d5ff',
                             color: '#9333ea',
-                            padding: '2px 8px',
-                            borderRadius: 4,
+                            padding: '6px 12px',
+                            borderRadius: 12,
                             fontSize: 12,
-                            fontWeight: 600
+                            fontWeight: 600,
+                            border: '2px solid #9333ea'
                           }}>
                             {customFieldsInMapping.length} Custom Field{customFieldsInMapping.length > 1 ? 's' : ''}
                           </span>
                         )}
-                      </h4>
-                      <p style={{margin: 0, color: '#64748b', fontSize: 14}}>
-                        {m.service_offering}
-                      </p>
+                      </div>
                     </div>
                     <div style={{display: 'flex', gap: 8}}>
                       <button 
