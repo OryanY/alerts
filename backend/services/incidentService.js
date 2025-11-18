@@ -87,8 +87,7 @@ class IncidentService {
     }
 
     try {
-      console.log('📤 Sending to ServiceNow:', JSON.stringify(incidentData, null, 2));
-      
+      console.log('Sending to ServiceNow:', JSON.stringify(incidentData, null, 2));
       const response = await axios({
         method: 'POST',
         url: `${this.serviceNowUrl}/api/now/table/incident`,
@@ -137,11 +136,12 @@ class IncidentService {
     }
 
     try {
+      console.log(this.serviceNowUrl);
       const response = await axios({
         method: 'GET',
         url: `${this.serviceNowUrl}/api/now/table/sys_user_group`,
         params: {
-          sysparm_query: 'active=true',
+          sysparm_query: 'active=true^u_unit=7180',
           sysparm_fields: 'sys_id,name',
           sysparm_limit: 1000
         },
@@ -164,6 +164,7 @@ class IncidentService {
       console.log(`✅ Cached ${groups.length} assignment groups`);
       return groups;
     } catch (error) {
+    
       console.error('❌ Error fetching assignment groups:', error.message);
       if (this.assignmentGroupsCache) {
         console.warn('⚠️  Using stale cache due to API error');
@@ -231,29 +232,14 @@ class IncidentService {
     
     // 4. Add default descriptions if not provided
     if (!incidentData.short_description) {
-      incidentData.short_description = `Alert: ${alertData.object_name} - ${alertData.application}`;
+      incidentData.short_description = `קפצה התראה על: ${alertData.object_name} - ${alertData.application}`;
     }
     
     if (!incidentData.description) {
       const descParts = [
-        `Alert Details:`,
-        `Application: ${alertData.application}`,
-        `Object: ${alertData.object_name}`,
-        `Node: ${alertData.node_name}`,
+        `ההתראה:`,
         `Message: ${alertData.message}`,
-        `Time: ${alertData.time_created}`,
-        `Operator: ${alertData.operator}`,
-        `System Failure: ${incidentData.u_system_failure ? 'YES' : 'NO'}`
       ];
-      
-      // Add custom fields to description
-      Object.entries(incidentData).forEach(([key, value]) => {
-        if (!baseRequired.includes(key) && 
-            !excludeFields.has(key) && 
-            !['short_description', 'description', 'u_impact_technology'].includes(key)) {
-          descParts.push(`${key.replace(/_/g, ' ')}: ${value}`);
-        }
-      });
       
       incidentData.description = descParts.join('\n        ');
     }
@@ -261,7 +247,7 @@ class IncidentService {
     return incidentData;
   }
 
-  // ================== SYSTEM MAPPINGS ==================
+  // ================== SYSTEM MAPPINGS (MULTIPLE GRAFANA NAMES) ==================
   
   async getSystemMappings() {
     if (!this.systemMappingsCollection) await this.initialize();

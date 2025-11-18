@@ -35,7 +35,7 @@ router.get('/overview', validateQuery(statsSchema), async (req, res) => {
   try {
     const params = req.validatedQuery;
     const cacheKey = `overview:${JSON.stringify(params)}`;
-    
+
     const cached = cache.get(cacheKey);
     if (cached) {
       return res.json({ ...cached, meta: { ...cached.meta, cached: true } });

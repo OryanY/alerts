@@ -194,27 +194,71 @@ class AlertService {
     return where;
   }
 
+// AlertService.js - getOverviewStats method (FIXED)
 
-  async getOverviewStats(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause(request, range, params.panel_title);
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    const rows = (await request.query(`
-      SELECT TOP (@cap)
-        time_fired, time_resolved, duration_sec,
-        panel_title, application, node_name, network, operator
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `)).recordset;
-
-    const stats = this._computeOverviewStats(rows, params);
-    return ResponseFormatter.success(stats);
+async getOverviewStats(params) {
+  const pool = this.getPool();
+  const request = pool.request();
+  
+  // CRITICAL FIX: Use validateDateRange to get properly converted UTC dates
+  const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
+  
+  // Debug logging to verify conversion
+  console.log('getOverviewStats - Date Range Conversion:');
+  console.log('  Input start_date:', params.start_date);
+  console.log('  Input end_date:', params.end_date);
+  if (range) {
+    console.log('  Converted start (UTC):', range.start?.toISOString());
+    console.log('  Converted end (UTC):', range.end?.toISOString());
   }
+  
+  const where = [];
+  
+  // FIXED: Use range.start and range.end (already converted to UTC)
+  if (range?.start) {
+    request.input('start', this._getSqlType('DateTime2'), range.start);
+    where.push('time_fired >= @start');
+  }
+  if (range?.end) {
+    request.input('end', this._getSqlType('DateTime2'), range.end);
+    where.push('time_fired <= @end');
+  }
+  if (params.panel_title) {
+    request.input('panelTitle', this._getSqlType('NVarChar'), params.panel_title);
+    where.push('panel_title = @panelTitle');
+  }
+  
+  const cap = Math.min(params.limit || 100000, 100000);
+  request.input('cap', this._getSqlType('Int'), cap);
+
+  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  
+  // Build query
+  const query = `
+    SELECT TOP (@cap)
+      time_fired, time_resolved, duration_sec,
+      panel_title, application, node_name, network, operator
+    FROM dbo.historicalAlerts
+    ${whereClause}
+    ORDER BY time_fired DESC
+  `;
+  
+  console.log('Executing query:', query);
+  console.log('With parameters:', {
+    start: range?.start?.toISOString(),
+    end: range?.end?.toISOString(),
+    panelTitle: params.panel_title,
+    cap
+  });
+
+  const rows = (await request.query(query)).recordset;
+
+  const stats = this._computeOverviewStats(rows, params);
+  
+  console.log('Overview stats result - total_alerts:', stats.total_alerts);
+  
+  return ResponseFormatter.success(stats);
+}
 
   async getHourlyStats(params) {
     const data = await this._getBasicAlertData(params);
@@ -222,23 +266,27 @@ class AlertService {
     return ResponseFormatter.success(hourlyStats);
   }
 
-  async getTimeseriesStats(params) {
-    const data = await this._getBasicAlertData(params);
-    const timeseries = this._computeTimeseriesStats(data.recordset, params);
-    return ResponseFormatter.success(timeseries);
-  }
-
   async getPanelList(params) {
     const pool = this.getPool();
     const request = pool.request();
     
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause (request, range);
+    
+    const where = this._buildWhereClause(request, range);
+    
+    const falseWakeupThreshold = params.false_wakeup_threshold || 120;
+    const durShortMax = params.dur_short_max || 59;
+    const durMediumMax = params.dur_medium_max || 299;
+    
+    request.input('false_wakeup_threshold', this._getSqlType('Int'), falseWakeupThreshold);
+    request.input('dur_short_max', this._getSqlType('Int'), durShortMax);
+    request.input('dur_medium_max', this._getSqlType('Int'), durMediumMax);
+    
     const result = await request.query(`
       SELECT 
         panel_title,
         COUNT(*) AS alert_count,
-        COUNT(CASE WHEN duration_sec <= ${params.false_wakeup_threshold || 120} THEN 1 END) AS false_positive_count,
+        COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_positive_count,
         ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration,
         COUNT(DISTINCT application) AS application_count
       FROM dbo.historicalAlerts
@@ -246,24 +294,26 @@ class AlertService {
       GROUP BY panel_title
       ORDER BY alert_count DESC
     `);
-
+    
     return ResponseFormatter.success(result.recordset);
   }
 
+  async getTimeseriesStats(params) {
+    const data = await this._getBasicAlertData(params);
+    const timeseries = this._computeTimeseriesStats(data.recordset, params);
+    return ResponseFormatter.success(timeseries);
+  }
   // Detailed panel analysis
   async getPanelAnalysis(params) {
+    if (!params.panel_title) {
+      throw new Error('panel_title is required');
+    }
+
     const pool = this.getPool();
     const request = pool.request();
     
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause (request, range);
-    
-    // Add panel filter
-    if (!params.panel_title) {
-      throw new Error('panel_title is required');
-    }
-    request.input('panelTitle', this._getSqlType('NVarChar'), params.panel_title);
-    where.push('panel_title = @panelTitle');
+    const where = this._buildWhereClause (request, range,params.panel_title);
 
     const cap = Math.min(params.limit || 100000, 100000);
     request.input('cap', this._getSqlType('Int'), cap);
@@ -283,18 +333,16 @@ class AlertService {
 
   // Get alert frequency by specific alert message/type
   async getAlertMessageBreakdown(params) {
+    if (!params.panel_title) {
+      throw new Error('panel_title is required');
+    }
+
     const pool = this.getPool();
     const request = pool.request();
     
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause (request, range);
+    const where = this._buildWhereClause (request, range, params.panel_title);
     
-    if (!params.panel_title) {
-      throw new Error('panel_title is required');
-    }
-    request.input('panelTitle', this._getSqlType('NVarChar'), params.panel_title);
-    where.push('panel_title = @panelTitle');
-
     const result = await request.query(`
       SELECT 
         message,
@@ -555,29 +603,41 @@ class AlertService {
     return conditions;
   }
 
-  _bindFieldFilters(request, params) {
-    const conditions = [];
-    const fields = ['panel_title', 'application', 'node_name', 'network', 'object', 'operator'];
-    
-    fields.forEach(field => {
-      if (params[field]) {
+_bindFieldFilters(request, params) {
+  const conditions = [];
+  const fields = ['panel_title', 'application', 'node_name', 'network', 'object', 'operator'];
+  
+  fields.forEach(field => {
+    if (params[field]) {
+      // Handle array-based filtering for panel_titles
+      if (field === 'panel_title' && params.panel_titles && Array.isArray(params.panel_titles)) {
+        const panelTitles = params.panel_titles;
+        const placeholders = panelTitles.map((_, index) => `@${field}_${index}`).join(',');
+        conditions.push(`panel_title IN (${placeholders})`);
+        panelTitles.forEach((title, index) => {
+          request.input(`${field}_${index}`, this._getSqlType('NVarChar'), title);
+        });
+      }
+      // Handle single value filtering
+      else if (params[field]) {
         conditions.push(`${field} LIKE @${field}`);
         request.input(field, this._getSqlType('NVarChar'), `${params[field]}%`);
       }
-    });
-
-    if (params.min_duration !== undefined) {
-      conditions.push('duration_sec >= @minDuration');
-      request.input('minDuration', this._getSqlType('Int'), params.min_duration);
     }
-    
-    if (params.max_duration !== undefined) {
-      conditions.push('duration_sec <= @maxDuration');
-      request.input('maxDuration', this._getSqlType('Int'), params.max_duration);
-    }
-
-    return conditions;
+  });
+  
+  if (params.min_duration !== undefined) {
+    conditions.push('duration_sec >= @minDuration');
+    request.input('minDuration', this._getSqlType('Int'), params.min_duration);
   }
+  
+  if (params.max_duration !== undefined) {
+    conditions.push('duration_sec <= @maxDuration');
+    request.input('maxDuration', this._getSqlType('Int'), params.max_duration);
+  }
+  
+  return conditions;
+}
 
   _getSqlType(type) {
     const sql = require('mssql');
@@ -633,15 +693,8 @@ class AlertService {
 
     let total = 0, sum = 0, min = Infinity, max = -Infinity;
     let shortAlerts = 0, mediumAlerts = 0, longAlerts = 0;
-    let resolved = 0, unresolved = 0, nightAlerts = 0, dayAlerts = 0;
-    const sets = {
-      panels: new Set(),
-      apps: new Set(), 
-      nodes: new Set(),
-      networks: new Set(),
-      operators: new Set()
-    };
-
+    let nightAlerts = 0, dayAlerts = 0;
+  
     for (const record of records) {
       total++;
       sum += record.duration_sec;
@@ -652,18 +705,10 @@ class AlertService {
       else if (record.duration_sec <= dur_medium_max) mediumAlerts++;
       else longAlerts++;
 
-      if (record.time_resolved) resolved++;
-      else unresolved++;
-
       const hour = TimeUtils.getILHour(record.time_fired);
       if (TimeUtils.isDayHour(hour, day_start, day_end)) dayAlerts++;
       else nightAlerts++;
 
-      if (record.panel_title) sets.panels.add(record.panel_title);
-      if (record.application) sets.apps.add(record.application);
-      if (record.node_name) sets.nodes.add(record.node_name);
-      if (record.network) sets.networks.add(record.network);
-      if (record.operator) sets.operators.add(record.operator);
     }
 
     const signalRatio = total ? +((total - shortAlerts) * 100 / total).toFixed(1) : 0;
@@ -676,13 +721,6 @@ class AlertService {
       short_alerts: shortAlerts,
       medium_alerts: mediumAlerts,
       long_alerts: longAlerts,
-      unique_panels: sets.panels.size,
-      unique_applications: sets.apps.size,
-      unique_nodes: sets.nodes.size,
-      unique_networks: sets.networks.size,
-      unique_operators: sets.operators.size,
-      resolved_alerts: resolved,
-      unresolved_alerts: unresolved,
       night_alerts: nightAlerts,
       day_alerts: dayAlerts,
       signal_to_noise_ratio: signalRatio,

@@ -1,4 +1,4 @@
-// utils/TimeUtils.js - Centralized timezone and date handling
+// utils/TimeUtils.js - Centralized timezone and date handling (FIXED)
 const { DateTime } = require('luxon');
 
 const IL_ZONE = 'Asia/Jerusalem';
@@ -40,28 +40,50 @@ class TimeUtils {
    * Parse IL input string → UTC Date
    * Accepts: YYYY-MM-DD, YYYY-MM-DDTHH:mm:ss, or full ISO
    * For date-only strings: sets to start of day in IL time, then converts to UTC
+   * 
+   * FIXED: Now correctly interprets date strings as Israeli time zone
    */
   static parseILToUTC(ilDateString, endOfDay = false) {
     if (!ilDateString) throw new Error('Date is required');
 
     let dt;
     
+    // HANDLE FRONTEND SENDING FULL ISO STRINGS - Strip to date-only first
+    let dateStr = ilDateString;
+    if (typeof dateStr === 'string' && dateStr.includes('T')) {
+      // If frontend sent "2025-11-08T00:00:00.000Z", extract just "2025-11-08"
+      dateStr = dateStr.split('T')[0];
+    }
+    
     // Check if it's a date-only string (YYYY-MM-DD)
-    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(ilDateString);
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
     
     if (isDateOnly) {
-      // Parse as IL date and set to start/end of day
-      dt = DateTime.fromISO(ilDateString, { zone: IL_ZONE });
+      // FIXED: Parse as IL date explicitly in IL timezone
+      dt = DateTime.fromISO(dateStr, { zone: IL_ZONE });
+      
+      if (!dt.isValid) {
+        throw new Error(`Invalid date format: ${dateStr}. Use YYYY-MM-DD or ISO datetime`);
+      }
+      
+      // Set to start or end of day IN ISRAELI TIME
       dt = endOfDay ? dt.endOf('day') : dt.startOf('day');
     } else {
-      // Parse as full datetime in IL timezone
-      dt = DateTime.fromISO(ilDateString, { zone: IL_ZONE });
-    }
-
-    if (!dt.isValid) {
-      throw new Error(`Invalid date format: ${ilDateString}. Use YYYY-MM-DD or ISO datetime`);
+      // For datetime strings, check if they already have timezone info
+      if (dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr)) {
+        // Already has timezone, parse as-is
+        dt = DateTime.fromISO(dateStr);
+      } else {
+        // No timezone specified, treat as IL time
+        dt = DateTime.fromISO(dateStr, { zone: IL_ZONE });
+      }
+      
+      if (!dt.isValid) {
+        throw new Error(`Invalid date format: ${dateStr}. Use YYYY-MM-DD or ISO datetime`);
+      }
     }
     
+    // Convert to UTC and return as JS Date
     return dt.toUTC().toJSDate();
   }
 
@@ -125,6 +147,22 @@ class TimeUtils {
       isDST: now.isInDST,
       displayName: 'Israel Time'
     };
+  }
+
+  /**
+   * Debug helper: Show conversion results
+   */
+  static debugDateConversion(ilDateString, endOfDay = false) {
+    const utcDate = this.parseILToUTC(ilDateString, endOfDay);
+    const ilDt = DateTime.fromJSDate(utcDate, { zone: 'utc' }).setZone(IL_ZONE);
+    
+    console.log('Date Conversion Debug:');
+    console.log('  Input (IL):', ilDateString);
+    console.log('  Output (UTC JS Date):', utcDate.toISOString());
+    console.log('  Verify (back to IL):', ilDt.toISO());
+    console.log('  Offset:', ilDt.offsetNameShort);
+    
+    return utcDate;
   }
 }
 

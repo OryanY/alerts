@@ -45,9 +45,18 @@ const combinedCreateSchema = Joi.object({
 });
 
 const systemMappingSchema = Joi.object({
-  grafana_names: Joi.alternatives().try(Joi.string().trim(),
-  Joi.array().items(Joi.string().trim()).min(1)).required(),
-
+  grafana_names: Joi.array().items(
+    Joi.alternatives().try(
+      Joi.object({
+        value: Joi.string().trim().lowercase().required(),
+        type: Joi.string().valid('exact', 'contains', 'regex').required(),
+      }),
+      Joi.string().trim().lowercase(),
+    )
+  ).min(1).required().messages({
+    'array.min': 'at least one Grafana application required',
+    'any.required': 'grafana names are required',
+  }),
   service_offering: Joi.string().required().trim(),
   business_service: Joi.string().required().trim(),
   u_network: Joi.string().required().trim(),
@@ -423,8 +432,9 @@ router.patch('/incident-rules/:id/toggle', async (req, res) => {
         details: 'enabled field must be a boolean'
       });
     }
-
+    
     const result = await incidentService.toggleIncidentRule(id, enabled);
+
     res.json({
       success: true,
       message: result.message
@@ -455,7 +465,7 @@ router.get('/distinct/:field', async (req, res) => {
       'u_impact_technology',
       'u_monitor_identifier'
     ];
-
+    
     if (!validFields.includes(field)) {
       return res.status(400).json({
         success: false,
@@ -463,14 +473,14 @@ router.get('/distinct/:field', async (req, res) => {
         details: `Valid fields are: ${validFields.join(', ')}`
       });
     }
-
+    
     const values = await incidentService.getDistinctValues(field);
     res.json({
       success: true,
       data: values
     });
   } catch (error) {
-    handleError(res, error);
+    handleError(res, error, 'Error fetching distinct values');
   }
 });
 

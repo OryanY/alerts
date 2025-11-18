@@ -1,5 +1,5 @@
 // ===== Config =====
-export const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000/api';
+export const API_BASE = "http://localhost:5000/api";
 export const JERUSALEM_TZ = 'Asia/Jerusalem';
 
 // ===== Default client config (overridable via UI) =====

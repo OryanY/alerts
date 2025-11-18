@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { API_BASE } from '../utils/constants';
 import { 
   Target, Plus, Edit, Trash2, RefreshCw, CheckCircle, XCircle, Eye, 
   AlertTriangle, X, ToggleLeft, ToggleRight, Filter, ArrowDown, Trash
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api/incidents';
 
 const CONDITION_OPERATORS = {
   contains: { label: 'Contains', icon: '🔍' },
@@ -64,7 +64,7 @@ const IncidentRules = () => {
   const fetchRules = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/incident-rules`);
+      const res = await fetch(`${API_BASE}/incidents/incident-rules`);
       const data = await res.json();
       if (data.success) setRules(data.data || []);
       else setError('Failed to fetch incident rules');
@@ -77,7 +77,7 @@ const IncidentRules = () => {
 
   const fetchMappings = async () => {
     try {
-      const res = await fetch(`${API_BASE}/system-mappings`);
+      const res = await fetch(`${API_BASE}/incidents/system-mappings`);
       const data = await res.json();
       if (data.success) setMappings(data.data || []);
     } catch (e) {
@@ -184,7 +184,7 @@ const IncidentRules = () => {
 
       console.log('Sending payload:', JSON.stringify(payload, null, 2));
       
-      const url = editingItem ? `${API_BASE}/incident-rules/${editingItem._id}` : `${API_BASE}/incident-rules`;
+      const url = editingItem ? `${API_BASE}/incidents/incident-rules/${editingItem._id}` : `${API_BASE}/incidents/incident-rules`;
       const method = editingItem ? 'PUT' : 'POST';
       const res = await fetch(url, { 
         method, 
@@ -209,7 +209,7 @@ const IncidentRules = () => {
   const del = async (id) => {
     if (!window.confirm('Are you sure you want to delete this rule?')) return;
     try {
-      const res = await fetch(`${API_BASE}/incident-rules/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/incidents/incident-rules/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         await fetchRules();
@@ -224,7 +224,7 @@ const IncidentRules = () => {
 
   const toggle = async (id, enabled) => {
     try {
-      const res = await fetch(`${API_BASE}/incident-rules/${id}/toggle`, {
+      const res = await fetch(`${API_BASE}/incidents/incident-rules/${id}/toggle`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled })
@@ -604,7 +604,7 @@ const IncidentRules = () => {
                     <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16}}>
                       {customFieldsInMapping.map(fieldName => (
                         <div key={fieldName}>
-                          <label style={{display: 'block', fontSize: 14, fontWeight: 600, color: '#9333ea', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6}}>
+                          <label style={{ fontSize: 14, fontWeight: 600, color: '#9333ea', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6}}>
                             <span style={{fontFamily: 'monospace'}}>{fieldName}</span>
                           </label>
                           <input

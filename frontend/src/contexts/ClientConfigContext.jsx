@@ -1,4 +1,5 @@
 // contexts/ClientConfigContext.jsx — WITH GLOBAL DATE RANGE
+  
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 
@@ -18,6 +19,7 @@ const getDefaultDateRange = () => {
   const end = new Date(now);
   const start = new Date(now - 6 * 864e5); // 6 days ago
   
+
   return {
     start_date: start.toISOString().split('T')[0],
     end_date: end.toISOString().split('T')[0]
@@ -28,7 +30,7 @@ export const ClientConfigProvider = ({ children }) => {
   // Load both config and date range from localStorage
   const [clientCfg, setClientCfg] = useState(() => {
     try {
-      const saved = localStorage.getItem('noc_client_cfg');
+      const saved = localStorage.getItem('client_cfg');
       return saved ? { ...DEFAULT_CLIENT_CFG, ...JSON.parse(saved) } : DEFAULT_CLIENT_CFG;
     } catch (e) {
       console.warn('Failed to load client config from localStorage:', e);
@@ -38,7 +40,7 @@ export const ClientConfigProvider = ({ children }) => {
 
   const [dateRange, setDateRangeState] = useState(() => {
     try {
-      const saved = localStorage.getItem('noc_date_range');
+      const saved = localStorage.getItem('date_range');
       if (saved) {
         const parsed = JSON.parse(saved);
         // Validate dates exist
@@ -54,7 +56,7 @@ export const ClientConfigProvider = ({ children }) => {
 
   const [selectedPanel, setSelectedPanelState] = useState(() => {
     try {
-      return localStorage.getItem('noc_selected_panel') || null;
+      return localStorage.getItem('selected_panel') || null;
     } catch (e) {
       return null;
     }
@@ -63,7 +65,7 @@ export const ClientConfigProvider = ({ children }) => {
   // Persist config changes to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('noc_client_cfg', JSON.stringify(clientCfg));
+      localStorage.setItem('client_cfg', JSON.stringify(clientCfg));
     } catch (e) {
       console.warn('Failed to save client config to localStorage:', e);
     }
@@ -72,7 +74,7 @@ export const ClientConfigProvider = ({ children }) => {
   // Persist date range to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('noc_date_range', JSON.stringify(dateRange));
+      localStorage.setItem('date_range', JSON.stringify(dateRange));
     } catch (e) {
       console.warn('Failed to save date range to localStorage:', e);
     }
@@ -82,9 +84,9 @@ export const ClientConfigProvider = ({ children }) => {
   useEffect(() => {
     try {
       if (selectedPanel) {
-        localStorage.setItem('noc_selected_panel', selectedPanel);
+        localStorage.setItem('selected_panel', selectedPanel);
       } else {
-        localStorage.removeItem('noc_selected_panel');
+        localStorage.removeItem('selected_panel');
       }
     } catch (e) {
       console.warn('Failed to save selected panel to localStorage:', e);
@@ -117,7 +119,7 @@ export const ClientConfigProvider = ({ children }) => {
   const resetConfig = () => {
     setClientCfg(DEFAULT_CLIENT_CFG);
     try {
-      localStorage.removeItem('noc_client_cfg');
+      localStorage.removeItem('client_cfg');
     } catch (e) {
       console.warn('Failed to remove client config from localStorage:', e);
     }
@@ -134,7 +136,7 @@ export const ClientConfigProvider = ({ children }) => {
     const now = Date.now();
     const end = new Date(now);
     const start = new Date(now - (days - 1) * 864e5);
-    
+
     setDateRangeState({
       start_date: start.toISOString().split('T')[0],
       end_date: end.toISOString().split('T')[0]

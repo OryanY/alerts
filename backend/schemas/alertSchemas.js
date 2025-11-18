@@ -3,8 +3,8 @@ const Joi = require('joi');
 
 // Base schema for common parameters
 const baseSchema = {
-  start_date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/).optional(),
-  end_date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/).optional(),
+start_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
+end_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
   // Configuration parameters with defaults
   day_start: Joi.number().integer().min(0).max(23).default(8),
   day_end: Joi.number().integer().min(0).max(23).default(22),

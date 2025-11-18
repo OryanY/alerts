@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 
 import { S } from '../utils/styles';
+
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { useClientConfig } from '../contexts/ClientConfigContext';
@@ -27,23 +28,40 @@ const NocDashboard = () => {
 
   const { Legend } = useDurationBands(config);
 
-  const adjustedDateRange = useMemo(() => {
-    if (
-      dateRange.start_date &&
-      dateRange.end_date &&
-      dateRange.start_date === dateRange.end_date
-    ) {
-      return {
-        start_date: dateRange.start_date,
-        end_date: `${dateRange.end_date}T23:59:59`,
-      };
-    }
-    return dateRange;
-  }, [dateRange]);
+const adjustedDateRange = useMemo(() => {
+  const formatDate = (dateStr) => {
+    if (!dateStr) return null;
+    
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return null;
+    
+    // Convert to ISO string in UTC
+    return date.toISOString();
+  };
+
+  if (
+    dateRange.start_date &&
+    dateRange.end_date &&
+    dateRange.start_date === dateRange.end_date
+  ) {
+    const start = formatDate(dateRange.start_date);
+    const end = formatDate(`${dateRange.end_date}T23:59:59`);
+    return {
+      start_date: start,
+      end_date: end,
+    };
+  }
+
+  return {
+    start_date: formatDate(dateRange.start_date),
+    end_date: formatDate(dateRange.end_date),
+  };
+}, [dateRange]);
 
   // Build API params with optional panel filter
   const apiParams = useMemo(() => {
     const params = {
+      
       ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
       ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date }),
       false_wakeup_threshold: config.falseWakeupThreshold || 120,
@@ -56,22 +74,7 @@ const NocDashboard = () => {
 
     return params;
   }, [adjustedDateRange, config.falseWakeupThreshold, getApiParams, selectedPanel]);
-
-  // Fetch data with panel filter applied
-  const exec = useApiData('/stats/executive-kpis', apiParams);
-  const shifts = useApiData('/stats/shift-analysis', apiParams);
-  const duration = useApiData('/stats/duration-histogram', apiParams);
-  const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
-
-  // Skip /stats/by-panel when a specific panel is selected
-  const panelStats = useApiData(
-    '/stats/by-panel',
-    selectedPanel ? null : { ...apiParams, limit: 20 }
-  );
-
-  const timeseries = useApiData('/stats/timeseries', apiParams);
-  const overview = useApiData('/stats/overview', apiParams);
-
+  
   // Fetch panel list for dropdown (without panel filter)
   const panelListParams = useMemo(
     () => ({
@@ -81,6 +84,20 @@ const NocDashboard = () => {
     }),
     [adjustedDateRange, getApiParams]
   );
+  
+  // Fetch data with panel filter applied
+  const exec = useApiData('/stats/executive-kpis', apiParams);
+  const shifts = useApiData('/stats/shift-analysis', apiParams);
+  const duration = useApiData('/stats/duration-histogram', apiParams);
+  const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
+  const panelStats = useApiData(
+    '/stats/by-panel',
+    selectedPanel ? null : { ...apiParams, limit: 20 }
+  );
+
+  const timeseries = useApiData('/stats/timeseries', apiParams);
+  const overview = useApiData('/stats/overview', apiParams);
+
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
 
   const isLoading = exec.loading || shifts.loading || duration.loading || heatmap.loading;

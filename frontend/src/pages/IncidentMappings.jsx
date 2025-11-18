@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Settings, Plus, Edit, Trash2, RefreshCw, CheckCircle, AlertTriangle, X, PlusCircle, MinusCircle, Target, Info, Zap, Search, Check } from 'lucide-react';
-
-const API_BASE = 'http://localhost:5000/api/incidents';
+import { useEffect, useState } from 'react';
+import { Settings, Plus, Edit, Trash2, RefreshCw, CheckCircle, AlertTriangle, X, PlusCircle, MinusCircle, Target, Zap, Search, Check } from 'lucide-react';
+import { API_BASE } from '../utils/constants';
 
 const PATTERN_TYPES = {
   exact: { 
@@ -38,7 +37,6 @@ const IncidentMappings = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [assignmentGroups, setAssignmentGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
-  const [showPatternHelp, setShowPatternHelp] = useState(false);
   const [testInput, setTestInput] = useState('');
 
   const [form, setForm] = useState({
@@ -85,13 +83,12 @@ const IncidentMappings = () => {
     setNewPattern({ value: '', type: 'exact' });
     setEditingItem(null);
     setTestInput('');
-    setShowPatternHelp(false);
   };
 
   const fetchMappings = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/system-mappings`);
+      const res = await fetch(`${API_BASE}/incidents/system-mappings`);
       const data = await res.json();
       if (data.success) setMappings(data.data || []);
       else setError(data.details || 'Failed to fetch system mappings');
@@ -105,7 +102,7 @@ const IncidentMappings = () => {
   const fetchAssignmentGroups = async () => {
     try {
       setLoadingGroups(true);
-      const res = await fetch(`${API_BASE}/assignment-groups`);
+      const res = await fetch(`${API_BASE}/incidents/assignment-groups`);
       const data = await res.json();
       if (data.success) {
         setAssignmentGroups(data.data || []);
@@ -566,81 +563,8 @@ const IncidentMappings = () => {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowPatternHelp(!showPatternHelp)}
-                    style={{
-                      background: showPatternHelp ? '#0ea5e9' : 'white',
-                      color: showPatternHelp ? 'white' : '#0ea5e9',
-                      border: '2px solid #0ea5e9',
-                      borderRadius: 8,
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      transition: 'all 0.2s ease',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    <Info size={16} />
-                    {showPatternHelp ? 'Hide Help' : 'Show Help'}
-                  </button>
+              
                 </div>
-
-                {/* Help Section */}
-                {showPatternHelp && (
-                  <div style={{
-                    background: 'white',
-                    padding: 20,
-                    borderRadius: 12,
-                    border: '2px solid #bae6fd',
-                    marginBottom: 20
-                  }}>
-                    <h5 style={{margin: '0 0 16px 0', fontSize: 16, fontWeight: 600, color: '#0c4a6e'}}>
-                      Pattern Types Explained
-                    </h5>
-                    
-                    <div style={{display: 'flex', flexDirection: 'column', gap: 16}}>
-                      {Object.entries(PATTERN_TYPES).map(([type, info]) => (
-                        <div key={type} style={{
-                          background: '#f8fafc',
-                          padding: 16,
-                          borderRadius: 8,
-                          borderLeft: `4px solid ${info.color}`
-                        }}>
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            marginBottom: 8
-                          }}>
-                            <span style={{fontSize: 20}}>{info.icon}</span>
-                            <span style={{fontWeight: 700, color: info.color, fontSize: 15}}>
-                              {info.label}
-                            </span>
-                          </div>
-                          <p style={{margin: '0 0 8px 0', fontSize: 13, color: '#475569'}}>
-                            {info.description}
-                          </p>
-                          <div style={{
-                            background: 'white',
-                            padding: 8,
-                            borderRadius: 4,
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            color: '#0c4a6e',
-                            border: '1px solid #e2e8f0'
-                          }}>
-                            <strong>Example:</strong> {info.example}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Pattern Input */}
                 <div style={{
@@ -877,7 +801,7 @@ const IncidentMappings = () => {
                     gap: 8
                   }}>
                     <Zap size={18} />
-                    Test Your Patterns
+                    בדיקה האם מה שהגדרתם עובד :)
                   </h5>
 
                   <div style={{display: 'flex', gap: 12, alignItems: 'end'}}>
@@ -1664,22 +1588,7 @@ const IncidentMappings = () => {
                     </div>
                   )}
 
-                  {m.created_at && (
-                    <div style={{
-                      marginTop: 16,
-                      paddingTop: 16,
-                      borderTop: '1px solid #f1f5f9',
-                      fontSize: 12,
-                      color: '#94a3b8'
-                    }}>
-                      Created: {new Date(m.created_at).toLocaleString()}
-                      {m.updated_at && m.updated_at !== m.created_at && (
-                        <span style={{marginLeft: 16}}>
-                          • Updated: {new Date(m.updated_at).toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-                  )}
+           
                 </div>
               );
             })}
