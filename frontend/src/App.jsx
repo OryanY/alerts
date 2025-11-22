@@ -7,10 +7,12 @@ import  NotFoundPage  from './pages/NotFoundPage';
 import { ClientConfigProvider } from './contexts/ClientConfigContext';
 import IncidentManagment from './pages/IncidentManagment';
 import PanelResearchPage from './pages/PanelResearchPage';
+import { ThemeProvider } from './contexts/ThemeContext';
 
 
 function App() {
   return (
+    <ThemeProvider>
     <ClientConfigProvider>
       <Router>
         <Routes>
@@ -37,6 +39,7 @@ function App() {
         </Routes>
       </Router>
     </ClientConfigProvider>
+    </ThemeProvider>
   );
 }
 

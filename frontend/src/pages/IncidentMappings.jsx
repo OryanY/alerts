@@ -1,35 +1,100 @@
 import { useEffect, useState } from 'react';
-import { Settings, Plus, Edit, Trash2, RefreshCw, CheckCircle, AlertTriangle, X, PlusCircle, MinusCircle, Target, Zap, Search, Check } from 'lucide-react';
+import {
+  Settings,
+  Plus,
+  Edit,
+  Trash2,
+  RefreshCw,
+  CheckCircle,
+  AlertTriangle,
+  X,
+  PlusCircle,
+  MinusCircle,
+  Target,
+  Zap,
+  Search,
+  Check,
+} from 'lucide-react';
 import { API_BASE } from '../utils/constants';
+import { useTheme } from '../contexts/ThemeContext';
 
+// Pattern types are semantic only (no colors here)
 const PATTERN_TYPES = {
-  exact: { 
-    label: 'Exact Match', 
-    icon: '🎯', 
-    color: '#3b82f6',
+  exact: {
+    label: 'Exact Match',
+    icon: '🎯',
     description: 'Matches exactly this application name',
     example: 'mongo',
-    placeholder: 'e.g., mongo, elasticsearch'
+    placeholder: 'e.g., mongo, elasticsearch',
   },
-  contains: { 
-    label: 'Contains', 
-    icon: '🔍', 
-    color: '#8b5cf6',
+  contains: {
+    label: 'Contains',
+    icon: '🔍',
     description: 'Matches any application containing this text',
     example: 'db (matches: mongodb, cassandra-db, db-prod)',
-    placeholder: 'e.g., db, prod, cache'
+    placeholder: 'e.g., db, prod, cache',
   },
-  regex: { 
-    label: 'Regex Pattern', 
-    icon: '⚡', 
-    color: '#f59e0b',
+  regex: {
+    label: 'Regex Pattern',
+    icon: '⚡',
     description: 'Matches applications using regular expressions',
     example: '^db-.*$ (matches: db-prod, db-test)',
-    placeholder: 'e.g., ^mongo.*, .*-prod$, db-[0-9]+'
-  }
+    placeholder: 'e.g., ^mongo.*, .*-prod$, db-[0-9]+',
+  },
 };
 
+// Helper to add alpha to a hex from theme (e.g. "#3B82F6" + "20" = "#3B82F620")
+const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
+
 const IncidentMappings = () => {
+  const { colors } = useTheme();
+
+  // Theme-aware pattern colors
+  const PATTERN_COLORS = {
+    exact: {
+      main: colors.brand.primary,
+      softBg: withAlpha(colors.brand.primary, '15'),
+      strongBg: withAlpha(colors.brand.primary, '25'),
+      border: colors.brand.primary,
+    },
+    contains: {
+      main: colors.brand.purple,
+      softBg: withAlpha(colors.brand.purple, '15'),
+      strongBg: withAlpha(colors.brand.purple, '25'),
+      border: colors.brand.purple,
+    },
+    regex: {
+      main: colors.brand.yellow,
+      softBg: withAlpha(colors.brand.yellow, '15'),
+      strongBg: withAlpha(colors.brand.yellow, '25'),
+      border: colors.brand.yellowBorder || colors.brand.yellow,
+    },
+  };
+  // Simple themed gradient helpers
+  const infoGradient = `linear-gradient(135deg, ${colors.semantic.infoBg} 0%, ${withAlpha(
+    colors.semantic.info,
+    '10'
+  )} 100%)`;
+
+  const warningGradient = `linear-gradient(135deg, ${colors.semantic.warningBg} 0%, ${withAlpha(
+    colors.semantic.warning,
+    '10'
+  )} 100%)`;
+
+  const successGradient = `linear-gradient(135deg, ${colors.semantic.successBg} 0%, ${withAlpha(
+    colors.semantic.success,
+    '10'
+  )} 100%)`;
+
+  const errorGradient = `linear-gradient(135deg, ${colors.semantic.errorBg} 0%, ${withAlpha(
+    colors.semantic.error,
+    '10'
+  )} 100%)`;
+
+  const neutralSoftGradient = `linear-gradient(135deg, ${colors.bg.secondary} 0%, ${colors.bg.tertiary} 100%)`;
+
+  const headerBarGradient = `linear-gradient(90deg, ${colors.brand.primary}, ${colors.brand.purple}, ${colors.semantic.info})`;
+
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,11 +119,11 @@ const IncidentMappings = () => {
 
   const baseMandatoryFields = [
     'service_offering',
-    'business_service', 
+    'business_service',
     'u_network',
     'u_impact_technology',
     'assignment_group',
-    'u_system_failure'
+    'u_system_failure',
   ];
 
   const excludeFromCustom = [
@@ -66,7 +131,7 @@ const IncidentMappings = () => {
     'grafana_names',
     'created_at',
     'updated_at',
-    ...baseMandatoryFields
+    ...baseMandatoryFields,
   ];
 
   const reset = () => {
@@ -114,7 +179,7 @@ const IncidentMappings = () => {
     }
   };
 
-  useEffect(() => { 
+  useEffect(() => {
     fetchMappings();
     fetchAssignmentGroups();
   }, []);
@@ -123,15 +188,15 @@ const IncidentMappings = () => {
 
   const addPattern = () => {
     const trimmed = newPattern.value.trim();
-    
+
     if (!trimmed) {
       alert('Please enter a pattern value');
       return;
     }
 
-    // Validate regex if type is regex
     if (newPattern.type === 'regex') {
       try {
+        // Validate regex
         new RegExp(trimmed, 'i');
       } catch (e) {
         alert(`Invalid regex pattern: ${e.message}`);
@@ -139,36 +204,37 @@ const IncidentMappings = () => {
       }
     }
 
-    // Validate exact match format
     if (newPattern.type === 'exact' && !/^[a-z0-9_-]+$/i.test(trimmed)) {
-      alert('Exact match can only contain lowercase letters, numbers, hyphens, and underscores');
+      alert('Exact match can only contain letters, numbers, hyphens, and underscores');
       return;
     }
 
-    // Check for duplicates
-    const isDuplicate = form.grafana_names.some(p => 
-      p.value.toLowerCase() === trimmed.toLowerCase() && p.type === newPattern.type
+    const isDuplicate = form.grafana_names.some(
+      (p) => p.value.toLowerCase() === trimmed.toLowerCase() && p.type === newPattern.type
     );
-    
+
     if (isDuplicate) {
       alert('This pattern already exists');
       return;
     }
 
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      grafana_names: [...prev.grafana_names, {
-        value: newPattern.type === 'exact' ? trimmed.toLowerCase() : trimmed,
-        type: newPattern.type
-      }]
+      grafana_names: [
+        ...prev.grafana_names,
+        {
+          value: newPattern.type === 'exact' ? trimmed.toLowerCase() : trimmed,
+          type: newPattern.type,
+        },
+      ],
     }));
     setNewPattern({ value: '', type: 'exact' });
   };
 
   const removePattern = (index) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
-      grafana_names: prev.grafana_names.filter((_, i) => i !== index)
+      grafana_names: prev.grafana_names.filter((_, i) => i !== index),
     }));
   };
 
@@ -181,7 +247,7 @@ const IncidentMappings = () => {
 
   const testPattern = (pattern, input) => {
     if (!input) return false;
-    
+
     const normalizedInput = input.toLowerCase();
     const normalizedPattern = pattern.value.toLowerCase();
 
@@ -204,8 +270,7 @@ const IncidentMappings = () => {
 
   const testAllPatterns = () => {
     if (!testInput.trim()) return null;
-    
-    const matches = form.grafana_names.filter(p => testPattern(p, testInput));
+    const matches = form.grafana_names.filter((p) => testPattern(p, testInput));
     return matches.length > 0 ? matches : null;
   };
 
@@ -214,27 +279,27 @@ const IncidentMappings = () => {
   const addCustomField = () => {
     const fieldName = prompt('Enter field name (e.g., u_eck_name, u_oracle_error):');
     if (!fieldName) return;
-    
+
     const sanitized = fieldName.trim().toLowerCase().replace(/\s+/g, '_');
-    
+
     if (excludeFromCustom.includes(sanitized)) {
       alert('This field name is reserved or already exists as a base field');
       return;
     }
-    
+
     if (customFields[sanitized] !== undefined) {
       alert('This custom field already exists');
       return;
     }
 
-    setCustomFields(prev => ({
+    setCustomFields((prev) => ({
       ...prev,
-      [sanitized]: ''
+      [sanitized]: '',
     }));
   };
 
   const removeCustomField = (fieldName) => {
-    setCustomFields(prev => {
+    setCustomFields((prev) => {
       const updated = { ...prev };
       delete updated[fieldName];
       return updated;
@@ -242,9 +307,9 @@ const IncidentMappings = () => {
   };
 
   const updateCustomField = (fieldName, value) => {
-    setCustomFields(prev => ({
+    setCustomFields((prev) => ({
       ...prev,
-      [fieldName]: value
+      [fieldName]: value,
     }));
   };
 
@@ -252,27 +317,30 @@ const IncidentMappings = () => {
 
   const save = async (e) => {
     e.preventDefault();
-    
+
     if (form.grafana_names.length === 0) {
       setError('Please add at least one Grafana application pattern');
       return;
     }
 
     try {
-      const dataToSave = { 
+      const dataToSave = {
         ...form,
-        ...customFields
+        ...customFields,
       };
 
-      const url = editingItem ? `${API_BASE}/system-mappings/${editingItem._id}` : `${API_BASE}/system-mappings`;
+      const url = editingItem
+        ? `${API_BASE}/incidents/system-mappings/${editingItem._id}`
+        : `${API_BASE}/incidents/system-mappings`;
       const method = editingItem ? 'PUT' : 'POST';
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSave)
+        body: JSON.stringify(dataToSave),
       });
       const data = await res.json();
-      
+
       if (data.success) {
         await fetchMappings();
         reset();
@@ -281,14 +349,13 @@ const IncidentMappings = () => {
       } else {
         setError(data.details || 'Failed to save mapping');
       }
-    } catch (e) {
-      setError('Error saving mapping: ' + e.message);
+    } catch (e2) {
+      setError('Error saving mapping: ' + e2.message);
     }
   };
 
   const startEdit = (m) => {
-    // Convert old string format to pattern objects if needed
-    const patterns = (m.grafana_names || []).map(item => {
+    const patterns = (m.grafana_names || []).map((item) => {
       if (typeof item === 'string') {
         return { value: item, type: 'exact' };
       }
@@ -304,12 +371,11 @@ const IncidentMappings = () => {
       assignment_group: m.assignment_group || '',
       u_system_failure: Boolean(m.u_system_failure),
     };
-    
+
     setForm(formData);
 
-    // Extract custom fields
     const custom = {};
-    Object.keys(m).forEach(key => {
+    Object.keys(m).forEach((key) => {
       if (!excludeFromCustom.includes(key)) {
         custom[key] = m[key] || '';
       }
@@ -318,16 +384,19 @@ const IncidentMappings = () => {
     setCustomFields(custom);
     setEditingItem(m);
     setShowForm(true);
-    
+
     setTimeout(() => {
-      document.getElementById('mapping-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('mapping-form')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
     }, 100);
   };
 
   const del = async (id) => {
     if (!window.confirm('Are you sure you want to delete this mapping?')) return;
     try {
-      const res = await fetch(`${API_BASE}/system-mappings/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/incidents/system-mappings/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         await fetchMappings();
@@ -351,44 +420,111 @@ const IncidentMappings = () => {
 
   const matchResult = testAllPatterns();
 
+  const renderPatternChip = (pattern, idx) => {
+    const p = formatPatternDisplay(pattern);
+    const colorsForType = PATTERN_COLORS[p.type] || PATTERN_COLORS.exact;
+
+    return (
+      <span
+        key={idx}
+        style={{
+          background: `linear-gradient(135deg, ${colorsForType.softBg}, ${colorsForType.strongBg})`,
+          color: colorsForType.main,
+          padding: '6px 12px',
+          borderRadius: 12,
+          fontSize: 13,
+          fontWeight: 600,
+          border: `2px solid ${colorsForType.border}`,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          fontFamily: p.type === 'regex' ? 'monospace' : 'inherit',
+        }}
+      >
+        <span>{PATTERN_TYPES[p.type].icon}</span>
+        <span>{p.value}</span>
+      </span>
+    );
+  };
+
   // ================== RENDER ==================
 
   if (loading) {
     return (
-      <div style={{
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        minHeight: '400px',
-        background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
-        borderRadius: 12,
-        border: '2px solid #cbd5e1'
-      }}>
-        <div style={{textAlign: 'center'}}>
-          <RefreshCw size={32} style={{animation: 'spin 1s linear infinite', color: '#3b82f6', marginBottom: 16}} />
-          <div style={{fontSize: 18, color: '#475569', fontWeight: 500}}>Loading your mappings...</div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '400px',
+          background: neutralSoftGradient,
+          borderRadius: 12,
+          border: `2px solid ${colors.border.primary}`,
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <RefreshCw
+            size={32}
+            style={{
+              animation: 'spin 1s linear infinite',
+              color: colors.brand.primary,
+              marginBottom: 16,
+            }}
+          />
+          <div
+            style={{
+              fontSize: 18,
+              color: colors.text.secondary,
+              fontWeight: 500,
+            }}
+          >
+            Loading your mappings...
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{maxWidth: '100%', margin: '0 auto'}}>
+    <div
+      style={{
+        maxWidth: '100%',
+        margin: '0 auto',
+        color: colors.text.primary,
+      }}
+    >
       {error && (
-        <div style={{
-          background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
-          border: '2px solid #f87171',
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 24,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12
-        }}>
-          <AlertTriangle size={20} color="#dc2626" />
-          <div style={{flex: 1}}>
-            <div style={{fontWeight: 600, color: '#dc2626', marginBottom: 4}}>Error</div>
-            <div style={{color: '#b91c1c', fontSize: 14}}>{error}</div>
+        <div
+          style={{
+            background: errorGradient,
+            border: `2px solid ${colors.semantic.error}`,
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 24,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <AlertTriangle size={20} color={colors.semantic.error} />
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                fontWeight: 600,
+                color: colors.semantic.error,
+                marginBottom: 4,
+              }}
+            >
+              Error
+            </div>
+            <div
+              style={{
+                color: colors.semantic.errorText,
+                fontSize: 14,
+              }}
+            >
+              {error}
+            </div>
           </div>
           <button
             onClick={() => setError(null)}
@@ -396,9 +532,9 @@ const IncidentMappings = () => {
               marginLeft: 'auto',
               background: 'none',
               border: 'none',
-              color: '#dc2626',
+              color: colors.semantic.error,
               cursor: 'pointer',
-              padding: 4
+              padding: 4,
             }}
           >
             <X size={16} />
@@ -406,41 +542,44 @@ const IncidentMappings = () => {
         </div>
       )}
 
-      <div style={{
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginBottom: 32,
-        padding: '0 8px'
-      }}>
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 32,
+          padding: '0 8px',
+        }}
+      >
         <div>
-          <h2 style={{
-            margin: 0, 
-            fontSize: 28, 
-            fontWeight: 700,
-            background: 'linear-gradient(135deg, #1e293b 0%, #475569 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12
-          }}>
-            <Settings size={28} />
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 28,
+              fontWeight: 700,
+              color: colors.text.primary,    // always readable
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <Settings size={28} color={colors.text.primary} />
             System Mappings
           </h2>
-          <p style={{margin: '8px 0 0 40px', fontSize: 14, color: '#64748b'}}>
-            Map Grafana applications to ServiceNow incident fields using exact match, contains, or regex patterns
-          </p>
         </div>
 
-        <div style={{display: 'flex', gap: 12}}>
+        <div style={{ display: 'flex', gap: 12 }}>
           <button
-            onClick={() => { reset(); setShowForm(!showForm); }}
+            onClick={() => {
+              reset();
+              setShowForm(!showForm);
+            }}
             style={{
-              background: showForm 
-                ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' 
-                : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-              color: 'white',
+              background: showForm
+                ? `linear-gradient(135deg, ${colors.brand.yellow} 0%, ${colors.semantic.warning} 100%)`
+                : `linear-gradient(135deg, ${colors.brand.primary} 0%, ${colors.brand.primaryHover} 100%)`,
+              color: colors.text.inverse,
               border: 'none',
               borderRadius: 12,
               padding: '12px 24px',
@@ -450,20 +589,20 @@ const IncidentMappings = () => {
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
-              transition: 'all 0.2s ease'
+              boxShadow: `0 4px 12px ${withAlpha(colors.brand.primary, '40')}`,
+              transition: 'all 0.2s ease',
             }}
           >
             {showForm ? <X size={18} /> : <Plus size={18} />}
             {showForm ? 'Cancel' : 'Create New Mapping'}
           </button>
-          
-          <button 
+
+          <button
             onClick={fetchMappings}
             style={{
-              background: 'white',
-              color: '#475569',
-              border: '2px solid #e2e8f0',
+              background: colors.bg.secondary,
+              color: colors.text.secondary,
+              border: `2px solid ${colors.border.primary}`,
               borderRadius: 12,
               padding: '12px 20px',
               cursor: 'pointer',
@@ -472,7 +611,7 @@ const IncidentMappings = () => {
               gap: 8,
               fontSize: 14,
               fontWeight: 500,
-              transition: 'all 0.2s ease'
+              transition: 'all 0.2s ease',
             }}
           >
             <RefreshCw size={16} />
@@ -481,129 +620,155 @@ const IncidentMappings = () => {
         </div>
       </div>
 
+      {/* FORM */}
       {showForm && (
-        <div 
+        <div
           id="mapping-form"
           style={{
-            background: 'white',
+            background: colors.bg.secondary,
             borderRadius: 16,
             padding: 32,
             marginBottom: 32,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            border: '1px solid #f1f5f9',
+            boxShadow: colors.shadow.xl,
+            border: `1px solid ${colors.border.primary}`,
             position: 'relative',
-            overflow: 'hidden'
+            overflow: 'hidden',
           }}
         >
-          <div style={{
-            position: 'absolute', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            height: 6, 
-            background: 'linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4)',
-            borderRadius: '16px 16px 0 0'
-          }} />
-          
-          <div style={{marginTop: 8}}>
-            <h3 style={{
-              margin: '0 0 8px 0', 
-              fontSize: 24, 
-              fontWeight: 700,
-              color: '#1e293b',
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 12
-            }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 6,
+              background: headerBarGradient,
+              borderRadius: '16px 16px 0 0',
+            }}
+          />
+          <div style={{ marginTop: 8 }}>
+            <h3
+              style={{
+                margin: '0 0 8px 0',
+                fontSize: 24,
+                fontWeight: 700,
+                color: colors.text.primary,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
               {editingItem ? <Edit size={24} /> : <Plus size={24} />}
               {editingItem ? 'Update Mapping' : 'Create New Mapping'}
             </h3>
-            <p style={{
-              margin: 0, 
-              color: '#64748b', 
-              fontSize: 16,
-              marginBottom: 32
-            }}>
-              {editingItem 
-                ? 'Update how these applications create incidents' 
-                : 'Configure how alerts from Grafana applications create ServiceNow incidents'
-              }
+            <p
+              style={{
+                margin: 0,
+                color: colors.text.secondary,
+                fontSize: 16,
+                marginBottom: 32,
+              }}
+            >
+              {editingItem
+                ? 'Update how these applications create incidents'
+                : 'Configure how alerts from Grafana applications create ServiceNow incidents.'}
             </p>
 
-            <form onSubmit={save} style={{display: 'flex', flexDirection: 'column', gap: 32}}>
+            <form
+              onSubmit={save}
+              style={{ display: 'flex', flexDirection: 'column', gap: 32 }}
+            >
               {/* Grafana Application Patterns */}
-              <div style={{
-                background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
-                padding: 28,
-                borderRadius: 12,
-                border: '2px solid #0ea5e9'
-              }}>
-                {/* Header with Help Toggle */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  marginBottom: 20
-                }}>
-                  <div style={{flex: 1}}>
-                    <h4 style={{
-                      margin: '0 0 8px 0',
-                      fontSize: 20,
-                      fontWeight: 700,
-                      color: '#0c4a6e',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10
-                    }}>
+              <div
+                style={{
+                  background: infoGradient,
+                  padding: 28,
+                  borderRadius: 12,
+                  border: `2px solid ${colors.semantic.info}`,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: 20,
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <h4
+                      style={{
+                        margin: '0 0 8px 0',
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: colors.semantic.infoText,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                      }}
+                    >
                       <Target size={24} />
                       Grafana Application Patterns
                     </h4>
-                    <p style={{margin: 0, fontSize: 14, color: '#0369a1', lineHeight: 1.5}}>
-                      Define which Grafana applications should use this mapping using exact names, wildcards, or regex patterns.
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 14,
+                        color: colors.semantic.infoText,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Define which Grafana applications should use this mapping using exact names,
+                      wildcards, or regex patterns.
                     </p>
                   </div>
-
-              
                 </div>
 
                 {/* Pattern Input */}
-                <div style={{
-                  background: 'white',
-                  padding: 20,
-                  borderRadius: 12,
-                  border: '2px solid #bae6fd',
-                  marginBottom: 20
-                }}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '140px 1fr auto',
-                    gap: 12,
-                    alignItems: 'end'
-                  }}>
-                    {/* Pattern Type Selector */}
+                <div
+                  style={{
+                    background: colors.bg.secondary,
+                    padding: 20,
+                    borderRadius: 12,
+                    border: `2px solid ${colors.border.primary}`,
+                    marginBottom: 20,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '140px 1fr auto',
+                      gap: 12,
+                      alignItems: 'end',
+                    }}
+                  >
                     <div>
-                      <label style={{
-                        display: 'block',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: '#0369a1',
-                        marginBottom: 6
-                      }}>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.semantic.infoText,
+                          marginBottom: 6,
+                        }}
+                      >
                         Pattern Type
                       </label>
                       <select
                         value={newPattern.type}
-                        onChange={(e) => setNewPattern(prev => ({ ...prev, type: e.target.value }))}
+                        onChange={(e) =>
+                          setNewPattern((prev) => ({ ...prev, type: e.target.value }))
+                        }
                         style={{
                           width: '100%',
                           padding: '10px',
-                          border: '2px solid #bae6fd',
+                          border: `2px solid ${colors.border.secondary}`,
                           borderRadius: 6,
                           fontSize: 14,
                           fontWeight: 600,
-                          background: 'white',
+                          background: colors.bg.secondary,
                           cursor: 'pointer',
-                          color: PATTERN_TYPES[newPattern.type].color
+                          color: PATTERN_COLORS[newPattern.type].main,
                         }}
                       >
                         {Object.entries(PATTERN_TYPES).map(([type, info]) => (
@@ -614,42 +779,45 @@ const IncidentMappings = () => {
                       </select>
                     </div>
 
-                    {/* Pattern Value Input */}
                     <div>
-                      <label style={{
-                        display: 'block',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: '#0369a1',
-                        marginBottom: 6
-                      }}>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.semantic.infoText,
+                          marginBottom: 6,
+                        }}
+                      >
                         Pattern Value
                       </label>
                       <input
                         type="text"
                         value={newPattern.value}
-                        onChange={(e) => setNewPattern(prev => ({ ...prev, value: e.target.value }))}
+                        onChange={(e) =>
+                          setNewPattern((prev) => ({ ...prev, value: e.target.value }))
+                        }
                         onKeyPress={handlePatternKeyPress}
                         placeholder={PATTERN_TYPES[newPattern.type].placeholder}
                         style={{
                           width: '100%',
                           padding: '10px 14px',
-                          border: '2px solid #bae6fd',
+                          border: `2px solid ${colors.border.secondary}`,
                           borderRadius: 6,
                           fontSize: 14,
-                          background: 'white',
-                          fontFamily: newPattern.type === 'regex' ? 'monospace' : 'inherit'
+                          background: colors.bg.secondary,
+                          color: colors.text.primary,
+                          fontFamily: newPattern.type === 'regex' ? 'monospace' : 'inherit',
                         }}
                       />
                     </div>
 
-                    {/* Add Button */}
                     <button
                       type="button"
                       onClick={addPattern}
                       style={{
-                        background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-                        color: 'white',
+                        background: `linear-gradient(135deg, ${colors.semantic.info} 0%, ${colors.border.focus} 100%)`,
+                        color: colors.text.inverse,
                         border: 'none',
                         borderRadius: 8,
                         padding: '10px 20px',
@@ -660,7 +828,7 @@ const IncidentMappings = () => {
                         alignItems: 'center',
                         gap: 8,
                         whiteSpace: 'nowrap',
-                        boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)'
+                        boxShadow: `0 2px 8px ${withAlpha(colors.semantic.info, '50')}`,
                       }}
                     >
                       <Plus size={16} />
@@ -671,183 +839,227 @@ const IncidentMappings = () => {
 
                 {/* Pattern List */}
                 {form.grafana_names.length > 0 ? (
-                  <div style={{
-                    background: 'white',
-                    padding: 20,
-                    borderRadius: 12,
-                    border: '2px solid #bae6fd',
-                    marginBottom: 20
-                  }}>
-                    <h5 style={{
-                      margin: '0 0 16px 0',
-                      fontSize: 15,
-                      fontWeight: 600,
-                      color: '#0c4a6e'
-                    }}>
+                  <div
+                    style={{
+                      background: colors.bg.secondary,
+                      padding: 20,
+                      borderRadius: 12,
+                      border: `2px solid ${colors.border.primary}`,
+                      marginBottom: 20,
+                    }}
+                  >
+                    <h5
+                      style={{
+                        margin: '0 0 16px 0',
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: colors.semantic.infoText,
+                      }}
+                    >
                       Active Patterns ({form.grafana_names.length})
                     </h5>
 
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 10
-                    }}>
-                      {form.grafana_names.map((pattern, index) => (
-                        <div
-                          key={index}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 12,
-                            padding: 12,
-                            background: '#f8fafc',
-                            borderRadius: 8,
-                            border: `2px solid ${PATTERN_TYPES[pattern.type].color}20`,
-                            borderLeft: `4px solid ${PATTERN_TYPES[pattern.type].color}`
-                          }}
-                        >
-                          <span style={{fontSize: 18}}>
-                            {PATTERN_TYPES[pattern.type].icon}
-                          </span>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
+                      }}
+                    >
+                      {form.grafana_names.map((pattern, index) => {
+                        const colorsForType =
+                          PATTERN_COLORS[pattern.type] || PATTERN_COLORS.exact;
 
-                          <div style={{flex: 1}}>
-                            <div style={{
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: PATTERN_TYPES[pattern.type].color,
-                              marginBottom: 2
-                            }}>
-                              {PATTERN_TYPES[pattern.type].label}
-                            </div>
-                            <div style={{
-                              fontSize: 14,
-                              fontFamily: pattern.type === 'regex' ? 'monospace' : 'inherit',
-                              color: '#1e293b',
-                              fontWeight: 500
-                            }}>
-                              {pattern.value}
-                            </div>
-                          </div>
-
-                          {testInput && testPattern(pattern, testInput) && (
-                            <div style={{
-                              background: '#dcfce7',
-                              color: '#166534',
-                              padding: '4px 10px',
-                              borderRadius: 12,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }}>
-                              <Check size={12} />
-                              MATCH
-                            </div>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => removePattern(index)}
+                        return (
+                          <div
+                            key={index}
                             style={{
-                              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: 6,
-                              padding: 6,
-                              cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              justifyContent: 'center'
+                              gap: 12,
+                              padding: 12,
+                              background: colors.bg.tertiary,
+                              borderRadius: 8,
+                              border: `2px solid ${colorsForType.softBg}`,
+                              borderLeft: `4px solid ${colorsForType.main}`,
                             }}
                           >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
+                            <span style={{ fontSize: 18 }}>
+                              {PATTERN_TYPES[pattern.type].icon}
+                            </span>
+
+                            <div style={{ flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                  color: colorsForType.main,
+                                  marginBottom: 2,
+                                }}
+                              >
+                                {PATTERN_TYPES[pattern.type].label}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 14,
+                                  fontFamily:
+                                    pattern.type === 'regex' ? 'monospace' : 'inherit',
+                                  color: colors.text.primary,
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {pattern.value}
+                              </div>
+                            </div>
+
+                            {testInput && testPattern(pattern, testInput) && (
+                              <div
+                                style={{
+                                  background: colors.semantic.successBg,
+                                  color: colors.semantic.successText,
+                                  padding: '4px 10px',
+                                  borderRadius: 12,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                              >
+                                <Check size={12} />
+                                MATCH
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => removePattern(index)}
+                              style={{
+                                background: `linear-gradient(135deg, ${colors.semantic.error} 0%, ${colors.semantic.errorText} 100%)`,
+                                color: colors.text.inverse,
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: 6,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
-                  <div style={{
-                    background: 'white',
-                    padding: 32,
-                    borderRadius: 12,
-                    border: '2px dashed #bae6fd',
-                    textAlign: 'center',
-                    color: '#0369a1',
-                    marginBottom: 20
-                  }}>
-                    <Search size={32} color="#0ea5e9" style={{marginBottom: 12, opacity: 0.5}} />
-                    <p style={{margin: 0, fontSize: 14, fontWeight: 500}}>
+                  <div
+                    style={{
+                      background: colors.bg.secondary,
+                      padding: 32,
+                      borderRadius: 12,
+                      border: `2px dashed ${colors.border.secondary}`,
+                      textAlign: 'center',
+                      color: colors.semantic.infoText,
+                      marginBottom: 20,
+                    }}
+                  >
+                    <Search
+                      size={32}
+                      color={colors.semantic.info}
+                      style={{ marginBottom: 12, opacity: 0.7 }}
+                    />
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 14,
+                        fontWeight: 500,
+                      }}
+                    >
                       No patterns added yet. Add at least one pattern to continue.
                     </p>
                   </div>
                 )}
 
                 {/* Pattern Tester */}
-                <div style={{
-                  background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-                  padding: 20,
-                  borderRadius: 12,
-                  border: '2px solid #f59e0b'
-                }}>
-                  <h5 style={{
-                    margin: '0 0 12px 0',
-                    fontSize: 15,
-                    fontWeight: 600,
-                    color: '#92400e',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}>
+                <div
+                  style={{
+                    background: warningGradient,
+                    padding: 20,
+                    borderRadius: 12,
+                    border: `2px solid ${colors.semantic.warning}`,
+                  }}
+                >
+                  <h5
+                    style={{
+                      margin: '0 0 12px 0',
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: colors.semantic.warningText,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
                     <Zap size={18} />
                     בדיקה האם מה שהגדרתם עובד :)
                   </h5>
 
-                  <div style={{display: 'flex', gap: 12, alignItems: 'end'}}>
-                    <div style={{flex: 1}}>
-                      <label style={{
-                        display: 'block',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: '#92400e',
-                        marginBottom: 6
-                      }}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'end' }}>
+                    <div style={{ flex: 1 }}>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.semantic.warningText,
+                          marginBottom: 6,
+                        }}
+                      >
                         Test Application Name
                       </label>
                       <input
                         type="text"
                         value={testInput}
                         onChange={(e) => setTestInput(e.target.value)}
-                        placeholder="e.g., mongodb-prod, db-cache-01"
+                        placeholder="e.g. mongodb-prod, db-cache-01"
                         style={{
                           width: '100%',
                           padding: '10px 14px',
-                          border: '2px solid #fcd34d',
+                          border: `2px solid ${colors.brand.yellowBorder}`,
                           borderRadius: 6,
                           fontSize: 14,
-                          background: 'white'
+                          background: colors.bg.secondary,
+                          color: colors.text.primary,
                         }}
                       />
                     </div>
 
                     {matchResult !== null && (
-                      <div style={{
-                        background: matchResult ? '#dcfce7' : '#fee2e2',
-                        color: matchResult ? '#166534' : '#dc2626',
-                        padding: '10px 20px',
-                        borderRadius: 8,
-                        fontSize: 14,
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        whiteSpace: 'nowrap'
-                      }}>
+                      <div
+                        style={{
+                          background: matchResult
+                            ? colors.semantic.successBg
+                            : colors.semantic.errorBg,
+                          color: matchResult
+                            ? colors.semantic.successText
+                            : colors.semantic.errorText,
+                          padding: '10px 20px',
+                          borderRadius: 8,
+                          fontSize: 14,
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {matchResult ? (
                           <>
                             <Check size={18} />
-                            Matches {matchResult.length} pattern{matchResult.length > 1 ? 's' : ''}
+                            Matches {matchResult.length} pattern
+                            {matchResult.length > 1 ? 's' : ''}
                           </>
                         ) : (
                           <>
@@ -860,279 +1072,329 @@ const IncidentMappings = () => {
                   </div>
 
                   {matchResult && matchResult.length > 0 && (
-                    <div style={{
-                      marginTop: 12,
-                      padding: 12,
-                      background: 'white',
-                      borderRadius: 6,
-                      border: '2px solid #a3e635'
-                    }}>
-                      <div style={{fontSize: 12, fontWeight: 600, color: '#3f6212', marginBottom: 8}}>
-                        Matching patterns:
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        background: colors.bg.secondary,
+                        borderRadius: 6,
+                        border: `2px solid ${colors.semantic.success}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.semantic.successText,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Matching Patterns:
                       </div>
-                      {matchResult.map((pattern, i) => (
-                        <div key={i} style={{
-                          fontSize: 13,
-                          color: '#4d7c0f',
-                          fontFamily: pattern.type === 'regex' ? 'monospace' : 'inherit',
-                          marginBottom: 4
-                        }}>
-                          {PATTERN_TYPES[pattern.type].icon} <strong>{pattern.type}:</strong> {pattern.value}
-                        </div>
-                      ))}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 8,
+                        }}
+                      >
+                        {matchResult.map((p, i) => renderPatternChip(p, i))}
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Service Offering */}
-              <div style={{
-                background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-                padding: 24,
-                borderRadius: 12,
-                border: '2px solid #f59e0b'
-              }}>
-                <h4 style={{
-                  margin: '0 0 16px 0', 
-                  fontSize: 18, 
-                  fontWeight: 600,
-                  color: '#92400e'
-                }}>
-                  🏢 Service Offering
-                </h4>
-                <input 
+              {/* Required Fields Section */}
+              <div
+                style={{
+                  background: successGradient,
+                  padding: 24,
+                  borderRadius: 12,
+                  border: `2px solid ${colors.semantic.success}`,
+                }}
+              >
+                <h4
                   style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    border: '2px solid #fcd34d',
-                    borderRadius: 8,
-                    fontSize: 16,
-                    background: 'white',
-                    color: '#92400e'
+                    margin: '0 0 12px 0',
+                    fontSize: 18,
+                    fontWeight: 600,
+                    color: colors.semantic.successText,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
                   }}
-                  value={form.service_offering} 
-                  onChange={(e) => setForm(p => ({...p, service_offering: e.target.value}))}
-                  required 
-                  placeholder="e.g., Elasticsearch - ECK"
-                />
-              </div>
-
-              {/* Required Fields */}
-              <div style={{
-                background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
-                padding: 24,
-                borderRadius: 12,
-                border: '2px solid #22c55e'
-              }}>
-                <h4 style={{
-                  margin: '0 0 20px 0', 
-                  fontSize: 18, 
-                  fontWeight: 600,
-                  color: '#166534',
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 8
-                }}>
-                  <CheckCircle size={20} />
-                  Required Fields
+                >
+                  <CheckCircle size={18} />
+                  Required ServiceNow Fields
                 </h4>
-                
-                <div style={{
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', 
-                  gap: 20
-                }}>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                    gap: 16,
+                  }}
+                >
                   <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: '#166534',
-                      marginBottom: 8
-                    }}>
-                      Business Service *
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: colors.semantic.successText,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Assignment Group
                     </label>
-                    <input 
+                    <select
+                      value={form.assignment_group}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          assignment_group: e.target.value,
+                        }))
+                      }
                       style={{
                         width: '100%',
                         padding: '10px 14px',
-                        border: '2px solid #bbf7d0',
                         borderRadius: 6,
                         fontSize: 14,
-                        background: 'white'
+                        background: colors.bg.secondary,
+                        border: `2px solid ${colors.border.secondary}`,
+                        color: colors.text.primary,
+                        cursor: 'pointer',
                       }}
-                      value={form.business_service} 
-                      onChange={(e) => setForm(p => ({...p, business_service: e.target.value}))} 
-                      required 
-                      placeholder="e.g., Data Repository" 
-                    />
-                  </div>
-                  
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: '#166534',
-                      marginBottom: 8
-                    }}>
-                      Network *
-                    </label>
-                    <input 
-                      style={{
-                        width: '100%',
-                        padding: '10px 14px',
-                        border: '2px solid #bbf7d0',
-                        borderRadius: 6,
-                        fontSize: 14,
-                        background: 'white'
-                      }}
-                      value={form.u_network} 
-                      onChange={(e) => setForm(p => ({...p, u_network: e.target.value}))} 
-                      required 
-                      placeholder="e.g., main" 
-                    />
-                  </div>
-                  
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: '#166534',
-                      marginBottom: 8
-                    }}>
-                      Impact Technology *
-                    </label>
-                    <input 
-                      style={{
-                        width: '100%',
-                        padding: '10px 14px',
-                        border: '2px solid #bbf7d0',
-                        borderRadius: 6,
-                        fontSize: 14,
-                        background: 'white'
-                      }}
-                      value={form.u_impact_technology} 
-                      onChange={(e) => setForm(p => ({...p, u_impact_technology: e.target.value}))} 
-                      required 
-                      placeholder="e.g., Resilience Sheet" 
-                    />
-                  </div>
-                  
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: '#166534',
-                      marginBottom: 8
-                    }}>
-                      Assignment Group *
-                    </label>
-                    {loadingGroups ? (
-                      <div style={{padding: '10px', color: '#64748b', fontSize: 14}}>
-                        Loading groups...
-                      </div>
-                    ) : assignmentGroups.length > 0 ? (
-                      <select
-                        style={{
-                          width: '100%',
-                          padding: '10px 14px',
-                          border: '2px solid #bbf7d0',
-                          borderRadius: 6,
-                          fontSize: 14,
-                          background: 'white',
-                          cursor: 'pointer'
-                        }}
-                        value={form.assignment_group}
-                        onChange={(e) => setForm(p => ({...p, assignment_group: e.target.value}))}
-                        required
-                      >
-                        <option value="">Select a team...</option>
-                        {assignmentGroups.map(group => (
-                          <option key={group.value} value={group.value}>
-                            {group.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input 
-                        style={{
-                          width: '100%',
-                          padding: '10px 14px',
-                          border: '2px solid #bbf7d0',
-                          borderRadius: 6,
-                          fontSize: 14,
-                          background: 'white'
-                        }}
-                        value={form.assignment_group} 
-                        onChange={(e) => setForm(p => ({...p, assignment_group: e.target.value}))} 
-                        required 
-                        placeholder="e.g., Repository Team" 
-                      />
-                    )}
+                    >
+                      <option value="">
+                        {loadingGroups ? 'Loading groups...' : 'Select Assignment Group'}
+                      </option>
+                      {assignmentGroups.map((g) => (
+                        <option key={g.value} value={g.value}>
+                          {g.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
-                    <label style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: '#166534',
-                      cursor: 'pointer'
-                    }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: colors.semantic.successText,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Business Service
+                    </label>
+                    <input
+                      type="text"
+                      value={form.business_service}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          business_service: e.target.value,
+                        }))
+                      }
+                      placeholder="e.g. Payments, Billing"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: 6,
+                        fontSize: 14,
+                        background: colors.bg.secondary,
+                        border: `2px solid ${colors.border.secondary}`,
+                        color: colors.text.primary,
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: colors.semantic.successText,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Service Offering
+                    </label>
+                    <input
+                      type="text"
+                      value={form.service_offering}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          service_offering: e.target.value,
+                        }))
+                      }
+                      placeholder="e.g. API"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: 6,
+                        fontSize: 14,
+                        background: colors.bg.secondary,
+                        border: `2px solid ${colors.border.secondary}`,
+                        color: colors.text.primary,
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: colors.semantic.successText,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Network
+                    </label>
+                    <input
+                      type="text"
+                      value={form.u_network}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          u_network: e.target.value,
+                        }))
+                      }
+                      placeholder="e.g. PROD, QA, DEV"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: 6,
+                        fontSize: 14,
+                        background: colors.bg.secondary,
+                        border: `2px solid ${colors.border.secondary}`,
+                        color: colors.text.primary,
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: colors.semantic.successText,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Impact Technology
+                    </label>
+                    <input
+                      type="text"
+                      value={form.u_impact_technology}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          u_impact_technology: e.target.value,
+                        }))
+                      }
+                      placeholder="e.g. Database, API"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: 6,
+                        fontSize: 14,
+                        background: colors.bg.secondary,
+                        border: `2px solid ${colors.border.secondary}`,
+                        color: colors.text.primary,
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: colors.semantic.successText,
+                        cursor: 'pointer',
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={form.u_system_failure}
-                        onChange={(e) => setForm(p => ({...p, u_system_failure: e.target.checked}))}
+                        onChange={(e) =>
+                          setForm((p) => ({
+                            ...p,
+                            u_system_failure: e.target.checked,
+                          }))
+                        }
                         style={{
                           width: 18,
                           height: 18,
-                          accentColor: '#22c55e'
+                          accentColor: colors.semantic.success,
                         }}
                       />
                       System Failure
                     </label>
-                    <p style={{margin: '4px 0 0 30px', fontSize: 12, color: '#15803d'}}>
-                      Creates outage automatically
+                    <p
+                      style={{
+                        margin: '4px 0 0 30px',
+                        fontSize: 12,
+                        color: colors.semantic.successText,
+                      }}
+                    >
+                      Creates outage automatically.
                     </p>
                   </div>
                 </div>
               </div>
 
               {/* Custom Fields Section */}
-              <div style={{
-                background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)',
-                padding: 24,
-                borderRadius: 12,
-                border: '2px solid #a855f7'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 20
-                }}>
-                  <h4 style={{
-                    margin: 0, 
-                    fontSize: 18, 
-                    fontWeight: 600,
-                    color: '#6b21a8',
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: 8
-                  }}>
+              <div
+                style={{
+                  background: `linear-gradient(135deg, ${colors.brand.purpleLight} 0%, ${withAlpha(
+                    colors.brand.purple,
+                    '10'
+                  )} 100%)`,
+                  padding: 24,
+                  borderRadius: 12,
+                  border: `2px solid ${colors.brand.purple}`,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 20,
+                  }}
+                >
+                  <h4
+                    style={{
+                      margin: 0,
+                      fontSize: 18,
+                      fontWeight: 600,
+                      color: colors.brand.purpleDark,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
                     ⚙️ Custom Fields ({Object.keys(customFields).length})
                   </h4>
                   <button
                     type="button"
                     onClick={addCustomField}
                     style={{
-                      background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
-                      color: 'white',
+                      background: `linear-gradient(135deg, ${colors.brand.purple} 0%, ${colors.brand.purpleDark} 100%)`,
+                      color: colors.text.inverse,
                       border: 'none',
                       borderRadius: 8,
                       padding: '8px 16px',
@@ -1141,7 +1403,7 @@ const IncidentMappings = () => {
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 6
+                      gap: 6,
                     }}
                   >
                     <PlusCircle size={16} />
@@ -1150,92 +1412,88 @@ const IncidentMappings = () => {
                 </div>
 
                 {Object.keys(customFields).length === 0 ? (
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '32px',
-                    color: '#9333ea',
-                    fontSize: 14
-                  }}>
-                    No custom fields yet. Click "Add Field" to create service-specific fields like u_eck_name or ORA_error.
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '32px',
+                      color: colors.brand.purpleDark,
+                      fontSize: 14,
+                    }}
+                  >
+                    No custom fields yet. Click "Add Field" to create service-specific fields like
+                    u_eck_name or ORA_error.
                   </div>
                 ) : (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 16
-                  }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 16,
+                    }}
+                  >
                     {Object.entries(customFields).map(([fieldName, value]) => (
-                      <div 
+                      <div
                         key={fieldName}
                         style={{
-                          background: 'white',
+                          background: colors.bg.secondary,
                           padding: 16,
                           borderRadius: 8,
-                          border: '2px solid #e9d5ff',
+                          border: `2px solid ${colors.brand.purpleLight}`,
                           display: 'grid',
                           gridTemplateColumns: '200px 1fr 40px',
                           gap: 12,
-                          alignItems: 'center'
+                          alignItems: 'center',
                         }}
                       >
                         <div>
-                          <div style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: '#9333ea',
-                            marginBottom: 4
-                          }}>
-                            Field Name
-                          </div>
-                          <div style={{
-                            fontSize: 14,
-                            fontWeight: 600,
-                            color: '#6b21a8',
-                            fontFamily: 'monospace'
-                          }}>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: colors.brand.purpleDark,
+                              marginBottom: 4,
+                              fontFamily: 'monospace',
+                            }}
+                          >
                             {fieldName}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: colors.text.secondary,
+                            }}
+                          >
+                            ServiceNow field
                           </div>
                         </div>
 
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: '#9333ea',
-                            marginBottom: 4
-                          }}>
-                            Default Value
-                          </label>
-                          <input
-                            type="text"
-                            value={value}
-                            onChange={(e) => updateCustomField(fieldName, e.target.value)}
-                            placeholder={`Default value for ${fieldName}`}
-                            style={{
-                              width: '100%',
-                              padding: '8px 12px',
-                              border: '2px solid #e9d5ff',
-                              borderRadius: 6,
-                              fontSize: 14,
-                              background: 'white'
-                            }}
-                          />
-                        </div>
+                        <input
+                          type="text"
+                          value={value}
+                          onChange={(e) => updateCustomField(fieldName, e.target.value)}
+                          placeholder="Custom field value or template"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            borderRadius: 6,
+                            fontSize: 14,
+                            background: colors.bg.secondary,
+                            border: `1px solid ${colors.brand.purpleLight}`,
+                            color: colors.text.primary,
+                          }}
+                        />
 
                         <button
                           type="button"
                           onClick={() => removeCustomField(fieldName)}
                           style={{
-                            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                            color: 'white',
+                            background: 'transparent',
+                            color: colors.brand.purpleDark,
                             border: 'none',
-                            borderRadius: 6,
-                            padding: 8,
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center'
+                            justifyContent: 'center',
                           }}
                           title="Remove field"
                         >
@@ -1247,44 +1505,57 @@ const IncidentMappings = () => {
                 )}
               </div>
 
-              <div style={{
-                display: 'flex', 
-                gap: 16, 
-                justifyContent: 'flex-end',
-                paddingTop: 24,
-                borderTop: '2px solid #f1f5f9'
-              }}>
-                <button 
-                  type="button" 
-                  onClick={() => { reset(); setShowForm(false); }}
+              {/* Form actions */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 16,
+                  justifyContent: 'flex-end',
+                  paddingTop: 24,
+                  borderTop: `2px solid ${colors.border.primary}`,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    reset();
+                    setShowForm(false);
+                  }}
                   style={{
-                    background: 'white',
-                    color: '#64748b',
-                    border: '2px solid #e2e8f0',
+                    background: colors.bg.secondary,
+                    color: colors.text.secondary,
+                    border: `2px solid ${colors.border.primary}`,
                     borderRadius: 8,
                     padding: '12px 24px',
                     fontSize: 16,
                     fontWeight: 500,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
                   }}
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={form.grafana_names.length === 0}
                   style={{
-                    background: form.grafana_names.length > 0 
-                      ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                      : '#e5e7eb',
-                    color: form.grafana_names.length > 0 ? 'white' : '#9ca3af',
+                    background:
+                      form.grafana_names.length > 0
+                        ? `linear-gradient(135deg, ${colors.semantic.success} 0%, ${colors.semantic.successText} 100%)`
+                        : colors.bg.tertiary,
+                    color:
+                      form.grafana_names.length > 0
+                        ? colors.text.inverse
+                        : colors.text.secondary,
                     border: 'none',
                     borderRadius: 8,
                     padding: '12px 32px',
                     fontSize: 16,
                     fontWeight: 600,
                     cursor: form.grafana_names.length > 0 ? 'pointer' : 'not-allowed',
-                    boxShadow: form.grafana_names.length > 0 ? '0 4px 12px rgba(34, 197, 94, 0.3)' : 'none'
+                    boxShadow:
+                      form.grafana_names.length > 0
+                        ? `0 4px 12px ${withAlpha(colors.semantic.success, '50')}`
+                        : 'none',
                   }}
                 >
                   {editingItem ? '✅ Update Mapping' : '🚀 Create Mapping'}
@@ -1295,150 +1566,172 @@ const IncidentMappings = () => {
         </div>
       )}
 
+      {/* LIST / EMPTY STATE */}
       {mappings.length === 0 ? (
-        <div style={{
-          background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
-          border: '3px dashed #cbd5e1',
-          borderRadius: 16,
-          padding: 48,
-          textAlign: 'center'
-        }}>
-          <div style={{fontSize: 48, marginBottom: 16}}>📋</div>
-          <h3 style={{fontSize: 24, fontWeight: 700, color: '#475569', marginBottom: 12}}>
+        <div
+          style={{
+            background: neutralSoftGradient,
+            border: `3px dashed ${colors.border.primary}`,
+            borderRadius: 16,
+            padding: 48,
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+          <h3
+            style={{
+              fontSize: 24,
+              fontWeight: 700,
+              color: colors.text.primary,
+              marginBottom: 12,
+            }}
+          >
             No Mappings Yet
           </h3>
-          <p style={{fontSize: 16, color: '#64748b', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px'}}>
-            Create your first system mapping to configure how Grafana applications create ServiceNow incidents.
+          <p
+            style={{
+              fontSize: 16,
+              color: colors.text.secondary,
+              marginBottom: 24,
+              maxWidth: 500,
+              margin: '0 auto 24px',
+            }}
+          >
+            Create your first system mapping to configure how Grafana applications create ServiceNow
+            incidents.
           </p>
         </div>
       ) : (
         <div>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 24,
-            padding: '0 8px'
-          }}>
-            <h3 style={{
-              margin: 0,
-              fontSize: 20,
-              fontWeight: 600,
-              color: '#1e293b'
-            }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 24,
+              padding: '0 8px',
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                fontSize: 20,
+                fontWeight: 600,
+                color: colors.text.primary,
+              }}
+            >
               Your Mappings ({mappings.length})
             </h3>
           </div>
-          
-          <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 20,
+            }}
+          >
             {mappings.map((m) => {
-              const customFieldsInMapping = Object.keys(m).filter(k => 
-                !excludeFromCustom.includes(k)
+              const customFieldsInMapping = Object.keys(m).filter(
+                (k) => !excludeFromCustom.includes(k)
               );
-              
+
               return (
-                <div 
-                  key={m._id} 
+                <div
+                  key={m._id}
                   style={{
-                    background: 'white',
+                    background: colors.bg.secondary,
                     borderRadius: 16,
                     padding: 24,
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                    border: '1px solid #f1f5f9',
+                    boxShadow: colors.shadow.md,
+                    border: `1px solid ${colors.border.primary}`,
                     position: 'relative',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
                   }}
                 >
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 4,
-                    background: 'linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4)'
-                  }} />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 4,
+                      background: headerBarGradient,
+                    }}
+                  />
 
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: 20,
-                    marginTop: 8
-                  }}>
-                    <div style={{flex: 1}}>
-                      <h4 style={{
-                        margin: '0 0 12px 0',
-                        fontSize: 20,
-                        fontWeight: 700,
-                        color: '#1e293b'
-                      }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: 20,
+                      marginTop: 8,
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <h4
+                        style={{
+                          margin: '0 0 12px 0',
+                          fontSize: 20,
+                          fontWeight: 700,
+                          color: colors.text.primary,
+                        }}
+                      >
                         {m.service_offering}
                       </h4>
-                      
-                      <div style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: 8,
-                        marginBottom: 8
-                      }}>
-                        {(m.grafana_names || []).map((pattern, idx) => {
-                          const p = formatPatternDisplay(pattern);
-                          return (
-                            <span 
-                              key={idx}
-                              style={{
-                                background: `linear-gradient(135deg, ${PATTERN_TYPES[p.type].color}15, ${PATTERN_TYPES[p.type].color}25)`,
-                                color: PATTERN_TYPES[p.type].color,
-                                padding: '6px 12px',
-                                borderRadius: 12,
-                                fontSize: 13,
-                                fontWeight: 600,
-                                border: `2px solid ${PATTERN_TYPES[p.type].color}`,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                fontFamily: p.type === 'regex' ? 'monospace' : 'inherit'
-                              }}
-                            >
-                              <span>{PATTERN_TYPES[p.type].icon}</span>
-                              <span>{p.value}</span>
-                            </span>
-                          );
-                        })}
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 8,
+                          marginBottom: 8,
+                        }}
+                      >
+                        {(m.grafana_names || []).map((pattern, idx) =>
+                          renderPatternChip(pattern, idx)
+                        )}
+
                         {m.u_system_failure && (
-                          <span style={{
-                            background: '#fecaca',
-                            color: '#dc2626',
-                            padding: '6px 12px',
-                            borderRadius: 12,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            border: '2px solid #dc2626'
-                          }}>
+                          <span
+                            style={{
+                              background: colors.semantic.errorBg,
+                              color: colors.semantic.errorText,
+                              padding: '6px 12px',
+                              borderRadius: 12,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              border: `2px solid ${colors.semantic.error}`,
+                            }}
+                          >
                             SYSTEM FAILURE
                           </span>
                         )}
                         {customFieldsInMapping.length > 0 && (
-                          <span style={{
-                            background: '#e9d5ff',
-                            color: '#9333ea',
-                            padding: '6px 12px',
-                            borderRadius: 12,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            border: '2px solid #9333ea'
-                          }}>
-                            {customFieldsInMapping.length} Custom Field{customFieldsInMapping.length > 1 ? 's' : ''}
+                          <span
+                            style={{
+                              background: colors.brand.purpleLight,
+                              color: colors.brand.purpleDark,
+                              padding: '6px 12px',
+                              borderRadius: 12,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              border: `2px solid ${colors.brand.purple}`,
+                            }}
+                          >
+                            {customFieldsInMapping.length} Custom Field
+                            {customFieldsInMapping.length > 1 ? 's' : ''}
                           </span>
                         )}
                       </div>
                     </div>
-                    <div style={{display: 'flex', gap: 8}}>
-                      <button 
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
                         onClick={() => startEdit(m)}
                         style={{
-                          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                          color: 'white',
+                          background: `linear-gradient(135deg, ${colors.brand.primary} 0%, ${colors.brand.primaryHover} 100%)`,
+                          color: colors.text.inverse,
                           border: 'none',
                           borderRadius: 8,
                           padding: '8px 16px',
@@ -1447,17 +1740,17 @@ const IncidentMappings = () => {
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 6
+                          gap: 6,
                         }}
                       >
                         <Edit size={14} />
                         Edit
                       </button>
-                      <button 
+                      <button
                         onClick={() => del(m._id)}
                         style={{
-                          background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                          color: 'white',
+                          background: `linear-gradient(135deg, ${colors.semantic.error} 0%, ${colors.semantic.errorText} 100%)`,
+                          color: colors.text.inverse,
                           border: 'none',
                           borderRadius: 8,
                           padding: '8px 16px',
@@ -1466,7 +1759,7 @@ const IncidentMappings = () => {
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 6
+                          gap: 6,
                         }}
                       >
                         <Trash2 size={14} />
@@ -1476,64 +1769,127 @@ const IncidentMappings = () => {
                   </div>
 
                   {/* Base Required Fields */}
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-                    gap: 16,
-                    marginBottom: customFieldsInMapping.length > 0 ? 16 : 0
-                  }}>
-                    <div style={{
-                      background: '#f8fafc',
-                      padding: 16,
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0'
-                    }}>
-                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                      gap: 16,
+                      marginBottom: customFieldsInMapping.length > 0 ? 16 : 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: colors.bg.tertiary,
+                        padding: 16,
+                        borderRadius: 8,
+                        border: `1px solid ${colors.border.primary}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.text.secondary,
+                          marginBottom: 4,
+                        }}
+                      >
                         Assignment Group
                       </div>
-                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
-                        {assignmentGroups.find(g => g.value === m.assignment_group)?.label || m.assignment_group}
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: colors.text.primary,
+                        }}
+                      >
+                        {assignmentGroups.find((g) => g.value === m.assignment_group)?.label ||
+                          m.assignment_group}
                       </div>
                     </div>
 
-                    <div style={{
-                      background: '#f8fafc',
-                      padding: 16,
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0'
-                    }}>
-                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                    <div
+                      style={{
+                        background: colors.bg.tertiary,
+                        padding: 16,
+                        borderRadius: 8,
+                        border: `1px solid ${colors.border.primary}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.text.secondary,
+                          marginBottom: 4,
+                        }}
+                      >
                         Business Service
                       </div>
-                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: colors.text.primary,
+                        }}
+                      >
                         {m.business_service}
                       </div>
                     </div>
 
-                    <div style={{
-                      background: '#f8fafc',
-                      padding: 16,
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0'
-                    }}>
-                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                    <div
+                      style={{
+                        background: colors.bg.tertiary,
+                        padding: 16,
+                        borderRadius: 8,
+                        border: `1px solid ${colors.border.primary}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.text.secondary,
+                          marginBottom: 4,
+                        }}
+                      >
                         Network
                       </div>
-                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: colors.text.primary,
+                        }}
+                      >
                         {m.u_network}
                       </div>
                     </div>
 
-                    <div style={{
-                      background: '#f8fafc',
-                      padding: 16,
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0'
-                    }}>
-                      <div style={{fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4}}>
+                    <div
+                      style={{
+                        background: colors.bg.tertiary,
+                        padding: 16,
+                        borderRadius: 8,
+                        border: `1px solid ${colors.border.primary}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.text.secondary,
+                          marginBottom: 4,
+                        }}
+                      >
                         Impact Technology
                       </div>
-                      <div style={{fontSize: 14, fontWeight: 600, color: '#1e293b'}}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: colors.text.primary,
+                        }}
+                      >
                         {m.u_impact_technology}
                       </div>
                     </div>
@@ -1541,54 +1897,74 @@ const IncidentMappings = () => {
 
                   {/* Custom Fields Display */}
                   {customFieldsInMapping.length > 0 && (
-                    <div style={{
-                      padding: 16,
-                      background: 'linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%)',
-                      borderRadius: 8,
-                      border: '2px solid #e9d5ff'
-                    }}>
-                      <div style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: '#9333ea',
-                        marginBottom: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6
-                      }}>
+                    <div
+                      style={{
+                        padding: 16,
+                        background: `linear-gradient(135deg, ${colors.brand.purpleLight} 0%, ${withAlpha(
+                          colors.brand.purple,
+                          '10'
+                        )} 100%)`,
+                        borderRadius: 8,
+                        border: `2px solid ${colors.brand.purpleLight}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: colors.brand.purpleDark,
+                          marginBottom: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
                         ⚙️ Custom Fields:
                       </div>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                        gap: 12
-                      }}>
-                        {customFieldsInMapping.map(fieldName => (
-                          <div key={fieldName} style={{
-                            background: 'white',
-                            padding: 12,
-                            borderRadius: 6,
-                            border: '1px solid #e9d5ff'
-                          }}>
-                            <div style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: '#9333ea',
-                              marginBottom: 4,
-                              fontFamily: 'monospace'
-                            }}>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                          gap: 12,
+                        }}
+                      >
+                        {customFieldsInMapping.map((fieldName) => (
+                          <div
+                            key={fieldName}
+                            style={{
+                              background: colors.bg.secondary,
+                              padding: 12,
+                              borderRadius: 6,
+                              border: `1px solid ${colors.brand.purpleLight}`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: colors.brand.purpleDark,
+                                marginBottom: 4,
+                                fontFamily: 'monospace',
+                              }}
+                            >
                               {fieldName}
                             </div>
-                            <div style={{fontSize: 14, color: '#6b21a8', fontWeight: 500}}>
-                              {m[fieldName] || <span style={{color: '#cbd5e1'}}>—</span>}
+                            <div
+                              style={{
+                                fontSize: 14,
+                                color: colors.text.primary,
+                                fontWeight: 500,
+                              }}
+                            >
+                              {m[fieldName] || (
+                                <span style={{ color: colors.text.tertiary }}>—</span>
+                              )}
                             </div>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-
-           
                 </div>
               );
             })}

@@ -524,14 +524,14 @@ class IncidentService {
 
   // ================== INCIDENT RULES ==================
 
-  async getIncidentRules(grafanaName = null) {
+ async getIncidentRules(grafanaName = null) {
     if (!this.incidentRulesCollection) await this.initialize();
     
     try {
-      const filter = grafanaName ? { grafana_names: grafanaName.trim().toLowerCase() } : {};
-      const rules = await this.incidentRulesCollection
+      // Get ALL enabled rules first
+      const allRules = await this.incidentRulesCollection
         .aggregate([
-          { $match: filter },
+          { $match: {} },  // Get all rules
           {
             $lookup: {
               from: mongoConfig.collections.systemMappings,
@@ -550,7 +550,28 @@ class IncidentService {
         ])
         .toArray();
       
-      return rules;
+      // If no grafanaName filter, return all
+      if (!grafanaName) {
+        return allRules;
+      }
+      
+      // Filter rules where grafanaName matches any pattern
+      const matchingRules = allRules.filter(rule => {
+        if (!rule.grafana_names || !Array.isArray(rule.grafana_names)) return false;
+        
+        return rule.grafana_names.some(pattern => {
+          // Handle both old string format and new object format
+          const patternObj = typeof pattern === 'string' 
+            ? { value: pattern, type: 'exact' }
+            : pattern;
+          
+          return this._matchesGrafanaPattern(grafanaName, patternObj);
+        });
+      });
+      
+      console.log(`📋 Found ${matchingRules.length} rules for application: ${grafanaName}`);
+      
+      return matchingRules;
     } catch (error) {
       console.error('❌ Error fetching incident rules:', error);
       throw new Error('Failed to fetch incident rules');
@@ -775,8 +796,7 @@ class IncidentService {
   }
 
   // ================== INCIDENT CREATION ==================
-
-  async createIncidentFromAlert(alertData) {
+async createIncidentFromAlert(alertData) {
     try {
       const { application } = alertData;
       
@@ -784,8 +804,12 @@ class IncidentService {
         throw new Error('Alert must have an application field');
       }
 
-      // Get rules for this application (rules are stored with grafana_names array)
+      console.log('🔍 Alert Data:', JSON.stringify(alertData, null, 2));
+
+      // Get rules for this application
       const rules = await this.getIncidentRules(application);
+      console.log(`📋 Found ${rules.length} total rules for application: ${application}`);
+      
       const enabledRules = rules
         .filter(rule => rule.enabled)
         .sort((a, b) => {
@@ -795,11 +819,22 @@ class IncidentService {
           return new Date(b.created_at) - new Date(a.created_at);
         });
       
+      console.log(`✅ ${enabledRules.length} enabled rules`);
+      
       let matchingRule = null;
       for (const rule of enabledRules) {
-        if (this._doesAlertMatchRule(alertData, rule)) {
+        console.log(`\n🎯 Testing rule: ${rule.rule_name}`);
+        console.log('   Conditions:', JSON.stringify(rule.conditions, null, 2));
+        
+        const matches = this._doesAlertMatchRule(alertData, rule);
+        console.log(`   Match result: ${matches}`);
+        
+        if (matches) {
           matchingRule = rule;
+          console.log(`   ✅ MATCHED!`);
           break;
+        } else {
+          console.log(`   ❌ No match`);
         }
       }
       
@@ -813,7 +848,9 @@ class IncidentService {
           throw new Error(`System mapping not found for rule: ${matchingRule.rule_name}`);
         }
         
-        console.log(`✅ Using incident rule: ${matchingRule.rule_name} (specificity: ${this._calculateRuleSpecificity(matchingRule)})`);
+        console.log(`\n✅ Using incident rule: ${matchingRule.rule_name}`);
+        console.log('   Overrides:', JSON.stringify(matchingRule.incident_overrides, null, 2));
+        
         incidentData = this._buildIncidentData(systemMapping, matchingRule.incident_overrides, alertData);
         
         incidentData.matched_rule_id = matchingRule._id;
@@ -821,21 +858,19 @@ class IncidentService {
         incidentData.matched_rule_logic = matchingRule.logic_operator || 'OR';
         
       } else {
-        // Fallback to basic system mapping
+        console.log('\n⚠️ No matching rules, using basic system mapping');
         systemMapping = await this.getMappingByApplication(application);
         
         if (!systemMapping) {
           throw new Error(
-            `No system mapping or incident rules found for application: ${application}. ` +
-            `Available mappings cover: ${(await this.getSystemMappings()).map(m => m.grafana_names.join(', ')).join(' | ')}`
+            `No system mapping or incident rules found for application: ${application}`
           );
         }
         
-        console.log(`ℹ️  Using basic system mapping for: ${application} (from ${systemMapping.grafana_names.join(', ')})`);
         incidentData = this._buildIncidentData(systemMapping, {}, alertData);
       }
       
-      console.log('📋 Creating incident with data:', JSON.stringify(incidentData, null, 2));
+      console.log('\n📤 Final incident data:', JSON.stringify(incidentData, null, 2));
       
       const serviceNowResult = await this._sendToServiceNow(incidentData);
       
@@ -850,7 +885,6 @@ class IncidentService {
       throw error;
     }
   }
-
   async getDistinctValues(fieldName) {
     if (!this.systemMappingsCollection) await this.initialize();
     

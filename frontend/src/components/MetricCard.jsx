@@ -1,17 +1,35 @@
-import React from 'react';
-import { S } from '../utils/styles';
+import React, { memo } from 'react';
 import { TrendingUp, TrendingDown } from '../icons';
+import { useTheme } from '../contexts/ThemeContext';
+import { createThemedStyles } from '../utils/themedStyles';
 
-export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 'blue' }) => {
-  const colors = {
-    blue: '#3B82F6',
+export const MetricCard = memo(function MetricCard({
+  title,
+  value,
+  subtitle,
+  trend,
+  icon: Icon,
+  color = 'blue',
+}) {
+  const { colors } = useTheme();        // <— THIS is your theme
+  const S = createThemedStyles(colors);
+
+  // Themed palette mapping (your brand colors)
+  const palette = {
+    blue: colors.brand?.primary || '#3B82F6',
     purple: '#8B5CF6',
-    red: '#EF4444',
-    green: '#10B981',
-    orange: '#F59E0B',
-    yellow: '#EAB308'
+    red: colors.semantic?.error || '#EF4444',
+    green: colors.semantic?.success || '#10B981',
+    orange: colors.semantic?.warning || '#F59E0B',
+    yellow: '#EAB308',
   };
-  const c = colors[color] || colors.blue;
+
+  const c = palette[color] || palette.blue;
+
+  // Themed text
+  const textPrimary = colors.text.primary;
+  const textSecondary = colors.text.secondary;
+  const textMuted = colors.text.tertiary || colors.text.secondary;
 
   return (
     <div style={S.card()}>
@@ -22,7 +40,8 @@ export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 
         textAlign: 'center',
         gap: 12
       }}>
-        {/* Icon centered at top */}
+
+        {/* Icon */}
         <div style={{
           width: 48,
           height: 48,
@@ -35,36 +54,40 @@ export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 
           <Icon size={24} style={{ color: c }} />
         </div>
 
-        {/* Trend indicator (if present) */}
+        {/* Trend */}
         {typeof trend === 'number' && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: 4,
-            color: trend > 0 ? '#10B981' : '#EF4444'
+            color: trend > 0 ? colors.semantic.success : colors.semantic.error
           }}>
-            {trend > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+            {trend > 0 ? (
+              <TrendingUp size={16} />
+            ) : (
+              <TrendingDown size={16} />
+            )}
             <span style={{ fontSize: 12, fontWeight: 500 }}>
               {Math.abs(trend)}%
             </span>
           </div>
         )}
 
-        {/* Value (large number) */}
-        <h3 style={{ 
-          fontSize: 28, 
-          fontWeight: 700, 
+        {/* Value */}
+        <h3 style={{
+          fontSize: 28,
+          fontWeight: 700,
           margin: 0,
-          color: '#111827'
+          color: textPrimary
         }}>
           {value}
         </h3>
 
         {/* Title */}
-        <p style={{ 
-          fontSize: 14, 
-          fontWeight: 600, 
-          color: '#111827', 
+        <p style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: textPrimary,
           margin: 0,
           lineHeight: 1.3
         }}>
@@ -73,9 +96,9 @@ export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 
 
         {/* Subtitle */}
         {subtitle && (
-          <p style={{ 
-            fontSize: 12, 
-            color: '#6B7280', 
+          <p style={{
+            fontSize: 12,
+            color: textSecondary,
             margin: 0,
             lineHeight: 1.4,
             maxWidth: '90%'
@@ -86,4 +109,4 @@ export const MetricCard = ({ title, value, subtitle, trend, icon: Icon, color = 
       </div>
     </div>
   );
-};
+});

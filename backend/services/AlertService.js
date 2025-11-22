@@ -1,13 +1,30 @@
-// services/AlertService.js - Centralized business logic
+// services/AlertService.js - Centralized business logic (Option 3)
+
 const { getSqlPool } = require('../database/connection');
 const { QueryBuilder } = require('../utils/QueryBuilder');
 const { TimeUtils } = require('../utils/TimeUtils');
 const { ResponseFormatter } = require('../utils/ResponseFormatter');
+const sql = require('mssql');
 
 class AlertService {
   constructor() {
     this.pool = null;
+
+    // Global defaults (normalized)
+    this.DEFAULT_CAP = 100000;
+
+    this.DEFAULT_DAY_START = 8;
+    this.DEFAULT_DAY_END = 22;
+
+    this.DEFAULT_NIGHT_START = 22;
+    this.DEFAULT_NIGHT_END = 8;
+
+    this.DEFAULT_DUR_SHORT_MAX = 30;   // ≤30s
+    this.DEFAULT_DUR_MEDIUM_MAX = 300; // 31–300s
+    this.DEFAULT_FALSE_WAKEUP_THRESHOLD = 120; // ≤120s considered false wake
   }
+
+  // ================== Infrastructure ==================
 
   getPool() {
     if (!this.pool) {
@@ -16,169 +33,59 @@ class AlertService {
     return this.pool;
   }
 
-
-  async getAlerts(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-
-    // Build query
-    const qb = new QueryBuilder()
-      .select(`incident_id, panel_title, application, node_name, network, object, 
-               operator, time_fired, time_resolved, duration_sec, message, key_field, history_id`)
-      .orderBy(params.sort_by, params.sort_order);
-
-    // Add filters
-    const whereParts = [
-      ...this._bindDateFilters(request, params),
-      ...this._bindFieldFilters(request, params)
-    ];
-    
-    whereParts.forEach(w => qb.addWhere(w));
-
-    // Handle pagination
-    let pagination = null;
-    if (params.page && params.limit) {
-      const offset = (params.page - 1) * params.limit;
-      qb.offset(offset, params.limit + 1);
-    } else {
-      qb.top(params.limit);
-    }
-
-    const [sqlText, sqlParams] = qb.build();
-    
-    // Bind query builder parameters
-    sqlParams.forEach(p => {
-      const type = this._getSqlType(p.type);
-      request.input(p.name, type, p.value);
-    });
-
-    const result = await request.query(sqlText);
-    let records = result.recordset;
-
-    // Process pagination
-    if (params.page && params.limit) {
-      const hasNext = records.length > params.limit;
-      if (hasNext) records = records.slice(0, -1);
-      pagination = { 
-        page: params.page, 
-        limit: params.limit, 
-        hasNext, 
-        hasPrev: params.page > 1 
-      };
-    }
-
-    const transformedData = records.map(r => this._transformAlertRecord(r, params));
-    return ResponseFormatter.success(transformedData, pagination);
+  _getSqlType(type) {
+    const typeMap = {
+      Int: sql.Int,
+      DateTime2: sql.DateTime2,
+      NVarChar: sql.NVarChar,
+    };
+    return typeMap[type] || sql.NVarChar;
   }
 
+  /**
+   * Normalizes thresholds and time-window parameters for all computations.
+   */
+  _getThresholds(params = {}) {
+    const day_start = params.day_start ?? this.DEFAULT_DAY_START;
+    const day_end = params.day_end ?? this.DEFAULT_DAY_END;
+    const night_start = params.night_start ?? this.DEFAULT_NIGHT_START;
+    const night_end = params.night_end ?? this.DEFAULT_NIGHT_END;
+    const dur_short_max = params.dur_short_max ?? this.DEFAULT_DUR_SHORT_MAX;
+    const dur_medium_max = params.dur_medium_max ?? this.DEFAULT_DUR_MEDIUM_MAX;
+    const false_wakeup_threshold =
+      params.false_wakeup_threshold ?? this.DEFAULT_FALSE_WAKEUP_THRESHOLD;
 
+    return {
+      day_start,
+      day_end,
+      night_start,
+      night_end,
+      dur_short_max,
+      dur_medium_max,
+      false_wakeup_threshold,
+    };
+  }
 
-  async getExecutiveKPIs(params) {
-    const pool = this.getPool();
-    const request = pool.request();
+  /**
+   * Base SELECT ... FROM dbo.historicalAlerts
+   * - Handles start_date / end_date (UTC conversion via TimeUtils.validateDateRange)
+   * - Optional exact panel_title filter
+   * - TOP (@cap) with hard cap of DEFAULT_CAP
+   * - ORDER BY time_fired DESC
+   *
+   * @param {sql.Request} request
+   * @param {object} params
+   * @param {string} fields - projection list (e.g. "time_fired, duration_sec")
+   * @param {object} options
+   *    - requirePanelTitle: boolean (if true, throws if no panel_title)
+   * @returns {string} SQL text
+   */
+  _buildBaseQuery(request, params, fields, options = {}) {
+    const { requirePanelTitle = false } = options;
 
     const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const whereParts = [];
-
-    if (range?.start) {
-      request.input('startDate', this._getSqlType('DateTime2'), range.start);
-      whereParts.push('time_fired >= @startDate');
-    }
-    if (range?.end) {
-      request.input('endDate', this._getSqlType('DateTime2'), range.end);
-      whereParts.push('time_fired <= @endDate');
-    }
-    if (params.panel_title) {
-      request.input('panelTitle', this._getSqlType('NVarChar'), params.panel_title);
-      whereParts.push('panel_title = @panelTitle');
-    }
-
-    const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-    const limit = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), limit);
-
-    const sqlText = `
-      SELECT TOP (@cap) time_fired, duration_sec
-      FROM dbo.historicalAlerts
-      ${whereSql}
-      ORDER BY time_fired DESC
-    `;
-
-    const result = await request.query(sqlText);
-    const kpis = this._computeKPIs(result.recordset, params);
-    return ResponseFormatter.success(kpis);
-  }
-
-
-
-
-  async getDurationHistogram(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause(request, range, params.panel_title);
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    const result = await request.query(`
-      SELECT TOP (@cap) duration_sec
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `);
-
-    const histogram = this._computeDurationHistogram(result.recordset, params);
-    return ResponseFormatter.success(histogram);
-  }
-
-  async getHourlyHeatmap(params) {
-    const data = await this._getBasicAlertData(params);
-    const heatmap = this._computeHourlyHeatmap(data.recordset, params);
-    return ResponseFormatter.success(heatmap);
-  }
-
-  async getShiftAnalysis(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause(request, range, params.panel_title);
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    const result = await request.query(`
-      SELECT TOP (@cap) time_fired, duration_sec, panel_title, operator
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `);
-
-    const analysis = this._computeShiftAnalysis(result.recordset, params);
-    return ResponseFormatter.success(analysis);
-  }
-
-  
-  async _getBasicAlertData(params) {
-    const pool = this.getPool();
-    const request = pool.request();
-
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause(request, range, params.panel_title);
-
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    return await request.query(`
-      SELECT TOP (@cap) time_fired, duration_sec
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `);
-  }
-
-
-  _buildWhereClause(request, range, panel_title) {
     const where = [];
+
     if (range?.start) {
       request.input('start', this._getSqlType('DateTime2'), range.start);
       where.push('time_fired >= @start');
@@ -187,102 +94,281 @@ class AlertService {
       request.input('end', this._getSqlType('DateTime2'), range.end);
       where.push('time_fired <= @end');
     }
-    if (panel_title) {
-      request.input('panelTitle', this._getSqlType('NVarChar'), panel_title);
+
+    if (params.panel_title) {
+      request.input('panelTitle', this._getSqlType('NVarChar'), params.panel_title);
+      where.push('panel_title = @panelTitle');
+    } else if (requirePanelTitle) {
+      throw new Error('panel_title is required');
+    }
+
+    const cap = Math.min(params.limit || this.DEFAULT_CAP, this.DEFAULT_CAP);
+    request.input('cap', this._getSqlType('Int'), cap);
+
+    const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+
+    return `
+      SELECT TOP (@cap) ${fields}
+      FROM dbo.historicalAlerts
+      ${whereClause}
+      ORDER BY time_fired DESC
+    `;
+  }
+
+  /**
+   * WHERE builder for group-by style queries.
+   * Uses start_date / end_date from params and optional panel_title override.
+   *
+   * @param {sql.Request} request
+   * @param {object} params
+   * @param {object} overrides
+   *    - panel_title: override of params.panel_title
+   * @returns {string[]} where parts
+   */
+  _buildWhereClause(request, params, overrides = {}) {
+    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
+    const where = [];
+
+    if (range?.start) {
+      request.input('start', this._getSqlType('DateTime2'), range.start);
+      where.push('time_fired >= @start');
+    }
+    if (range?.end) {
+      request.input('end', this._getSqlType('DateTime2'), range.end);
+      where.push('time_fired <= @end');
+    }
+
+    const panelTitle = overrides.panel_title ?? params.panel_title;
+    if (panelTitle) {
+      request.input('panelTitle', this._getSqlType('NVarChar'), panelTitle);
       where.push('panel_title = @panelTitle');
     }
+
     return where;
   }
 
-// AlertService.js - getOverviewStats method (FIXED)
+  // ================== Filter Binding for getAlerts (flexible search) ==================
 
-async getOverviewStats(params) {
-  const pool = this.getPool();
-  const request = pool.request();
-  
-  // CRITICAL FIX: Use validateDateRange to get properly converted UTC dates
-  const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-  
-  // Debug logging to verify conversion
-  console.log('getOverviewStats - Date Range Conversion:');
-  console.log('  Input start_date:', params.start_date);
-  console.log('  Input end_date:', params.end_date);
-  if (range) {
-    console.log('  Converted start (UTC):', range.start?.toISOString());
-    console.log('  Converted end (UTC):', range.end?.toISOString());
+  _bindDateFilters(request, params) {
+    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
+    const conditions = [];
+
+    if (range?.start) {
+      request.input('startDate', this._getSqlType('DateTime2'), range.start);
+      conditions.push('time_fired >= @startDate');
+    }
+    if (range?.end) {
+      request.input('endDate', this._getSqlType('DateTime2'), range.end);
+      conditions.push('time_fired <= @endDate');
+    }
+
+    return conditions;
   }
-  
-  const where = [];
-  
-  // FIXED: Use range.start and range.end (already converted to UTC)
-  if (range?.start) {
-    request.input('start', this._getSqlType('DateTime2'), range.start);
-    where.push('time_fired >= @start');
+
+  _bindFieldFilters(request, params) {
+    const conditions = [];
+    const fields = ['panel_title', 'application', 'node_name', 'network', 'object', 'operator'];
+
+    fields.forEach((field) => {
+      if (params[field]) {
+        // Array-based filter for panel_titles
+        if (field === 'panel_title' && params.panel_titles && Array.isArray(params.panel_titles)) {
+          const panelTitles = params.panel_titles;
+          const placeholders = panelTitles
+            .map((_, index) => `@${field}_${index}`)
+            .join(',');
+          conditions.push(`panel_title IN (${placeholders})`);
+          panelTitles.forEach((title, index) => {
+            request.input(`${field}_${index}`, this._getSqlType('NVarChar'), title);
+          });
+        } else {
+          // Prefix LIKE filter for single values
+          conditions.push(`${field} LIKE @${field}`);
+          request.input(field, this._getSqlType('NVarChar'), `${params[field]}%`);
+        }
+      }
+    });
+
+    if (params.min_duration !== undefined) {
+      conditions.push('duration_sec >= @minDuration');
+      request.input('minDuration', this._getSqlType('Int'), params.min_duration);
+    }
+
+    if (params.max_duration !== undefined) {
+      conditions.push('duration_sec <= @maxDuration');
+      request.input('maxDuration', this._getSqlType('Int'), params.max_duration);
+    }
+
+    return conditions;
   }
-  if (range?.end) {
-    request.input('end', this._getSqlType('DateTime2'), range.end);
-    where.push('time_fired <= @end');
+
+  // ================== Public API ==================
+
+  /**
+   * Paginated, filterable alerts list (table view)
+   */
+  async getAlerts(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+
+    const qb = new QueryBuilder()
+      .select(
+        `incident_id, panel_title, application, node_name, network, object,
+         operator, time_fired, time_resolved, duration_sec, message, key_field, history_id`
+      )
+      .orderBy(params.sort_by, params.sort_order);
+
+    const whereParts = [
+      ...this._bindDateFilters(request, params),
+      ...this._bindFieldFilters(request, params),
+    ];
+
+    whereParts.forEach((w) => qb.addWhere(w));
+
+    let pagination = null;
+    if (params.page && params.limit) {
+      const offset = (params.page - 1) * params.limit;
+      qb.offset(offset, params.limit + 1); // +1 to detect hasNext
+    } else if (params.limit) {
+      qb.top(params.limit);
+    }
+
+    const [sqlText, sqlParams] = qb.build();
+
+    sqlParams.forEach((p) => {
+      const type = this._getSqlType(p.type);
+      request.input(p.name, type, p.value);
+    });
+
+    const result = await request.query(sqlText);
+    let records = result.recordset;
+
+    if (params.page && params.limit) {
+      const hasNext = records.length > params.limit;
+      if (hasNext) records = records.slice(0, -1);
+      pagination = {
+        page: params.page,
+        limit: params.limit,
+        hasNext,
+        hasPrev: params.page > 1,
+      };
+    }
+
+    const transformedData = records.map((r) => this._transformAlertRecord(r, params));
+    return ResponseFormatter.success(transformedData, pagination);
   }
-  if (params.panel_title) {
-    request.input('panelTitle', this._getSqlType('NVarChar'), params.panel_title);
-    where.push('panel_title = @panelTitle');
+
+  /**
+   * Executive KPIs – minimal data: time_fired, duration_sec
+   */
+  async getExecutiveKPIs(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+
+    const query = this._buildBaseQuery(request, params, 'time_fired, duration_sec');
+    const result = await request.query(query);
+
+    const kpis = this._computeKPIs(result.recordset, params);
+    return ResponseFormatter.success(kpis);
   }
-  
-  const cap = Math.min(params.limit || 100000, 100000);
-  request.input('cap', this._getSqlType('Int'), cap);
 
-  const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
-  
-  // Build query
-  const query = `
-    SELECT TOP (@cap)
-      time_fired, time_resolved, duration_sec,
-      panel_title, application, node_name, network, operator
-    FROM dbo.historicalAlerts
-    ${whereClause}
-    ORDER BY time_fired DESC
-  `;
-  
-  console.log('Executing query:', query);
-  console.log('With parameters:', {
-    start: range?.start?.toISOString(),
-    end: range?.end?.toISOString(),
-    panelTitle: params.panel_title,
-    cap
-  });
+  /**
+   * Duration histogram (short/medium/long)
+   */
+  async getDurationHistogram(params) {
+    const pool = this.getPool();
+    const request = pool.request();
 
-  const rows = (await request.query(query)).recordset;
+    const query = this._buildBaseQuery(request, params, 'duration_sec');
+    const result = await request.query(query);
 
-  const stats = this._computeOverviewStats(rows, params);
-  
-  console.log('Overview stats result - total_alerts:', stats.total_alerts);
-  
-  return ResponseFormatter.success(stats);
-}
+    const histogram = this._computeDurationHistogram(result.recordset, params);
+    return ResponseFormatter.success(histogram);
+  }
 
+  /**
+   * Hourly heatmap (24 buckets)
+   */
+  async getHourlyHeatmap(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+
+    const query = this._buildBaseQuery(request, params, 'time_fired');
+    const result = await request.query(query);
+
+    const heatmap = this._computeHourlyHeatmap(result.recordset, params);
+    return ResponseFormatter.success(heatmap);
+  }
+
+  /**
+   * Shift analysis (Day/Night buckets)
+   */
+  async getShiftAnalysis(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+
+    const query = this._buildBaseQuery(
+      request,
+      params,
+      'time_fired, duration_sec, panel_title, operator'
+    );
+    const result = await request.query(query);
+
+    const analysis = this._computeShiftAnalysis(result.recordset, params);
+    return ResponseFormatter.success(analysis);
+  }
+
+  /**
+   * Overview stats (global)
+   */
+  async getOverviewStats(params) {
+    const pool = this.getPool();
+    const request = pool.request();
+
+    const query = this._buildBaseQuery(request, params, 'time_fired, duration_sec');
+    const result = await request.query(query);
+
+    const stats = this._computeOverviewStats(result.recordset, params);
+
+    // Preserve explicit date_range in response
+    stats.date_range =
+      params.start_date && params.end_date
+        ? { start: params.start_date, end: params.end_date }
+        : null;
+
+    return ResponseFormatter.success(stats);
+  }
+
+  /**
+   * Hourly stats with duration breakdown per hour
+   */
   async getHourlyStats(params) {
-    const data = await this._getBasicAlertData(params);
-    const hourlyStats = this._computeHourlyStats(data.recordset, params);
+    const records = await this._getBasicAlertData(params);
+    const hourlyStats = this._computeHourlyStats(records, params);
     return ResponseFormatter.success(hourlyStats);
   }
 
+  /**
+   * Per-panel aggregate stats (alert count, avg duration, etc.)
+   */
   async getPanelList(params) {
     const pool = this.getPool();
     const request = pool.request();
-    
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    
-    const where = this._buildWhereClause(request, range);
-    
-    const falseWakeupThreshold = params.false_wakeup_threshold || 120;
-    const durShortMax = params.dur_short_max || 59;
-    const durMediumMax = params.dur_medium_max || 299;
-    
-    request.input('false_wakeup_threshold', this._getSqlType('Int'), falseWakeupThreshold);
-    request.input('dur_short_max', this._getSqlType('Int'), durShortMax);
-    request.input('dur_medium_max', this._getSqlType('Int'), durMediumMax);
-    
-    const result = await request.query(`
+
+    const where = this._buildWhereClause(request, params);
+
+    const { false_wakeup_threshold, dur_short_max, dur_medium_max } =
+      this._getThresholds(params);
+
+    request.input(
+      'false_wakeup_threshold',
+      this._getSqlType('Int'),
+      false_wakeup_threshold
+    );
+    request.input('dur_short_max', this._getSqlType('Int'), dur_short_max);
+    request.input('dur_medium_max', this._getSqlType('Int'), dur_medium_max);
+
+    const sqlText = `
       SELECT 
         panel_title,
         COUNT(*) AS alert_count,
@@ -293,17 +379,29 @@ async getOverviewStats(params) {
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       GROUP BY panel_title
       ORDER BY alert_count DESC
-    `);
-    
+    `;
+
+    const result = await request.query(sqlText);
     return ResponseFormatter.success(result.recordset);
   }
 
+  /**
+   * Timeseries stats by day (alert_count, avg_duration, day/night split)
+   */
   async getTimeseriesStats(params) {
-    const data = await this._getBasicAlertData(params);
-    const timeseries = this._computeTimeseriesStats(data.recordset, params);
+    const pool = this.getPool();
+    const request = pool.request();
+
+    const query = this._buildBaseQuery(request, params, 'time_fired, duration_sec');
+    const result = await request.query(query);
+
+    const timeseries = this._computeTimeseriesStats(result.recordset, params);
     return ResponseFormatter.success(timeseries);
   }
-  // Detailed panel analysis
+
+  /**
+   * Detailed panel analysis – single panel, rich metrics
+   */
   async getPanelAnalysis(params) {
     if (!params.panel_title) {
       throw new Error('panel_title is required');
@@ -311,27 +409,26 @@ async getOverviewStats(params) {
 
     const pool = this.getPool();
     const request = pool.request();
-    
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause (request, range,params.panel_title);
 
-    const cap = Math.min(params.limit || 100000, 100000);
-    request.input('cap', this._getSqlType('Int'), cap);
-
-    const result = await request.query(`
-      SELECT TOP (@cap)
-        incident_id, panel_title, application, time_fired, 
-        time_resolved, duration_sec, operator, message
-      FROM dbo.historicalAlerts
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY time_fired DESC
-    `);
+    const fields = `
+      incident_id, panel_title, application, time_fired,
+      time_resolved, duration_sec, operator, message
+    `;
+    const query = this._buildBaseQuery(
+      request,
+      { ...params, panel_title: params.panel_title },
+      fields,
+      { requirePanelTitle: true }
+    );
+    const result = await request.query(query);
 
     const analysis = this._computePanelAnalysis(result.recordset, params);
     return ResponseFormatter.success(analysis);
   }
 
-  // Get alert frequency by specific alert message/type
+  /**
+   * Alert message breakdown per panel (frequency, avg duration, etc.)
+   */
   async getAlertMessageBreakdown(params) {
     if (!params.panel_title) {
       throw new Error('panel_title is required');
@@ -339,221 +436,54 @@ async getOverviewStats(params) {
 
     const pool = this.getPool();
     const request = pool.request();
-    
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause (request, range, params.panel_title);
-    
-    const result = await request.query(`
+
+    const where = this._buildWhereClause(request, params, {
+      panel_title: params.panel_title,
+    });
+
+    const { false_wakeup_threshold } = this._getThresholds(params);
+    request.input(
+      'false_wakeup_threshold',
+      this._getSqlType('Int'),
+      false_wakeup_threshold
+    );
+
+    const sqlText = `
       SELECT 
         message,
         COUNT(*) AS occurrence_count,
         ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration,
         MIN(duration_sec) AS min_duration,
         MAX(duration_sec) AS max_duration,
-        COUNT(CASE WHEN duration_sec <= ${params.false_wakeup_threshold || 120} THEN 1 END) AS false_positive_count
+        COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_positive_count
       FROM dbo.historicalAlerts
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       GROUP BY message
       ORDER BY occurrence_count DESC
-    `);
+    `;
 
+    const result = await request.query(sqlText);
     return ResponseFormatter.success(result.recordset);
   }
 
-  // Helper: Compute detailed panel analysis
-  _computePanelAnalysis(records, params) {
-    const {
-      day_start = 8, day_end = 22,
-      dur_short_max = 30,
-      dur_medium_max = 300,
-      false_wakeup_threshold = 120,
-      night_start = 22,
-      night_end = 8
-    } = params;
-
-    if (!records || records.length === 0) {
-      return {
-        summary: {
-          total_alerts: 0,
-          avg_duration: 0,
-          false_positive_count: 0,
-          false_positive_rate: 0,
-          night_alerts: 0,
-          night_wakeups: 0,
-          night_false_wakeups: 0,
-          day_alerts: 0,
-          alerts_per_day: 0,
-          trend_direction: 'stable'
-        },
-        duration_distribution: [],
-        daily_trend: [],
-        hourly_heatmap: [],
-        top_noisy_alerts: [],
-        recommendations: []
-      };
-    }
-
-    // Basic metrics
-    let total = 0, sumDuration = 0;
-    let shortAlerts = 0, mediumAlerts = 0, longAlerts = 0;
-    let falsePositives = 0, nightAlerts = 0, dayAlerts = 0;
-    let nightWakeups = 0, nightFalseWakeups = 0;
-    
-    const dailyCount = new Map();
-    const hourlyCount = Array(24).fill(0);
-    const durationBuckets = Array(24).fill(0).map(() => ({ sum: 0, count: 0 }));
-    const messageFrequency = new Map();
-
-    for (const record of records) {
-      total++;
-      sumDuration += record.duration_sec;
-      
-      // Duration categories
-      if (record.duration_sec <= dur_short_max) shortAlerts++;
-      else if (record.duration_sec <= dur_medium_max) mediumAlerts++;
-      else longAlerts++;
-
-      // False positives
-      if (record.duration_sec <= false_wakeup_threshold) {
-        falsePositives++;
-      }
-
-      // Time analysis
-      const hour = TimeUtils.getILHour(record.time_fired);
-      const date = TimeUtils.getILDate(record.time_fired);
-      const isNight = hour >= night_start || hour < night_end;
-
-      if (isNight) {
-        nightAlerts++;
-        if (record.duration_sec > false_wakeup_threshold) {
-          nightWakeups++;
-        } else {
-          nightFalseWakeups++;
-        }
-      } else {
-        dayAlerts++;
-      }
-
-      // Hourly distribution
-      if (hour !== null) {
-        hourlyCount[hour]++;
-        durationBuckets[hour].sum += record.duration_sec;
-        durationBuckets[hour].count++;
-      }
-
-      // Daily trend
-      if (date) {
-        dailyCount.set(date, (dailyCount.get(date) || 0) + 1);
-      }
-
-      // Message frequency
-      if (record.message) {
-        const current = messageFrequency.get(record.message) || { count: 0, durations: [] };
-        current.count++;
-        current.durations.push(record.duration_sec);
-        messageFrequency.set(record.message, current);
-      }
-    }
-
-    // Calculate trends
-    const dailyTrend = Array.from(dailyCount.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, count]) => ({ date, count }));
-
-    const hourlyHeatmap = hourlyCount.map((count, hour) => ({
-      hour,
-      count,
-      avg_duration: durationBuckets[hour].count 
-        ? +(durationBuckets[hour].sum / durationBuckets[hour].count).toFixed(2)
-        : 0,
-      is_night: hour >= night_start || hour < night_end
-    }));
-
-    // Top noisy messages
-    const topNoisyAlerts = Array.from(messageFrequency.entries())
-      .map(([message, data]) => ({
-        message,
-        count: data.count,
-        avg_duration: +(data.durations.reduce((a, b) => a + b, 0) / data.durations.length).toFixed(2),
-        false_positive_rate: +((data.durations.filter(d => d <= false_wakeup_threshold).length * 100) / data.count).toFixed(1)
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    // Duration distribution
-    const durationDistribution = [
-      { category: 'Short', range: `≤${dur_short_max}s`, count: shortAlerts },
-      { category: 'Medium', range: `${dur_short_max + 1}-${dur_medium_max}s`, count: mediumAlerts },
-      { category: 'Long', range: `>${dur_medium_max}s`, count: longAlerts }
-    ];
-
-    // Calculate velocity (alerts per day)
-    const daysInRange = dailyTrend.length || 1;
-    const alertsPerDay = +(total / daysInRange).toFixed(2);
-
-    // Trend analysis (first half vs second half)
-    let trendDirection = 'stable';
-    if (dailyTrend.length >= 4) {
-      const midpoint = Math.floor(dailyTrend.length / 2);
-      const firstHalf = dailyTrend.slice(0, midpoint);
-      const secondHalf = dailyTrend.slice(midpoint);
-      const firstAvg = firstHalf.reduce((sum, d) => sum + d.count, 0) / firstHalf.length;
-      const secondAvg = secondHalf.reduce((sum, d) => sum + d.count, 0) / secondHalf.length;
-      const change = ((secondAvg - firstAvg) / firstAvg) * 100;
-      
-      if (change > 15) trendDirection = 'increasing';
-      else if (change < -15) trendDirection = 'decreasing';
-    }
-
-    return {
-      summary: {
-        total_alerts: total,
-        avg_duration: total ? +(sumDuration / total).toFixed(2) : 0,
-        false_positive_count: falsePositives,
-        false_positive_rate: total ? +((falsePositives * 100) / total).toFixed(1) : 0,
-        night_alerts: nightAlerts,
-        night_wakeups: nightWakeups,
-        night_false_wakeups: nightFalseWakeups,
-        day_alerts: dayAlerts,
-        alerts_per_day: alertsPerDay,
-        trend_direction: trendDirection
-      },
-      duration_distribution: durationDistribution,
-      daily_trend: dailyTrend,
-      hourly_heatmap: hourlyHeatmap,
-      top_noisy_alerts: topNoisyAlerts,
-      recommendations: this._generateRecommendations({
-        total,
-        falsePositives,
-        nightWakeups,
-        nightFalseWakeups,
-        shortAlerts,
-        alertsPerDay,
-        trendDirection,
-        topNoisyAlerts,
-        hourlyHeatmap
-      }, params)
-    };
-  }
-
+  /**
+   * Panel stats grouped by panel_title + application
+   */
   async getPanelStats(params) {
     const pool = this.getPool();
     const request = pool.request();
 
-    // 1. Validate and parameterize date range
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const where = this._buildWhereClause (request, range);
+    const where = this._buildWhereClause(request, params);
 
-    // 2. Parameterize numeric filters
     const limit = params.limit || null;
-    const durShortMax = params.dur_short_max || 30;
-    const durMediumMax = params.dur_medium_max || 300;
+    const { dur_short_max, dur_medium_max } = this._getThresholds(params);
 
-    if (limit) request.input('limit', this._getSqlType('Int'), limit);
-    request.input('dur_short_max', this._getSqlType('Int'), durShortMax);
-    request.input('dur_medium_max', this._getSqlType('Int'), durMediumMax);
+    if (limit) {
+      request.input('limit', this._getSqlType('Int'), limit);
+    }
+    request.input('dur_short_max', this._getSqlType('Int'), dur_short_max);
+    request.input('dur_medium_max', this._getSqlType('Int'), dur_medium_max);
 
-    // 3. Construct SQL dynamically but safely
     const topClause = limit ? 'TOP (@limit)' : '';
     const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
@@ -574,7 +504,6 @@ async getOverviewStats(params) {
       ORDER BY alert_count DESC
     `;
 
-    // 4. Run query safely
     try {
       const result = await request.query(sqlText);
       return ResponseFormatter.success(result.recordset);
@@ -584,81 +513,34 @@ async getOverviewStats(params) {
     }
   }
 
+  // ================== Internal fetch helpers ==================
 
-  // ================== Helper Methods ==================
+  /**
+   * Basic alert data: time_fired, duration_sec
+   * Used by hourly / timeseries stats.
+   */
+  async _getBasicAlertData(params) {
+    const pool = this.getPool();
+    const request = pool.request();
 
-  _bindDateFilters(request, params) {
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    const conditions = [];
-    
-    if (range?.start) {
-      request.input('startDate', this._getSqlType('DateTime2'), range.start);
-      conditions.push('time_fired >= @startDate');
-    }
-    if (range?.end) {
-      request.input('endDate', this._getSqlType('DateTime2'), range.end);
-      conditions.push('time_fired <= @endDate');
-    }
-    
-    return conditions;
+    const query = this._buildBaseQuery(request, params, 'time_fired, duration_sec');
+    const result = await request.query(query);
+    return result.recordset;
   }
 
-_bindFieldFilters(request, params) {
-  const conditions = [];
-  const fields = ['panel_title', 'application', 'node_name', 'network', 'object', 'operator'];
-  
-  fields.forEach(field => {
-    if (params[field]) {
-      // Handle array-based filtering for panel_titles
-      if (field === 'panel_title' && params.panel_titles && Array.isArray(params.panel_titles)) {
-        const panelTitles = params.panel_titles;
-        const placeholders = panelTitles.map((_, index) => `@${field}_${index}`).join(',');
-        conditions.push(`panel_title IN (${placeholders})`);
-        panelTitles.forEach((title, index) => {
-          request.input(`${field}_${index}`, this._getSqlType('NVarChar'), title);
-        });
-      }
-      // Handle single value filtering
-      else if (params[field]) {
-        conditions.push(`${field} LIKE @${field}`);
-        request.input(field, this._getSqlType('NVarChar'), `${params[field]}%`);
-      }
-    }
-  });
-  
-  if (params.min_duration !== undefined) {
-    conditions.push('duration_sec >= @minDuration');
-    request.input('minDuration', this._getSqlType('Int'), params.min_duration);
-  }
-  
-  if (params.max_duration !== undefined) {
-    conditions.push('duration_sec <= @maxDuration');
-    request.input('maxDuration', this._getSqlType('Int'), params.max_duration);
-  }
-  
-  return conditions;
-}
-
-  _getSqlType(type) {
-    const sql = require('mssql');
-    const typeMap = {
-      'Int': sql.Int,
-      'DateTime2': sql.DateTime2,
-      'NVarChar': sql.NVarChar
-    };
-    return typeMap[type] || sql.NVarChar;
-  }
+  // ================== Transformations ==================
 
   _transformAlertRecord(record, config = {}) {
     const {
-      day_start = 8,
-      day_end = 22,
-      dur_short_max = 30,
-      dur_medium_max = 300
-    } = config;
+      day_start,
+      day_end,
+      dur_short_max,
+      dur_medium_max,
+    } = this._getThresholds(config);
 
     const ilHour = TimeUtils.getILHour(record.time_fired);
-    const shift = ilHour !== null && ilHour >= day_start && ilHour < day_end ? 'Day' : 'Night';
+    const shift =
+      ilHour !== null && ilHour >= day_start && ilHour < day_end ? 'Day' : 'Night';
 
     let durCategory = 'long';
     if (record.duration_sec <= dur_short_max) durCategory = 'short';
@@ -684,17 +566,35 @@ _bindFieldFilters(request, params) {
     };
   }
 
+  _calculateMedian(numbers) {
+    if (!numbers || numbers.length === 0) return 0;
+    const sorted = [...numbers].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  }
 
-
-  // ================== COMPUTATION HELPERS ==================
+  // ================== Computation Helpers ==================
 
   _computeOverviewStats(records, params) {
-    const { day_start = 8, day_end = 22, dur_short_max = 30, dur_medium_max = 300 } = params;
+    const {
+      day_start,
+      day_end,
+      dur_short_max,
+      dur_medium_max,
+    } = this._getThresholds(params);
 
-    let total = 0, sum = 0, min = Infinity, max = -Infinity;
-    let shortAlerts = 0, mediumAlerts = 0, longAlerts = 0;
-    let nightAlerts = 0, dayAlerts = 0;
-  
+    let total = 0;
+    let sum = 0;
+    let min = Infinity;
+    let max = -Infinity;
+    let shortAlerts = 0;
+    let mediumAlerts = 0;
+    let longAlerts = 0;
+    let nightAlerts = 0;
+    let dayAlerts = 0;
+
     for (const record of records) {
       total++;
       sum += record.duration_sec;
@@ -706,12 +606,22 @@ _bindFieldFilters(request, params) {
       else longAlerts++;
 
       const hour = TimeUtils.getILHour(record.time_fired);
-      if (TimeUtils.isDayHour(hour, day_start, day_end)) dayAlerts++;
-      else nightAlerts++;
 
+      let isDay;
+      if (typeof TimeUtils.isDayHour === 'function') {
+        isDay = TimeUtils.isDayHour(hour, day_start, day_end);
+      } else {
+        isDay = hour != null && hour >= day_start && hour < day_end;
+      }
+
+      if (isDay) {
+        dayAlerts++;
+      } else {
+        nightAlerts++;
+      }
     }
 
-    const signalRatio = total ? +((total - shortAlerts) * 100 / total).toFixed(1) : 0;
+    const signalRatio = total ? +(((total - shortAlerts) * 100) / total).toFixed(1) : 0;
 
     return {
       total_alerts: total,
@@ -724,25 +634,27 @@ _bindFieldFilters(request, params) {
       night_alerts: nightAlerts,
       day_alerts: dayAlerts,
       signal_to_noise_ratio: signalRatio,
-      date_range: params.start_date && params.end_date 
-        ? { start: params.start_date, end: params.end_date } 
-        : null,
+      date_range: null, // filled in getOverviewStats
     };
   }
 
   _computeHourlyStats(records, params) {
-    const { dur_short_max = 30, dur_medium_max = 300 } = params;
-    const buckets = Array.from({ length: 24 }, () => ({ 
-      n: 0, sum: 0, immediate: 0, short: 0, long: 0 
+    const { dur_short_max, dur_medium_max } = this._getThresholds(params);
+    const buckets = Array.from({ length: 24 }, () => ({
+      n: 0,
+      sum: 0,
+      immediate: 0,
+      short: 0,
+      long: 0,
     }));
 
     for (const record of records) {
       const hour = TimeUtils.getILHour(record.time_fired);
-      if (hour !== null) {
+      if (hour !== null && hour >= 0 && hour < 24) {
         const bucket = buckets[hour];
         bucket.n++;
         bucket.sum += record.duration_sec;
-        
+
         if (record.duration_sec <= dur_short_max) bucket.immediate++;
         else if (record.duration_sec <= dur_medium_max) bucket.short++;
         else bucket.long++;
@@ -760,11 +672,10 @@ _bindFieldFilters(request, params) {
   }
 
   _computeTimeseriesStats(records, params) {
-    const { day_start = 8, day_end = 22 } = params;
+    const { day_start, day_end } = this._getThresholds(params);
     const dayMap = new Map();
 
     for (const record of records) {
-      // ✅ Use the helper method for consistency
       const ilDate = TimeUtils.getILDate(record.time_fired);
       const hour = TimeUtils.getILHour(record.time_fired);
 
@@ -772,14 +683,21 @@ _bindFieldFilters(request, params) {
         dayMap.set(ilDate, { count: 0, sum: 0, day: 0, night: 0 });
       }
 
-      const dayStats = dayMap.get(ilDate);
-      dayStats.count++;
-      dayStats.sum += record.duration_sec;
+      const stats = dayMap.get(ilDate);
+      stats.count++;
+      stats.sum += record.duration_sec;
 
-      if (TimeUtils.isDayHour(hour, day_start, day_end)) {
-        dayStats.day++;
+      let isDay;
+      if (typeof TimeUtils.isDayHour === 'function') {
+        isDay = TimeUtils.isDayHour(hour, day_start, day_end);
       } else {
-        dayStats.night++;
+        isDay = hour != null && hour >= day_start && hour < day_end;
+      }
+
+      if (isDay) {
+        stats.day++;
+      } else {
+        stats.night++;
       }
     }
 
@@ -796,39 +714,58 @@ _bindFieldFilters(request, params) {
 
   _computeShiftAnalysis(records, params) {
     const {
-      day_start = 8, day_end = 22,
-      false_wakeup_threshold = 120
-    } = params;
+      day_start,
+      day_end,
+      false_wakeup_threshold,
+    } = this._getThresholds(params);
 
     const buckets = {
-      Day: { 
-        n: 0, sum: 0, min: Infinity, max: -Infinity, 
-        false_wakeups: 0, true_alerts: 0, 
-        panels: new Set(), ops: new Set() 
+      Day: {
+        n: 0,
+        sum: 0,
+        min: Infinity,
+        max: -Infinity,
+        false_wakeups: 0,
+        true_alerts: 0,
+        panels: new Set(),
+        ops: new Set(),
       },
-      Night: { 
-        n: 0, sum: 0, min: Infinity, max: -Infinity, 
-        false_wakeups: 0, true_alerts: 0, 
-        panels: new Set(), ops: new Set() 
+      Night: {
+        n: 0,
+        sum: 0,
+        min: Infinity,
+        max: -Infinity,
+        false_wakeups: 0,
+        true_alerts: 0,
+        panels: new Set(),
+        ops: new Set(),
       },
     };
 
     for (const record of records) {
       const hour = TimeUtils.getILHour(record.time_fired);
-      const shift = TimeUtils.isDayHour(hour, day_start, day_end) ? 'Day' : 'Night';
+
+      let isDay;
+      if (typeof TimeUtils.isDayHour === 'function') {
+        isDay = TimeUtils.isDayHour(hour, day_start, day_end);
+      } else {
+        isDay = hour != null && hour >= day_start && hour < day_end;
+      }
+
+      const shift = isDay ? 'Day' : 'Night';
       const bucket = buckets[shift];
-      
+
       bucket.n++;
       bucket.sum += record.duration_sec;
       bucket.min = Math.min(bucket.min, record.duration_sec);
       bucket.max = Math.max(bucket.max, record.duration_sec);
-      
+
       if (record.duration_sec <= false_wakeup_threshold) {
         bucket.false_wakeups++;
       } else {
         bucket.true_alerts++;
       }
-      
+
       if (record.panel_title) bucket.panels.add(record.panel_title);
       if (record.operator) bucket.ops.add(record.operator);
     }
@@ -843,42 +780,56 @@ _bindFieldFilters(request, params) {
       true_alerts: bucket.true_alerts,
       unique_panels: bucket.panels.size,
       unique_operators: bucket.ops.size,
-      false_wakeup_rate: bucket.n ? +((bucket.false_wakeups * 100) / bucket.n).toFixed(1) : 0,
+      false_wakeup_rate: bucket.n
+        ? +((bucket.false_wakeups * 100) / bucket.n).toFixed(1)
+        : 0,
     }));
   }
 
   _computeKPIs(records, params) {
-    console.log('Computing KPIs with params:', params);
     const {
-      night_start = params.night_start || 22,
-      night_end = params.night_end || 8,
-      dur_short_max = params.dur_short_max || 30,
-      false_wakeup_threshold = params.false_wakeup_threshold || 120  // This should come from client settings
-    } = params;
+      night_start,
+      night_end,
+      dur_short_max,
+      false_wakeup_threshold,
+    } = this._getThresholds(params);
 
-    let total = 0, noise = 0, night = 0, trueWakeups = 0, falseWakeups = 0;
+    let total = 0;
+    let noise = 0;
+    let night = 0;
+    let trueWakeups = 0;
+    let falseWakeups = 0;
+    let sumDuration = 0;
 
     for (const record of records) {
       total++;
-      const ilHour = TimeUtils.getILHour(record.time_fired);
-      const isNight = ilHour >= night_start || ilHour < night_end;
+      sumDuration += record.duration_sec;
 
-      if (record.duration_sec <= dur_short_max) noise++;
-      
+      const ilHour = TimeUtils.getILHour(record.time_fired);
+      let isNight;
+      if (typeof TimeUtils.isNightHour === 'function') {
+        isNight = TimeUtils.isNightHour(ilHour, night_start, night_end);
+      } else {
+        isNight = ilHour >= night_start || ilHour < night_end;
+      }
+
+      const isShort = record.duration_sec <= dur_short_max;
+      const isFalsePositive = record.duration_sec <= false_wakeup_threshold;
+
+      if (isShort) noise++;
+
       if (isNight) {
         night++;
-        if (record.duration_sec > false_wakeup_threshold) {
-          trueWakeups++;
-        } else {
-          falseWakeups++;
-        }
+        if (isFalsePositive) falseWakeups++;
+        else trueWakeups++;
       }
     }
 
-    const signalRatio = total > 0 ? +((total - noise) * 100 / total).toFixed(1) : 0;
-    const falseWakeRate = (trueWakeups + falseWakeups) > 0 
-      ? +(falseWakeups * 100 / (trueWakeups + falseWakeups)).toFixed(1) 
-      : 0;
+    const signalRatio = total > 0 ? +(((total - noise) * 100) / total).toFixed(1) : 0;
+    const falseWakeRate =
+      trueWakeups + falseWakeups > 0
+        ? +((falseWakeups * 100) / (trueWakeups + falseWakeups)).toFixed(1)
+        : 0;
 
     return {
       total_alerts: total,
@@ -888,12 +839,16 @@ _bindFieldFilters(request, params) {
       false_wakeups: falseWakeups,
       signal_ratio: signalRatio,
       false_wakeup_rate: falseWakeRate,
+      avg_duration: total ? +(sumDuration / total).toFixed(2) : 0,
+      median_duration: this._calculateMedian(records.map((r) => r.duration_sec)),
     };
   }
 
   _computeDurationHistogram(records, params) {
-    const { dur_short_max = 30, dur_medium_max = 300 } = params;
-    let short = 0, medium = 0, long = 0;
+    const { dur_short_max, dur_medium_max } = this._getThresholds(params);
+    let short = 0;
+    let medium = 0;
+    let long = 0;
 
     for (const record of records) {
       if (record.duration_sec <= dur_short_max) short++;
@@ -909,38 +864,265 @@ _bindFieldFilters(request, params) {
   }
 
   _computeHourlyHeatmap(records, params) {
-    const { night_start = 22, night_end = 8 } = params;
+    const { night_start, night_end } = this._getThresholds(params);
     const counts = Array.from({ length: 24 }, () => 0);
 
     for (const record of records) {
       const ilHour = TimeUtils.getILHour(record.time_fired);
-      if (ilHour !== null) counts[ilHour]++;
+      if (ilHour !== null && ilHour >= 0 && ilHour < 24) {
+        counts[ilHour]++;
+      }
     }
 
-    return counts.map((count, hour) => ({
-      hour,
-      hour_display: `${String(hour).padStart(2, '0')}:00`,
-      count,
-      is_night: TimeUtils.isNightHour(hour, night_start, night_end),
-    }));
+    return counts.map((count, hour) => {
+      let isNight;
+      if (typeof TimeUtils.isNightHour === 'function') {
+        isNight = TimeUtils.isNightHour(hour, night_start, night_end);
+      } else {
+        isNight = hour >= night_start || hour < night_end;
+      }
+
+      return {
+        hour,
+        hour_display: `${String(hour).padStart(2, '0')}:00`,
+        count,
+        is_night: isNight,
+      };
+    });
+  }
+
+  _computePanelAnalysis(records, params) {
+    const {
+      day_start,
+      day_end,
+      dur_short_max,
+      dur_medium_max,
+      false_wakeup_threshold,
+      night_start,
+      night_end,
+    } = this._getThresholds(params);
+
+    if (!records || records.length === 0) {
+      return {
+        summary: {
+          total_alerts: 0,
+          avg_duration: 0,
+          false_positive_count: 0,
+          false_positive_rate: 0,
+          night_alerts: 0,
+          night_wakeups: 0,
+          night_false_wakeups: 0,
+          day_alerts: 0,
+          alerts_per_day: 0,
+          trend_direction: 'stable',
+        },
+        duration_distribution: [],
+        daily_trend: [],
+        hourly_heatmap: [],
+        top_noisy_alerts: [],
+        recommendations: [],
+      };
+    }
+
+    let total = 0;
+    let sumDuration = 0;
+    let shortAlerts = 0;
+    let mediumAlerts = 0;
+    let longAlerts = 0;
+    let falsePositives = 0;
+    let nightAlerts = 0;
+    let dayAlerts = 0;
+    let nightWakeups = 0;
+    let nightFalseWakeups = 0;
+
+    const dailyCount = new Map();
+    const hourlyCount = Array(24).fill(0);
+    const durationBuckets = Array.from({ length: 24 }, () => ({ sum: 0, count: 0 }));
+    const messageFrequency = new Map();
+
+    for (const record of records) {
+      total++;
+      sumDuration += record.duration_sec;
+
+      if (record.duration_sec <= dur_short_max) shortAlerts++;
+      else if (record.duration_sec <= dur_medium_max) mediumAlerts++;
+      else longAlerts++;
+
+      if (record.duration_sec <= false_wakeup_threshold) {
+        falsePositives++;
+      }
+
+      const hour = TimeUtils.getILHour(record.time_fired);
+      const date = TimeUtils.getILDate(record.time_fired);
+
+      let isNight;
+      if (typeof TimeUtils.isNightHour === 'function') {
+        isNight = TimeUtils.isNightHour(hour, night_start, night_end);
+      } else {
+        isNight = hour >= night_start || hour < night_end;
+      }
+
+      if (isNight) {
+        nightAlerts++;
+        if (record.duration_sec > false_wakeup_threshold) {
+          nightWakeups++;
+        } else {
+          nightFalseWakeups++;
+        }
+      } else {
+        dayAlerts++;
+      }
+
+      if (hour !== null && hour >= 0 && hour < 24) {
+        hourlyCount[hour]++;
+        durationBuckets[hour].sum += record.duration_sec;
+        durationBuckets[hour].count++;
+      }
+
+      if (date) {
+        dailyCount.set(date, (dailyCount.get(date) || 0) + 1);
+      }
+
+      if (record.message) {
+        const current =
+          messageFrequency.get(record.message) || { count: 0, durations: [] };
+        current.count++;
+        current.durations.push(record.duration_sec);
+        messageFrequency.set(record.message, current);
+      }
+    }
+
+    const dailyTrend = Array.from(dailyCount.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, count]) => ({ date, count }));
+
+    const hourlyHeatmap = hourlyCount.map((count, hour) => {
+      let isNight;
+      if (typeof TimeUtils.isNightHour === 'function') {
+        isNight = TimeUtils.isNightHour(hour, night_start, night_end);
+      } else {
+        isNight = hour >= night_start || hour < night_end;
+      }
+
+      return {
+        hour,
+        count,
+        avg_duration: durationBuckets[hour].count
+          ? +(durationBuckets[hour].sum / durationBuckets[hour].count).toFixed(2)
+          : 0,
+        is_night: isNight,
+      };
+    });
+
+    const topNoisyAlerts = Array.from(messageFrequency.entries())
+      .map(([message, data]) => ({
+        message,
+        count: data.count,
+        avg_duration: +(
+          data.durations.reduce((a, b) => a + b, 0) / data.durations.length
+        ).toFixed(2),
+        false_positive_rate: +(
+          (data.durations.filter((d) => d <= false_wakeup_threshold).length * 100) /
+          data.count
+        ).toFixed(1),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const durationDistribution = [
+      { category: 'Short', range: `≤${dur_short_max}s`, count: shortAlerts },
+      {
+        category: 'Medium',
+        range: `${dur_short_max + 1}-${dur_medium_max}s`,
+        count: mediumAlerts,
+      },
+      { category: 'Long', range: `>${dur_medium_max}s`, count: longAlerts },
+    ];
+
+    const daysInRange = dailyTrend.length || 1;
+    const alertsPerDay = +(total / daysInRange).toFixed(2);
+
+    let trendDirection = 'stable';
+    if (dailyTrend.length >= 4) {
+      const midpoint = Math.floor(dailyTrend.length / 2);
+      const firstHalf = dailyTrend.slice(0, midpoint);
+      const secondHalf = dailyTrend.slice(midpoint);
+      const firstAvg =
+        firstHalf.reduce((sum, d) => sum + d.count, 0) / firstHalf.length;
+      const secondAvg =
+        secondHalf.reduce((sum, d) => sum + d.count, 0) / secondHalf.length;
+      const change = ((secondAvg - firstAvg) / firstAvg) * 100;
+
+      if (change > 15) trendDirection = 'increasing';
+      else if (change < -15) trendDirection = 'decreasing';
+    }
+
+    const summary = {
+      total_alerts: total,
+      avg_duration: total ? +(sumDuration / total).toFixed(2) : 0,
+      false_positive_count: falsePositives,
+      false_positive_rate: total
+        ? +((falsePositives * 100) / total).toFixed(1)
+        : 0,
+      night_alerts: nightAlerts,
+      night_wakeups: nightWakeups,
+      night_false_wakeups: nightFalseWakeups,
+      day_alerts: dayAlerts,
+      alerts_per_day: alertsPerDay,
+      trend_direction: trendDirection,
+    };
+
+    const recommendations = this._generateRecommendations(
+      {
+        total,
+        falsePositives,
+        nightWakeups,
+        nightFalseWakeups,
+        shortAlerts,
+        alertsPerDay,
+        trendDirection,
+        topNoisyAlerts,
+        hourlyHeatmap,
+      },
+      params
+    );
+
+    return {
+      summary,
+      duration_distribution: durationDistribution,
+      daily_trend: dailyTrend,
+      hourly_heatmap: hourlyHeatmap,
+      top_noisy_alerts: topNoisyAlerts,
+      recommendations,
+    };
   }
 
   _generateRecommendations(metrics, params) {
     const recommendations = [];
     const {
-      total, falsePositives, nightWakeups, nightFalseWakeups,alertsPerDay, trendDirection, topNoisyAlerts, hourlyHeatmap
+      total,
+      falsePositives,
+      nightWakeups,
+      nightFalseWakeups,
+      alertsPerDay,
+      trendDirection,
+      topNoisyAlerts,
+      hourlyHeatmap,
     } = metrics;
 
+    const { false_wakeup_threshold } = this._getThresholds(params);
     const falsePositiveRate = total ? (falsePositives * 100) / total : 0;
 
-    // Rule 1: High false positive rate
     if (falsePositiveRate > 60) {
       recommendations.push({
         severity: 'high',
         category: 'threshold',
-        message: `${falsePositiveRate.toFixed(1)}% of alerts are false positives (<${params.false_wakeup_threshold || 120}s)`,
-        action: 'Consider increasing alert threshold or implementing correlation rules',
-        impact: 'High team disruption with low-value alerts'
+        message: `${falsePositiveRate.toFixed(
+          1
+        )}% of alerts are false positives (<${false_wakeup_threshold}s)`,
+        action:
+          'Increase alert thresholds and/or implement correlation rules for noisy alerts',
+        impact: 'High team disruption with low-value alerts',
       });
     } else if (falsePositiveRate > 40) {
       recommendations.push({
@@ -948,18 +1130,18 @@ _bindFieldFilters(request, params) {
         category: 'threshold',
         message: `${falsePositiveRate.toFixed(1)}% false positive rate detected`,
         action: 'Review alert thresholds for top noisy sources',
-        impact: 'Moderate noise affecting team efficiency'
+        impact: 'Moderate noise affecting team efficiency',
       });
     }
 
-    // Rule 2: Night disruption analysis
     if (nightFalseWakeups > 20) {
       recommendations.push({
         severity: 'high',
         category: 'night-operations',
         message: `${nightFalseWakeups} false night wakeups detected`,
-        action: 'Implement night-specific thresholds or suppress non-critical alerts during night hours',
-        impact: 'Team fatigue and reduced on-call effectiveness'
+        action:
+          'Implement night-specific thresholds or suppress non-critical alerts at night',
+        impact: 'Team fatigue and reduced on-call effectiveness',
       });
     }
 
@@ -968,67 +1150,77 @@ _bindFieldFilters(request, params) {
         severity: 'medium',
         category: 'night-operations',
         message: `${nightWakeups} legitimate night wakeups (high frequency)`,
-        action: 'Review SRE practices and automation opportunities to reduce night incidents',
-        impact: 'Unsustainable on-call load'
+        action:
+          'Investigate automation and SRE practices to reduce night incidents',
+        impact: 'Unsustainable on-call load',
       });
     }
 
-    // Rule 3: Alert volume trend
     if (trendDirection === 'increasing') {
       recommendations.push({
         severity: 'medium',
         category: 'trend',
         message: 'Alert volume is trending upward',
-        action: 'Investigate root causes - possible system degradation or monitoring misconfiguration',
-        impact: 'Increasing operational burden'
+        action:
+          'Investigate root causes – possible system degradation or monitoring misconfiguration',
+        impact: 'Increasing operational burden',
       });
     }
 
-    // Rule 4: High alert velocity
     if (alertsPerDay > 50) {
       recommendations.push({
         severity: 'high',
         category: 'velocity',
         message: `${alertsPerDay.toFixed(1)} alerts per day (high volume)`,
-        action: 'Review alert definitions and consider implementing alert aggregation',
-        impact: 'Alert fatigue and potential for missed critical issues'
+        action:
+          'Review alert definitions and implement aggregation where possible',
+        impact: 'Alert fatigue and potential for missed critical issues',
       });
     }
 
-    // Rule 5: Noisy alert concentration
-    if (topNoisyAlerts.length > 0 && topNoisyAlerts[0].count > total * 0.25) {
+    if (
+      topNoisyAlerts.length > 0 &&
+      topNoisyAlerts[0].count > total * 0.25
+    ) {
       recommendations.push({
         severity: 'high',
         category: 'noise-concentration',
-        message: `Single alert type "${topNoisyAlerts[0].message}" accounts for ${((topNoisyAlerts[0].count * 100) / total).toFixed(1)}% of all alerts`,
-        action: 'Priority: Address this specific alert - likely misconfigured threshold or needs correlation',
-        impact: 'Extreme noise from single source'
+        message: `Single alert type "${topNoisyAlerts[0].message}" accounts for ${(
+          (topNoisyAlerts[0].count * 100) /
+          total
+        ).toFixed(1)}% of all alerts`,
+      action:
+          'Prioritize fixing or tuning this specific alert (thresholds/correlation)',
+        impact: 'Extreme noise from a single source',
       });
     }
 
-    // Rule 6: Time pattern analysis
-    const nightHours = hourlyHeatmap.filter(h => h.is_night);
+    const nightHours = hourlyHeatmap.filter((h) => h.is_night);
     const nightTotal = nightHours.reduce((sum, h) => sum + h.count, 0);
-    const peakNightHour = nightHours.reduce((max, h) => h.count > max.count ? h : max, nightHours[0]);
-    
-    if (peakNightHour && peakNightHour.count > nightTotal * 0.4) {
+    const peakNightHour =
+      nightHours.length > 0
+        ? nightHours.reduce((max, h) => (h.count > max.count ? h : max), nightHours[0])
+        : null;
+
+    if (peakNightHour && nightTotal > 0 && peakNightHour.count > nightTotal * 0.4) {
       recommendations.push({
         severity: 'medium',
         category: 'time-pattern',
         message: `Peak night activity at ${peakNightHour.hour}:00 (${peakNightHour.count} alerts)`,
-        action: 'Investigate scheduled jobs or batch processes that may be causing alerts',
-        impact: 'Predictable disruption pattern'
+        action:
+          'Investigate scheduled jobs, backups, or batch processes around this hour',
+        impact: 'Predictable disruption pattern',
       });
     }
 
-    // Rule 7: Positive feedback
     if (falsePositiveRate < 20 && nightWakeups < 20) {
       recommendations.push({
         severity: 'low',
         category: 'health',
-        message: 'Panel health looks good - low false positive rate and minimal night disruption',
-        action: 'Continue current monitoring practices',
-        impact: 'Well-tuned alerting'
+        message:
+          'Panel health looks good – low false positive rate and minimal night disruption',
+        action: 'Maintain current monitoring practices and periodically review',
+        impact: 'Well-tuned alerting',
       });
     }
 

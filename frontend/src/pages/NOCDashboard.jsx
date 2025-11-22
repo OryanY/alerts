@@ -1,9 +1,17 @@
 import { Suspense, useMemo } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, Cell, Area, ComposedChart
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Line,
+  Cell,
+  Area,
+  ComposedChart,
 } from 'recharts';
-
-import { S } from '../utils/styles';
 
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
@@ -13,7 +21,19 @@ import { DateRangePicker } from '../components/DateRangePicker';
 import { MetricCard } from '../components/MetricCard';
 import { ChartCard } from '../components/ChartCard';
 import { WakeupGauge } from '../components/WakeupGauge';
-import { AlertTriangle, Clock, Moon, Sun, TrendingUp, Shield, Network, Filter, X } from '../icons';
+import {
+  AlertTriangle,
+  Clock,
+  Moon,
+  Sun,
+  TrendingUp,
+  Shield,
+  Network,
+  Filter,
+  X,
+} from '../icons';
+import { useTheme } from '../contexts/ThemeContext';
+import { createThemedStyles } from '../utils/themedStyles';
 
 const NocDashboard = () => {
   const {
@@ -23,45 +43,78 @@ const NocDashboard = () => {
     setDateRange,
     setPresetRange,
     selectedPanel,
-    setSelectedPanel
+    setSelectedPanel,
   } = useClientConfig();
 
   const { Legend } = useDurationBands(config);
+  const { colors } = useTheme();
+  const S = createThemedStyles(colors);
 
-const adjustedDateRange = useMemo(() => {
-  const formatDate = (dateStr) => {
+  // ---- helpers ----
+
+  const formatDateIso = (dateStr) => {
     if (!dateStr) return null;
-    
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return null;
-    
-    // Convert to ISO string in UTC
     return date.toISOString();
   };
 
-  if (
-    dateRange.start_date &&
-    dateRange.end_date &&
-    dateRange.start_date === dateRange.end_date
-  ) {
-    const start = formatDate(dateRange.start_date);
-    const end = formatDate(`${dateRange.end_date}T23:59:59`);
-    return {
-      start_date: start,
-      end_date: end,
-    };
-  }
-
-  return {
-    start_date: formatDate(dateRange.start_date),
-    end_date: formatDate(dateRange.end_date),
+  const chartGridProps = {
+    stroke: colors.border.secondary,
+    strokeDasharray: '3 3',
   };
-}, [dateRange]);
+
+  const xAxisProps = {
+    tick: { fill: colors.text.secondary, fontSize: 12 },
+    axisLine: { stroke: colors.border.primary },
+    tickLine: { stroke: colors.border.primary },
+  };
+
+  const yAxisProps = {
+    tick: { fill: colors.text.secondary, fontSize: 12 },
+    axisLine: { stroke: colors.border.primary },
+    tickLine: { stroke: colors.border.primary },
+  };
+
+  const tooltipStyle = {
+    contentStyle: {
+      backgroundColor: colors.bg.secondary,
+      border: `1px solid ${colors.border.primary}`,
+      borderRadius: 6,
+      color: colors.text.primary,
+      fontSize: 12,
+    },
+    labelStyle: {
+      color: colors.text.secondary,
+    },
+    itemStyle: {
+      fontSize: 12,
+    },
+  };
+
+  const adjustedDateRange = useMemo(() => {
+    if (
+      dateRange.start_date &&
+      dateRange.end_date &&
+      dateRange.start_date === dateRange.end_date
+    ) {
+      const start = formatDateIso(dateRange.start_date);
+      const end = formatDateIso(`${dateRange.end_date}T23:59:59`);
+      return {
+        start_date: start,
+        end_date: end,
+      };
+    }
+
+    return {
+      start_date: formatDateIso(dateRange.start_date),
+      end_date: formatDateIso(dateRange.end_date),
+    };
+  }, [dateRange]);
 
   // Build API params with optional panel filter
   const apiParams = useMemo(() => {
     const params = {
-      
       ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
       ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date }),
       false_wakeup_threshold: config.falseWakeupThreshold || 120,
@@ -74,7 +127,7 @@ const adjustedDateRange = useMemo(() => {
 
     return params;
   }, [adjustedDateRange, config.falseWakeupThreshold, getApiParams, selectedPanel]);
-  
+
   // Fetch panel list for dropdown (without panel filter)
   const panelListParams = useMemo(
     () => ({
@@ -84,8 +137,8 @@ const adjustedDateRange = useMemo(() => {
     }),
     [adjustedDateRange, getApiParams]
   );
-  
-  // Fetch data with panel filter applied
+
+  // Fetch data
   const exec = useApiData('/stats/executive-kpis', apiParams);
   const shifts = useApiData('/stats/shift-analysis', apiParams);
   const duration = useApiData('/stats/duration-histogram', apiParams);
@@ -94,10 +147,7 @@ const adjustedDateRange = useMemo(() => {
     '/stats/by-panel',
     selectedPanel ? null : { ...apiParams, limit: 20 }
   );
-
   const timeseries = useApiData('/stats/timeseries', apiParams);
-  const overview = useApiData('/stats/overview', apiParams);
-
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
 
   const isLoading = exec.loading || shifts.loading || duration.loading || heatmap.loading;
@@ -115,15 +165,15 @@ const adjustedDateRange = useMemo(() => {
           flexWrap: 'wrap',
         }}
       >
-        {/* Date Range Picker */}
+        {/* Date Range + Panel Filter */}
         <div style={{ flex: '1 1 auto', minWidth: 300 }}>
           <DateRangePicker
             dateRange={dateRange}
             onChange={setDateRange}
             setPresetRange={setPresetRange}
-            /* Panel Filter DropDown */
             rightSlot={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* Panel Filter Select */}
                 <div style={{ position: 'relative' }}>
                   <Filter
                     size={16}
@@ -132,7 +182,7 @@ const adjustedDateRange = useMemo(() => {
                       left: 12,
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      color: '#6B7280',
+                      color: colors.text.secondary,
                       pointerEvents: 'none',
                     }}
                   />
@@ -143,8 +193,12 @@ const adjustedDateRange = useMemo(() => {
                       ...S.select,
                       paddingLeft: 36,
                       minWidth: 200,
-                      background: selectedPanel ? '#EBF8FF' : 'white',
-                      borderColor: selectedPanel ? '#3B82F6' : '#D1D5DB',
+                      background: selectedPanel
+                        ? colors.semantic.infoBg
+                        : colors.bg.secondary,
+                      borderColor: selectedPanel
+                        ? colors.semantic.info
+                        : colors.border.secondary,
                       fontWeight: selectedPanel ? 600 : 400,
                     }}
                   >
@@ -157,21 +211,25 @@ const adjustedDateRange = useMemo(() => {
                   </select>
                 </div>
 
+                {/* Clear panel filter */}
                 {selectedPanel && (
                   <button
                     onClick={() => setSelectedPanel(null)}
                     style={{
                       padding: '8px 12px',
-                      border: '1px solid #DC2626',
                       borderRadius: 6,
-                      background: 'white',
-                      color: '#DC2626',
-                      cursor: 'pointer',
                       fontSize: 14,
                       fontWeight: 600,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
+                      cursor: 'pointer',
+
+                      background: colors.bg.secondary,
+                      borderWidth: 1,
+                      borderStyle: 'solid',
+                      borderColor: colors.semantic.error,
+                      color: colors.semantic.error,
                     }}
                     title="Clear panel filter"
                   >
@@ -191,15 +249,19 @@ const adjustedDateRange = useMemo(() => {
           style={{
             marginBottom: 20,
             padding: 12,
-            background: '#EBF8FF',
-            border: '2px solid #3B82F6',
+            background: colors.semantic.infoBg,
+            borderWidth: 2,
+            borderStyle: 'solid',
+            borderColor: colors.semantic.info,
             borderRadius: 8,
-            alignItems: 'center',
           }}
         >
-          <div dir="rtl" style={{ display: 'flex', gap: 8}}>
-            <Filter size={16} style={{ color: '#1E40AF' }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#1E40AF' }}>
+          <div
+            dir="rtl"
+            style={{ display: 'flex', gap: 8, alignItems: 'center', color: colors.semantic.infoText }}
+          >
+            <Filter size={16} style={{ color: colors.semantic.info }} />
+            <span style={{ fontSize: 14, fontWeight: 600 }}>
               נתונים לפי <strong>{selectedPanel}</strong>
             </span>
             <button
@@ -207,13 +269,14 @@ const adjustedDateRange = useMemo(() => {
               style={{
                 marginInlineStart: 12,
                 padding: '4px 12px',
-                border: 'none',
                 borderRadius: 4,
-                background: '#1E40AF',
-                color: 'white',
+                border: 'none',
                 cursor: 'pointer',
                 fontSize: 12,
                 fontWeight: 600,
+
+                background: colors.semantic.info,
+                color: colors.text.inverse,
               }}
             >
               View All Panels
@@ -254,7 +317,7 @@ const adjustedDateRange = useMemo(() => {
           />
           <MetricCard
             title="ממוצע זמן התראה"
-            value={`${overview.data?.avg_duration ?? '—'} ש'`}
+            value={`${exec.data?.avg_duration ?? '—'} ש'`}
             icon={Clock}
             color="green"
           />
@@ -262,19 +325,36 @@ const adjustedDateRange = useMemo(() => {
 
         {/* Charts Row 1 */}
         <div style={S.grid('1fr 1fr 1fr')}>
-          <ChartCard title="התראות בוקר לעומת לילה" icon={Sun} loading={shifts.loading} error={shifts.error}>
+          {/* Shifts bar chart */}
+          <ChartCard
+            title="התראות בוקר לעומת לילה"
+            icon={Sun}
+            loading={shifts.loading}
+            error={shifts.error}
+          >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={shifts.data || []} layout="horizontal">
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="shift" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="alert_count" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Alert Count" />
-                <Bar dataKey="false_wakeups" fill="#EF4444" radius={[4, 4, 0, 0]} name="False Wakeups" />
+              <BarChart data={shifts.data || []}>
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="shift" {...xAxisProps} />
+                <YAxis {...yAxisProps} />
+                <Tooltip {...tooltipStyle} />
+                <Bar
+                  dataKey="alert_count"
+                  fill={colors.chart.primary}
+                  radius={[4, 4, 0, 0]}
+                  name="Alert Count"
+                />
+                <Bar
+                  dataKey="false_wakeups"
+                  fill={colors.chart.quinary}
+                  radius={[4, 4, 0, 0]}
+                  name="False Wakeups"
+                />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
 
+          {/* Duration histogram */}
           <ChartCard
             title="התפלגות משכי התראות"
             icon={Clock}
@@ -284,15 +364,21 @@ const adjustedDateRange = useMemo(() => {
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={duration.data || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="range" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count" fill="#10B981" radius={[4, 4, 0, 0]} name="Count" />
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="range" {...xAxisProps} />
+                <YAxis {...yAxisProps} />
+                <Tooltip {...tooltipStyle} />
+                <Bar
+                  dataKey="count"
+                  fill={colors.chart.tertiary}
+                  radius={[4, 4, 0, 0]}
+                  name="Count"
+                />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
 
+          {/* Wakeup gauge */}
           <WakeupGauge
             shiftData={shifts.data}
             loading={shifts.loading}
@@ -303,33 +389,46 @@ const adjustedDateRange = useMemo(() => {
 
         {/* Charts Row 2 */}
         <div style={S.grid('2fr 1fr')}>
-          <ChartCard title="פילוח התראות לפי שעות" icon={Clock} loading={heatmap.loading} error={heatmap.error}>
+          {/* Hourly heatmap / composed */}
+          <ChartCard
+            title="פילוח התראות לפי שעות"
+            icon={Clock}
+            loading={heatmap.loading}
+            error={heatmap.error}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={heatmap.data || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="hour_display" />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
-                <Tooltip />
+                <CartesianGrid {...chartGridProps} />
+                <XAxis dataKey="hour_display" {...xAxisProps} />
+                <YAxis yAxisId="left" {...yAxisProps} />
+                <YAxis yAxisId="right" orientation="right" {...yAxisProps} />
+                <Tooltip {...tooltipStyle} />
                 <Bar yAxisId="left" dataKey="count" name="Count">
                   {(heatmap.data || []).map((entry, idx) => (
-                    <Cell key={idx} fill={entry?.is_night ? '#8B5CF6' : '#3B82F6'} />
+                    <Cell
+                      key={idx}
+                      fill={
+                        entry?.is_night
+                          ? colors.brand.secondary
+                          : colors.chart.primary
+                      }
+                    />
                   ))}
                 </Bar>
                 <Line
                   yAxisId="right"
                   type="monotone"
                   dataKey="avg_duration"
-                  stroke="#F59E0B"
+                  stroke={colors.chart.quaternary}
                   strokeWidth={2}
-                  dot={{ fill: '#F59E0B', r: 3 }}
+                  dot={{ fill: colors.chart.quaternary, r: 3 }}
                   name="Avg Duration"
                 />
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* Hidden when selectedPanel is truthy */}
+          {/* Top Alert Sources – hidden when filtered */}
           {!selectedPanel && (
             <ChartCard
               title="Top Alert Sources"
@@ -346,42 +445,75 @@ const adjustedDateRange = useMemo(() => {
                   gap: 8,
                 }}
               >
-                {(panelStats.data || []).slice(0, 12).map((p, idx) => (
-                  <div
-                    key={`${p.panel_title}-${idx}`}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: 10,
-                      background: idx < 3 ? '#FEF2F2' : '#F9FAFB',
-                      borderRadius: 6,
-                      border: `1px solid ${idx < 3 ? '#FCA5A5' : '#F3F4F6'}`,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => setSelectedPanel(p.panel_title)}
-                    title="Click to filter dashboard by this panel"
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 13,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {p.panel_title}
+                {(panelStats.data || []).slice(0, 12).map((p, idx) => {
+                  const isTop = idx < 3;
+                  return (
+                    <div
+                      key={`${p.panel_title}-${idx}`}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: 10,
+                        borderRadius: 6,
+                        cursor: 'pointer',
+
+                        background: isTop
+                          ? colors.semantic.errorBg
+                          : colors.bg.tertiary,
+                        borderWidth: 1,
+                        borderStyle: 'solid',
+                        borderColor: isTop
+                          ? colors.semantic.error
+                          : colors.border.primary,
+                      }}
+                      onClick={() => setSelectedPanel(p.panel_title)}
+                      title="Click to filter dashboard by this panel"
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: 13,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            color: colors.text.primary,
+                          }}
+                        >
+                          {p.panel_title}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: colors.text.secondary,
+                          }}
+                        >
+                          {p.application}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: '#6B7280' }}>{p.application}</div>
+                      <div style={{ textAlign: 'right', marginLeft: 8 }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: 13,
+                            color: colors.text.primary,
+                          }}
+                        >
+                          {p.alert_count}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: colors.text.secondary,
+                          }}
+                        >
+                          {p.avg_duration}s avg
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ textAlign: 'right', marginLeft: 8 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{p.alert_count}</div>
-                      <div style={{ fontSize: 10, color: '#6B7280' }}>{p.avg_duration}s avg</div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </ChartCard>
           )}
@@ -397,9 +529,10 @@ const adjustedDateRange = useMemo(() => {
           >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={timeseries.data || []}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid {...chartGridProps} />
                 <XAxis
                   dataKey="date_il"
+                  {...xAxisProps}
                   tickFormatter={(d) =>
                     new Date(d).toLocaleDateString('en-IL', {
                       timeZone: 'Asia/Jerusalem',
@@ -408,16 +541,23 @@ const adjustedDateRange = useMemo(() => {
                     })
                   }
                 />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
-                <Tooltip labelFormatter={(d) => new Date(d).toLocaleDateString('en-IL')} />
+                <YAxis yAxisId="left" {...yAxisProps} />
+                <YAxis yAxisId="right" orientation="right" {...yAxisProps} />
+                <Tooltip
+                  {...tooltipStyle}
+                  labelFormatter={(d) =>
+                    new Date(d).toLocaleDateString('en-IL', {
+                      timeZone: 'Asia/Jerusalem',
+                    })
+                  }
+                />
                 <Area
                   yAxisId="left"
                   type="monotone"
                   dataKey="alert_count"
-                  fill="#3B82F6"
+                  fill={colors.chart.primary}
                   fillOpacity={0.3}
-                  stroke="#3B82F6"
+                  stroke={colors.chart.primary}
                   strokeWidth={2}
                   name="Alert Count"
                 />
@@ -425,9 +565,9 @@ const adjustedDateRange = useMemo(() => {
                   yAxisId="right"
                   type="monotone"
                   dataKey="avg_duration"
-                  stroke="#10B981"
+                  stroke={colors.chart.tertiary}
                   strokeWidth={2}
-                  dot={{ r: 3 }}
+                  dot={{ r: 3, fill: colors.chart.tertiary }}
                   name="Avg Duration"
                 />
               </ComposedChart>
@@ -442,7 +582,7 @@ const adjustedDateRange = useMemo(() => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.5)',
+            background: colors.bg.overlay,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -451,26 +591,28 @@ const adjustedDateRange = useMemo(() => {
         >
           <div
             style={{
-              background: 'white',
-              padding: 24,
-              borderRadius: 8,
+              ...S.card(),
               display: 'flex',
               alignItems: 'center',
               gap: 16,
-              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+              maxWidth: 320,
             }}
           >
             <div
               style={{
                 width: 20,
                 height: 20,
-                border: '2px solid #E5E7EB',
-                borderTop: '2px solid #3B82F6',
                 borderRadius: '50%',
+                borderWidth: 2,
+                borderStyle: 'solid',
+                borderColor: colors.border.secondary,
+                borderTopColor: colors.brand.primary,
                 animation: 'spin 1s linear infinite',
               }}
             />
-            <span>Loading dashboard data…</span>
+            <span style={{ color: colors.text.primary, fontSize: 14 }}>
+              Loading dashboard data…
+            </span>
           </div>
         </div>
       )}

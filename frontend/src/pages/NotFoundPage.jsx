@@ -2,11 +2,15 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, ArrowLeft, Search } from 'lucide-react';
-import { S } from '../utils/styles';
+
+import { useTheme } from '../contexts/ThemeContext';
+import { createThemedStyles } from '../utils/themedStyles';
 
 const NotFoundPage = () => {
   const navigate = useNavigate();
 
+  const { colors } = useTheme();
+  const S = createThemedStyles(colors);
   return (
     <div style={S.card({ textAlign: 'center', maxWidth: 600, margin: '80px auto' })}>
       <div style={{ marginBottom: 24 }}>

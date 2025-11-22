@@ -1,7 +1,9 @@
 // components/Layout.jsx — Main layout with navigation
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AlertTriangle, BarChart3, Eye, Settings,FileText } from 'lucide-react';
-import { S } from '../utils/styles';
+import { useTheme } from '../contexts/ThemeContext';
+import { createThemedStyles } from '../utils/themedStyles';
+import { ThemeToggle } from './ThemeToggle';
 
 const navigationItems = [
   { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -13,6 +15,8 @@ const navigationItems = [
 ];
 
 export const Layout = () => {
+  const { colors } = useTheme();
+  const S = createThemedStyles(colors);
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -27,6 +31,8 @@ export const Layout = () => {
       <header style={S.header}>
         <div style={S.headerInner}>
           <div style={S.headerRow}>
+            <ThemeToggle variant="switch" />
+
             <div style={{ display:'flex', alignItems:'center', gap:12 }}>
               <div style={{ 
                 width:32, height:32, borderRadius:8, 
@@ -38,9 +44,6 @@ export const Layout = () => {
               </div>
               <div>
                 <h1 style={{ fontSize:20, fontWeight:700, margin:0 }}>Alert Stats</h1>
-                <div style={{ fontSize:12, color:'#6B7280' }}>
-                  Real-time NOC Dashboard
-                </div>
               </div>
             </div>
 

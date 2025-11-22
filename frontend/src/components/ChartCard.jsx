@@ -1,8 +1,12 @@
-import { S } from '../utils/styles';
 import { AlertTriangle } from '../icons';
 import { LoadingSkeleton } from './LoadingSkeleton';
+import { useTheme } from '../contexts/ThemeContext';
+import { createThemedStyles } from '../utils/themedStyles';
 
 export const ChartCard = ({ title, icon: Icon, loading, error, children, height = 300, legend }) => {
+    
+  const { colors } = useTheme();
+  const S = createThemedStyles(colors);
   if (error) {
     return (
       <div style={S.card({ border: '1px solid #FCA5A5' })}>

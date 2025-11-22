@@ -13,20 +13,20 @@ export const useClientConfig = () => {
   return context;
 };
 
-// Helper to get default date range (last 7 days)
-const getDefaultDateRange = () => {
-  const now = Date.now();
-  const end = new Date(now);
-  const start = new Date(now - 6 * 864e5); // 6 days ago
-  
+  // Helper to get default date range (last 7 days)
+  const getDefaultDateRange = () => {
+    const now = Date.now();
+    const end = new Date(now);
+    const start = new Date(now - 6 * 864e5); // 6 days ago
+    
 
-  return {
-    start_date: start.toISOString().split('T')[0],
-    end_date: end.toISOString().split('T')[0]
+    return {
+      start_date: start.toISOString().split('T')[0],
+      end_date: end.toISOString().split('T')[0]
+    };
   };
-};
 
-export const ClientConfigProvider = ({ children }) => {
+  export const ClientConfigProvider = ({ children }) => {
   // Load both config and date range from localStorage
   const [clientCfg, setClientCfg] = useState(() => {
     try {
