@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from 'react';
+import React, { Suspense, useMemo, useCallback } from 'react';
 import {
   BarChart,
   Bar,
@@ -31,9 +31,20 @@ import {
   Network,
   Filter,
   X,
+  HardDrive, // <-- NEW ICON
 } from '../icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
+
+// Extracted helper to prevent timezone shifts. 
+const formatForApi = (dateStr, isEnd = false) => {
+  if (!dateStr) return null;
+  // Ensure we are working with YYYY-MM-DD
+  const cleanDate = dateStr.split('T')[0];
+  const time = isEnd ? '23:59:59' : '00:00:00';
+  // Return ISO-like string expected by SQL DateTime2 without timezone offset issues
+  return `${cleanDate}T${time}`;
+};
 
 const NocDashboard = () => {
   const {
@@ -48,77 +59,57 @@ const NocDashboard = () => {
 
   const { Legend } = useDurationBands(config);
   const { colors } = useTheme();
-  const S = createThemedStyles(colors);
+  
+  // Memoize styles to prevent object recreation on render
+  const S = useMemo(() => createThemedStyles(colors), [colors]);
 
-  // ---- helpers ----
-
-  const formatDateIso = (dateStr) => {
-    if (!dateStr) return null;
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return null;
-    return date.toISOString();
-  };
-
-  const chartGridProps = {
-    stroke: colors.border.secondary,
-    strokeDasharray: '3 3',
-  };
-
-  const xAxisProps = {
-    tick: { fill: colors.text.secondary, fontSize: 12 },
-    axisLine: { stroke: colors.border.primary },
-    tickLine: { stroke: colors.border.primary },
-  };
-
-  const yAxisProps = {
-    tick: { fill: colors.text.secondary, fontSize: 12 },
-    axisLine: { stroke: colors.border.primary },
-    tickLine: { stroke: colors.border.primary },
-  };
-
-  const tooltipStyle = {
-    contentStyle: {
-      backgroundColor: colors.bg.secondary,
-      border: `1px solid ${colors.border.primary}`,
-      borderRadius: 6,
-      color: colors.text.primary,
-      fontSize: 12,
+  // ---- Memoized Chart Configurations (Performance Critical) ----
+  
+  const chartConfig = useMemo(() => ({
+    grid: {
+      stroke: colors.border.secondary,
+      strokeDasharray: '3 3',
     },
-    labelStyle: {
-      color: colors.text.secondary,
+    axis: {
+      tick: { fill: colors.text.secondary, fontSize: 12 },
+      axisLine: { stroke: colors.border.primary },
+      tickLine: { stroke: colors.border.primary },
     },
-    itemStyle: {
-      fontSize: 12,
-    },
-  };
+    tooltip: {
+      contentStyle: {
+        backgroundColor: colors.bg.secondary,
+        border: `1px solid ${colors.border.primary}`,
+        borderRadius: 6,
+        color: colors.text.primary,
+        fontSize: 12,
+      },
+      labelStyle: { color: colors.text.secondary },
+      itemStyle: { fontSize: 12 },
+      cursor: { fill: colors.bg.tertiary, opacity: 0.4 }
+    }
+  }), [colors]);
+
+  // ---- Logic ----
 
   const adjustedDateRange = useMemo(() => {
-    if (
-      dateRange.start_date &&
-      dateRange.end_date &&
-      dateRange.start_date === dateRange.end_date
-    ) {
-      const start = formatDateIso(dateRange.start_date);
-      const end = formatDateIso(`${dateRange.end_date}T23:59:59`);
-      return {
-        start_date: start,
-        end_date: end,
-      };
+    // If dates are valid strings
+    if (dateRange.start_date && dateRange.end_date) {
+        return {
+            start_date: formatForApi(dateRange.start_date),
+            end_date: formatForApi(dateRange.end_date, true)
+        };
     }
-
-    return {
-      start_date: formatDateIso(dateRange.start_date),
-      end_date: formatDateIso(dateRange.end_date),
-    };
+    return {};
   }, [dateRange]);
 
   // Build API params with optional panel filter
   const apiParams = useMemo(() => {
     const params = {
-      ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
-      ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date }),
+      ...adjustedDateRange,
       false_wakeup_threshold: config.falseWakeupThreshold || 120,
       ...getApiParams(),
+      // Add minimum percent filter for the new chart logic (optional)
+      // min_percent: 1, // Example: only show nodes that account for at least 1% of total alerts
     };
 
     if (selectedPanel) {
@@ -131,64 +122,61 @@ const NocDashboard = () => {
   // Fetch panel list for dropdown (without panel filter)
   const panelListParams = useMemo(
     () => ({
-      ...(adjustedDateRange.start_date && { start_date: adjustedDateRange.start_date }),
-      ...(adjustedDateRange.end_date && { end_date: adjustedDateRange.end_date }),
+      ...adjustedDateRange,
       ...getApiParams(),
+      // Optimization: Limit panel list fetching if list is huge, or add specific search endpoint
+      limit: 1000 
     }),
     [adjustedDateRange, getApiParams]
   );
 
-  // Fetch data
+  // ---- Data Fetching ----
+  // Using a small delay on loading states prevents flickering for fast cache hits
+  
   const exec = useApiData('/stats/executive-kpis', apiParams);
   const shifts = useApiData('/stats/shift-analysis', apiParams);
   const duration = useApiData('/stats/duration-histogram', apiParams);
   const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
+  const timeseries = useApiData('/stats/timeseries', apiParams);
+  
+  // NEW DATA FETCH
+  const topNodes = useApiData('/stats/top-nodes', apiParams);
+  
+  // Only fetch detailed panel stats if we are NOT filtered by a specific panel
   const panelStats = useApiData(
     '/stats/by-panel',
     selectedPanel ? null : { ...apiParams, limit: 20 }
   );
-  const timeseries = useApiData('/stats/timeseries', apiParams);
+  
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
 
-  const isLoading = exec.loading || shifts.loading || duration.loading || heatmap.loading;
+  // Aggregate loading state, but we won't block the UI with it
+  const isGlobalLoading = exec.loading || shifts.loading || duration.loading || topNodes.loading;
+
+  // Handlers
+  const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);
+  const handlePanelChange = useCallback((e) => setSelectedPanel(e.target.value || null), [setSelectedPanel]);
 
   return (
     <div>
       {/* Header Controls */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 20,
-          gap: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        {/* Date Range + Panel Filter */}
-        <div style={{ flex: '1 1 auto', minWidth: 300 }}>
+      <div style={styles.headerContainer}>
+        <div style={styles.controlsWrapper}>
           <DateRangePicker
             dateRange={dateRange}
             onChange={setDateRange}
             setPresetRange={setPresetRange}
             rightSlot={
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={styles.filterGroup}>
                 {/* Panel Filter Select */}
-                <div style={{ position: 'relative' }}>
+                <div style={styles.selectWrapper}>
                   <Filter
                     size={16}
-                    style={{
-                      position: 'absolute',
-                      left: 12,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      color: colors.text.secondary,
-                      pointerEvents: 'none',
-                    }}
+                    style={{ ...styles.filterIcon, color: colors.text.secondary }}
                   />
                   <select
                     value={selectedPanel || ''}
-                    onChange={(e) => setSelectedPanel(e.target.value || null)}
+                    onChange={handlePanelChange}
                     style={{
                       ...S.select,
                       paddingLeft: 36,
@@ -211,23 +199,13 @@ const NocDashboard = () => {
                   </select>
                 </div>
 
-                {/* Clear panel filter */}
+                {/* Clear panel filter button */}
                 {selectedPanel && (
                   <button
-                    onClick={() => setSelectedPanel(null)}
+                    onClick={handleClearPanel}
                     style={{
-                      padding: '8px 12px',
-                      borderRadius: 6,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-
+                      ...styles.clearButton,
                       background: colors.bg.secondary,
-                      borderWidth: 1,
-                      borderStyle: 'solid',
                       borderColor: colors.semantic.error,
                       color: colors.semantic.error,
                     }}
@@ -241,6 +219,14 @@ const NocDashboard = () => {
             }
           />
         </div>
+        
+        {/* Subtle Global Loading Indicator (Top Right) */}
+        {isGlobalLoading && (
+           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: colors.text.secondary }}>
+             <LoadingSpinner size={16} />
+             <span style={{ fontSize: 12 }}>Updating...</span>
+           </div>
+        )}
       </div>
 
       {/* Active Filter Indicator */}
@@ -250,9 +236,7 @@ const NocDashboard = () => {
             marginBottom: 20,
             padding: 12,
             background: colors.semantic.infoBg,
-            borderWidth: 2,
-            borderStyle: 'solid',
-            borderColor: colors.semantic.info,
+            border: `2px solid ${colors.semantic.info}`,
             borderRadius: 8,
           }}
         >
@@ -265,7 +249,7 @@ const NocDashboard = () => {
               נתונים לפי <strong>{selectedPanel}</strong>
             </span>
             <button
-              onClick={() => setSelectedPanel(null)}
+              onClick={handleClearPanel}
               style={{
                 marginInlineStart: 12,
                 padding: '4px 12px',
@@ -274,7 +258,6 @@ const NocDashboard = () => {
                 cursor: 'pointer',
                 fontSize: 12,
                 fontWeight: 600,
-
                 background: colors.semantic.info,
                 color: colors.text.inverse,
               }}
@@ -285,7 +268,9 @@ const NocDashboard = () => {
         </div>
       )}
 
-      <Suspense fallback={<LoadingSpinner />}>
+      {/* Main Dashboard Grid */}
+      <Suspense fallback={<div style={styles.suspenseFallback}><LoadingSpinner /></div>}>
+        
         {/* KPI Cards */}
         <div style={{ ...S.grid('repeat(auto-fit, minmax(200px, 1fr))'), direction: 'rtl' }}>
           <MetricCard
@@ -293,6 +278,7 @@ const NocDashboard = () => {
             value={exec.data?.total_alerts ?? '—'}
             icon={AlertTriangle}
             color="orange"
+            loading={exec.loading}
           />
           <MetricCard
             title="יחס התראות לפי זמנים"
@@ -300,6 +286,7 @@ const NocDashboard = () => {
             subtitle="יחס התראות ארוכות לקצרות"
             icon={TrendingUp}
             color="blue"
+            loading={exec.loading}
           />
           <MetricCard
             title="התראות אמיתיות"
@@ -307,6 +294,7 @@ const NocDashboard = () => {
             subtitle={`התראות שזמנן ≤ ${config.falseWakeupThreshold || 120} ש' בלילה`}
             icon={Moon}
             color="purple"
+            loading={exec.loading}
           />
           <MetricCard
             title="אחוז התראות שווא"
@@ -314,18 +302,19 @@ const NocDashboard = () => {
             subtitle={`התראות שזמנן ≤ ${config.falseWakeupThreshold || 120} ש' בלילה`}
             icon={Shield}
             color="red"
+            loading={exec.loading}
           />
           <MetricCard
             title="ממוצע זמן התראה"
             value={`${exec.data?.avg_duration ?? '—'} ש'`}
             icon={Clock}
             color="green"
+            loading={exec.loading}
           />
         </div>
 
         {/* Charts Row 1 */}
         <div style={S.grid('1fr 1fr 1fr')}>
-          {/* Shifts bar chart */}
           <ChartCard
             title="התראות בוקר לעומת לילה"
             icon={Sun}
@@ -334,16 +323,17 @@ const NocDashboard = () => {
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={shifts.data || []}>
-                <CartesianGrid {...chartGridProps} />
-                <XAxis dataKey="shift" {...xAxisProps} />
-                <YAxis {...yAxisProps} />
-                <Tooltip {...tooltipStyle} />
+                <CartesianGrid {...chartConfig.grid} />
+                <XAxis dataKey="shift" {...chartConfig.axis} />
+                <YAxis {...chartConfig.axis} />
+                <Tooltip {...chartConfig.tooltip} />
                 <Bar
                   dataKey="alert_count"
                   fill={colors.chart.primary}
                   radius={[4, 4, 0, 0]}
                   name="Alert Count"
                 />
+
                 <Bar
                   dataKey="false_wakeups"
                   fill={colors.chart.quinary}
@@ -354,7 +344,6 @@ const NocDashboard = () => {
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* Duration histogram */}
           <ChartCard
             title="התפלגות משכי התראות"
             icon={Clock}
@@ -364,10 +353,10 @@ const NocDashboard = () => {
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={duration.data || []}>
-                <CartesianGrid {...chartGridProps} />
-                <XAxis dataKey="range" {...xAxisProps} />
-                <YAxis {...yAxisProps} />
-                <Tooltip {...tooltipStyle} />
+                <CartesianGrid {...chartConfig.grid} />
+                <XAxis dataKey="range" {...chartConfig.axis} />
+                <YAxis {...chartConfig.axis} />
+                <Tooltip {...chartConfig.tooltip} />
                 <Bar
                   dataKey="count"
                   fill={colors.chart.tertiary}
@@ -378,7 +367,6 @@ const NocDashboard = () => {
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* Wakeup gauge */}
           <WakeupGauge
             shiftData={shifts.data}
             loading={shifts.loading}
@@ -389,7 +377,6 @@ const NocDashboard = () => {
 
         {/* Charts Row 2 */}
         <div style={S.grid('2fr 1fr')}>
-          {/* Hourly heatmap / composed */}
           <ChartCard
             title="פילוח התראות לפי שעות"
             icon={Clock}
@@ -398,20 +385,16 @@ const NocDashboard = () => {
           >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={heatmap.data || []}>
-                <CartesianGrid {...chartGridProps} />
-                <XAxis dataKey="hour_display" {...xAxisProps} />
-                <YAxis yAxisId="left" {...yAxisProps} />
-                <YAxis yAxisId="right" orientation="right" {...yAxisProps} />
-                <Tooltip {...tooltipStyle} />
+                <CartesianGrid {...chartConfig.grid} />
+                <XAxis dataKey="hour_display" {...chartConfig.axis} />
+                <YAxis yAxisId="left" {...chartConfig.axis} />
+                <YAxis yAxisId="right" orientation="right" {...chartConfig.axis} />
+                <Tooltip {...chartConfig.tooltip} />
                 <Bar yAxisId="left" dataKey="count" name="Count">
                   {(heatmap.data || []).map((entry, idx) => (
                     <Cell
                       key={idx}
-                      fill={
-                        entry?.is_night
-                          ? colors.brand.secondary
-                          : colors.chart.primary
-                      }
+                      fill={entry?.is_night ? colors.brand.secondary : colors.chart.primary}
                     />
                   ))}
                 </Bar>
@@ -428,7 +411,7 @@ const NocDashboard = () => {
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* Top Alert Sources – hidden when filtered */}
+          {/* Top Alert Sources List */}
           {!selectedPanel && (
             <ChartCard
               title="Top Alert Sources"
@@ -436,78 +419,33 @@ const NocDashboard = () => {
               loading={panelStats.loading}
               error={panelStats.error}
             >
-              <div
-                style={{
-                  maxHeight: 300,
-                  overflowY: 'auto',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 8,
-                }}
-              >
+              <div style={styles.listContainer}>
                 {(panelStats.data || []).slice(0, 12).map((p, idx) => {
                   const isTop = idx < 3;
                   return (
                     <div
                       key={`${p.panel_title}-${idx}`}
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: 10,
-                        borderRadius: 6,
-                        cursor: 'pointer',
-
-                        background: isTop
-                          ? colors.semantic.errorBg
-                          : colors.bg.tertiary,
-                        borderWidth: 1,
-                        borderStyle: 'solid',
-                        borderColor: isTop
-                          ? colors.semantic.error
-                          : colors.border.primary,
+                        ...styles.listItem,
+                        background: isTop ? colors.semantic.errorBg : colors.bg.tertiary,
+                        borderColor: isTop ? colors.semantic.error : colors.border.primary,
                       }}
                       onClick={() => setSelectedPanel(p.panel_title)}
                       title="Click to filter dashboard by this panel"
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            fontSize: 13,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            color: colors.text.primary,
-                          }}
-                        >
+                        <div style={{ ...styles.listItemTitle, color: colors.text.primary }}>
                           {p.panel_title}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: colors.text.secondary,
-                          }}
-                        >
+                        <div style={{ fontSize: 11, color: colors.text.secondary }}>
                           {p.application}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', marginLeft: 8 }}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            fontSize: 13,
-                            color: colors.text.primary,
-                          }}
-                        >
+                        <div style={{ fontWeight: 600, fontSize: 13, color: colors.text.primary }}>
                           {p.alert_count}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: colors.text.secondary,
-                          }}
-                        >
+                        <div style={{ fontSize: 10, color: colors.text.secondary }}>
                           {p.avg_duration}s avg
                         </div>
                       </div>
@@ -518,8 +456,8 @@ const NocDashboard = () => {
             </ChartCard>
           )}
         </div>
-
-        {/* Charts Row 3 */}
+        
+        {/* Charts Row 3 - Timeseries + NEW TOP NODES CHART */}
         <div style={S.grid('2fr 1fr')}>
           <ChartCard
             title="כמות התראות לאורך זמן + ממוצע זמן התראה"
@@ -529,27 +467,26 @@ const NocDashboard = () => {
           >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={timeseries.data || []}>
-                <CartesianGrid {...chartGridProps} />
+                <CartesianGrid {...chartConfig.grid} />
                 <XAxis
                   dataKey="date_il"
-                  {...xAxisProps}
-                  tickFormatter={(d) =>
-                    new Date(d).toLocaleDateString('en-IL', {
-                      timeZone: 'Asia/Jerusalem',
-                      month: 'short',
-                      day: 'numeric',
-                    })
-                  }
+                  {...chartConfig.axis}
+                  tickFormatter={(d) => {
+                    // Safe formatting for display only
+                    try {
+                        return new Date(d).toLocaleDateString('en-IL', { month: 'short', day: 'numeric' });
+                    } catch (e) { return d; }
+                  }}
                 />
-                <YAxis yAxisId="left" {...yAxisProps} />
-                <YAxis yAxisId="right" orientation="right" {...yAxisProps} />
+                <YAxis yAxisId="left" {...chartConfig.axis} />
+                <YAxis yAxisId="right" orientation="right" {...chartConfig.axis} />
                 <Tooltip
-                  {...tooltipStyle}
-                  labelFormatter={(d) =>
-                    new Date(d).toLocaleDateString('en-IL', {
-                      timeZone: 'Asia/Jerusalem',
-                    })
-                  }
+                  {...chartConfig.tooltip}
+                  labelFormatter={(d) => {
+                      try {
+                        return new Date(d).toLocaleDateString('en-IL', { weekday: 'short', month: 'short', day: 'numeric' });
+                      } catch(e) { return d; }
+                  }}
                 />
                 <Area
                   yAxisId="left"
@@ -573,51 +510,140 @@ const NocDashboard = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
+
+          {/* NEW CHART: Top Noisy Nodes */}
+          <ChartCard
+            title="Top Noisy Nodes/Objects"
+            icon={HardDrive}
+            loading={topNodes.loading}
+            error={topNodes.error}
+            legend={
+              <div style={{ fontSize: 11, color: colors.text.secondary }}>
+                Alert Count and % of Total, grouped by Node/Object.
+              </div>
+            }
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={topNodes.data || []}
+                layout="vertical"
+                margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid {...chartConfig.grid} horizontal={false} />
+                <XAxis type="number" {...chartConfig.axis} />
+                <YAxis
+                  type="category"
+                  dataKey={(data) => `${data.node_name}/${data.object}`}
+                  {...chartConfig.axis}
+                  width={120} // Space for long labels
+                  tickFormatter={(val) => {
+                    return val.length > 30 ? val.substring(0, 27) + '...' : val;
+                  }}
+                />
+                <Tooltip
+                  {...chartConfig.tooltip}
+                  formatter={(value, name, props) => {
+                    if (name === 'Count') return [`${value} alerts`, 'Count'];
+                    if (name === 'Percent') return [`${value}% of total`, '% of Total'];
+                    return value;
+                  }}
+                />
+                <Bar
+                  dataKey="alert_count"
+                  fill={colors.chart.primary}
+                  name="Count"
+                  unit=" alerts"
+                />
+               <Line
+                  type="monotone"
+                  dataKey="alert_percent"
+                  stroke={colors.chart.quaternary}
+                  strokeWidth={2}
+                  name="Percent"
+                  unit="%"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
         </div>
       </Suspense>
-
-      {/* Global Loading Overlay */}
-      {isLoading && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: colors.bg.overlay,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              ...S.card(),
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-              maxWidth: 320,
-            }}
-          >
-            <div
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                borderWidth: 2,
-                borderStyle: 'solid',
-                borderColor: colors.border.secondary,
-                borderTopColor: colors.brand.primary,
-                animation: 'spin 1s linear infinite',
-              }}
-            />
-            <span style={{ color: colors.text.primary, fontSize: 14 }}>
-              Loading dashboard data…
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
+};
+
+// Static styles to reduce clutter and object recreation
+const styles = {
+  headerContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    gap: 16,
+    flexWrap: 'wrap',
+  },
+  controlsWrapper: {
+    flex: '1 1 auto',
+    minWidth: 300
+  },
+  filterGroup: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center'
+  },
+  selectWrapper: {
+    position: 'relative'
+  },
+  filterIcon: {
+    position: 'absolute',
+    left: 12,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    pointerEvents: 'none',
+  },
+  clearButton: {
+    padding: '8px 12px',
+    borderRadius: 6,
+    fontSize: 14,
+    fontWeight: 600,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    cursor: 'pointer',
+    borderWidth: 1,
+    borderStyle: 'solid',
+  },
+  suspenseFallback: {
+    width: '100%',
+    height: 400,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  listContainer: {
+    maxHeight: 300,
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  listItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 6,
+    cursor: 'pointer',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    transition: 'background-color 0.2s'
+  },
+  listItemTitle: {
+    fontWeight: 600,
+    fontSize: 13,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  }
 };
 
 export default NocDashboard;
