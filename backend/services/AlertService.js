@@ -119,61 +119,68 @@ class AlertService {
 
   // ================== Public API ==================
 
-  /**
-   * Paginated, filterable alerts list (table view)
-   */
   async getAlerts(params) {
     const pool = this.getPool();
     const request = pool.request();
 
-    const qb = new QueryBuilder()
-      .select(`incident_id, panel_title, application, node_name, network, object,
-               operator, time_fired, time_resolved, duration_sec, message, key_field, history_id`)
-      .orderBy(params.sort_by || 'time_fired', params.sort_order || 'DESC');
+    // Build unified WHERE clause + limit cap using the shared helper
+    const { whereClause, cap } = this._buildQueryContext(request, params);
 
-    // Use specific logic for getAlerts as it uses QueryBuilder extensively
-    const range = TimeUtils.validateDateRange(params.start_date, params.end_date);
-    
-    if (range?.start) qb.addWhere('time_fired >= @startDate', { name: 'startDate', type: 'DateTime2', value: range.start });
-    if (range?.end) qb.addWhere('time_fired <= @endDate', { name: 'endDate', type: 'DateTime2', value: range.end });
+    // Sorting
+    const sortBy = params.sort_by || 'time_fired';
+    const sortOrder = params.sort_order === 'ASC' ? 'ASC' : 'DESC';
 
-    // Handle standard filters manually to feed QueryBuilder
-    ['panel_title', 'application', 'node_name', 'network', 'object', 'operator'].forEach(field => {
-        if (params[field]) {
-          qb.addWhere(`${field} LIKE @${field}`, { name: field, type: 'NVarChar', value: `${params[field]}%` });
-        }
-    });
+    // Pagination (supports page+limit or just limit)
+    let offsetSql = '';
+    let limitSql  = '';
 
-    let pagination = null;
     if (params.page && params.limit) {
       const offset = (params.page - 1) * params.limit;
-      qb.offset(offset, params.limit + 1); // +1 to check for next page
-    } else if (params.limit) {
-      qb.top(params.limit);
+
+      request.input('offset_param', sql.Int, offset);
+      request.input('limit_param', sql.Int, params.limit + 1); // +1 for next-page detection
+
+      offsetSql = 'OFFSET @offset_param ROWS';
+      limitSql  = 'FETCH NEXT @limit_param ROWS ONLY';
+
     } else {
-        qb.top(this.CONSTANTS.DEFAULT_CAP);
+      request.input('limit_param', sql.Int, params.limit || cap);
+      limitSql = 'TOP (@limit_param)';
     }
 
-    const [sqlText, sqlParams] = qb.build();
+    // Build final SQL
+    const sqlText = `
+      SELECT ${!offsetSql ? 'TOP (@limit_param)' : ''} 
+        incident_id, panel_title, application, node_name, network, object,
+        operator, time_fired, time_resolved, duration_sec, message, key_field, history_id
+      FROM dbo.historicalAlerts
+      ${whereClause}
+      ORDER BY ${sortBy} ${sortOrder}
+      ${offsetSql}
+      ${offsetSql ? limitSql : ''}
+    `;
 
-    sqlParams.forEach(p => request.input(p.name, this._getSqlType(p.type), p.value));
-
+    // Run the query
     const result = await request.query(sqlText);
     let records = result.recordset;
+    let pagination = null;
 
+    // Pagination logic (server-side)
     if (params.page && params.limit) {
       const hasNext = records.length > params.limit;
       if (hasNext) records = records.slice(0, -1);
+
       pagination = {
         page: params.page,
         limit: params.limit,
         hasNext,
-        hasPrev: params.page > 1,
+        hasPrev: params.page > 1
       };
     }
 
-    const transformedData = records.map(r => this._transformAlertRecord(r, params));
-    return ResponseFormatter.success(transformedData, pagination);
+    // Transform data
+    const transformed = records.map(r => this._transformAlertRecord(r, params));
+    return ResponseFormatter.success(transformed, pagination);
   }
 
   /**
