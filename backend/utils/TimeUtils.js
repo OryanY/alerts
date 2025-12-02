@@ -1,31 +1,86 @@
-// utils/TimeUtils.js - Centralized timezone and date handling (FIXED)
+// utils/TimeUtils.js - Optimized timezone handling with batching and caching
 const { DateTime } = require('luxon');
 
 const IL_ZONE = 'Asia/Jerusalem';
 
 class TimeUtils {
+  // LRU cache for conversions (prevents repeated expensive operations)
+  static _cache = new Map();
+  static _maxCacheSize = 2000;
+
   /**
-   * Convert DB UTC Date → IL ISO string
+   * Clear cache (for testing or memory management)
+   */
+  static clearCache() {
+    this._cache.clear();
+  }
+
+  /**
+   * Get from cache or compute and cache
+   */
+  static _getOrCache(key, computeFn) {
+    if (this._cache.has(key)) {
+      return this._cache.get(key);
+    }
+
+    const result = computeFn();
+
+    // LRU eviction
+    if (this._cache.size >= this._maxCacheSize) {
+      const firstKey = this._cache.keys().next().value;
+      this._cache.delete(firstKey);
+    }
+
+    this._cache.set(key, result);
+    return result;
+  }
+
+  /**
+   * Convert DB UTC Date → IL ISO string (with caching)
    */
   static utcToIL(utcDate) {
     if (!utcDate) return null;
-    return DateTime.fromJSDate(utcDate, { zone: 'utc' }).setZone(IL_ZONE).toISO();
+
+    const timestamp = utcDate.getTime();
+    const cacheKey = `il_iso_${timestamp}`;
+
+    return this._getOrCache(cacheKey, () => 
+      DateTime.fromJSDate(utcDate, { zone: 'utc' })
+        .setZone(IL_ZONE)
+        .toISO()
+    );
   }
 
   /**
-   * Get IL hour (0..23) from DB UTC Date (DST-safe)
+   * Get IL hour (0..23) from DB UTC Date (with caching)
    */
   static getILHour(utcDate) {
     if (!utcDate) return null;
-    return DateTime.fromJSDate(utcDate, { zone: 'utc' }).setZone(IL_ZONE).hour;
+
+    const timestamp = utcDate.getTime();
+    const cacheKey = `il_hour_${timestamp}`;
+
+    return this._getOrCache(cacheKey, () =>
+      DateTime.fromJSDate(utcDate, { zone: 'utc' })
+        .setZone(IL_ZONE)
+        .hour
+    );
   }
 
   /**
-   * Get IL date string (YYYY-MM-DD) from DB UTC Date (DST-safe)
+   * Get IL date string (YYYY-MM-DD) from DB UTC Date (with caching)
    */
   static getILDate(utcDate) {
     if (!utcDate) return null;
-    return DateTime.fromJSDate(utcDate, { zone: 'utc' }).setZone(IL_ZONE).toISODate();
+
+    const timestamp = utcDate.getTime();
+    const cacheKey = `il_date_${timestamp}`;
+
+    return this._getOrCache(cacheKey, () =>
+      DateTime.fromJSDate(utcDate, { zone: 'utc' })
+        .setZone(IL_ZONE)
+        .toISODate()
+    );
   }
 
   /**
@@ -33,33 +88,74 @@ class TimeUtils {
    */
   static getILWeekday(utcDate) {
     if (!utcDate) return null;
-    return DateTime.fromJSDate(utcDate, { zone: 'utc' }).setZone(IL_ZONE).weekday;
+
+    const timestamp = utcDate.getTime();
+    const cacheKey = `il_weekday_${timestamp}`;
+
+    return this._getOrCache(cacheKey, () =>
+      DateTime.fromJSDate(utcDate, { zone: 'utc' })
+        .setZone(IL_ZONE)
+        .weekday
+    );
+  }
+
+  /**
+   * BATCH OPERATIONS - Process multiple dates efficiently
+   */
+  static batchGetILHours(utcDates) {
+    const results = new Map();
+    
+    for (const date of utcDates) {
+      if (!date) continue;
+      const timestamp = date.getTime();
+      
+      if (!results.has(timestamp)) {
+        results.set(timestamp, this.getILHour(date));
+      }
+    }
+    
+    return results;
+  }
+
+  static batchGetILDates(utcDates) {
+    const results = new Map();
+    
+    for (const date of utcDates) {
+      if (!date) continue;
+      const timestamp = date.getTime();
+      
+      if (!results.has(timestamp)) {
+        results.set(timestamp, this.getILDate(date));
+      }
+    }
+    
+    return results;
   }
 
   /**
    * Parse IL input string → UTC Date
-   * Accepts: YYYY-MM-DD, YYYY-MM-DDTHH:mm:ss, or full ISO
-   * For date-only strings: sets to start of day in IL time, then converts to UTC
-   * 
-   * FIXED: Now correctly interprets date strings as Israeli time zone
+   * Handles: YYYY-MM-DD, YYYY-MM-DDTHH:mm:ss, or full ISO
+   * Date-only strings are interpreted as IL timezone start/end of day
    */
   static parseILToUTC(ilDateString, endOfDay = false) {
-    if (!ilDateString) throw new Error('Date is required');
+    if (!ilDateString) {
+      throw new Error('Date is required');
+    }
 
-    let dt;
-    
-    // HANDLE FRONTEND SENDING FULL ISO STRINGS - Strip to date-only first
     let dateStr = ilDateString;
+    
+    // Strip timezone info if frontend sent full ISO
     if (typeof dateStr === 'string' && dateStr.includes('T')) {
-      // If frontend sent "2025-11-08T00:00:00.000Z", extract just "2025-11-08"
       dateStr = dateStr.split('T')[0];
     }
     
-    // Check if it's a date-only string (YYYY-MM-DD)
+    // Check if date-only format
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
     
+    let dt;
+    
     if (isDateOnly) {
-      // FIXED: Parse as IL date explicitly in IL timezone
+      // Parse as IL date explicitly in IL timezone
       dt = DateTime.fromISO(dateStr, { zone: IL_ZONE });
       
       if (!dt.isValid) {
@@ -69,12 +165,10 @@ class TimeUtils {
       // Set to start or end of day IN ISRAELI TIME
       dt = endOfDay ? dt.endOf('day') : dt.startOf('day');
     } else {
-      // For datetime strings, check if they already have timezone info
+      // For datetime strings, check if they have timezone info
       if (dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr)) {
-        // Already has timezone, parse as-is
         dt = DateTime.fromISO(dateStr);
       } else {
-        // No timezone specified, treat as IL time
         dt = DateTime.fromISO(dateStr, { zone: IL_ZONE });
       }
       
@@ -88,10 +182,10 @@ class TimeUtils {
   }
 
   /**
-   * Validate start/end IL-input → { start: UTC Date|null, end: UTC Date|null }
-   * Always sets start to beginning of day and end to end of day in IL time
+   * Validate and parse date range
+   * Returns { start: UTC Date | null, end: UTC Date | null }
    */
-  static validateDateRange(startDate, endDate) {
+  static validateDateRange(startDate, endDate, maxDays = 730) {
     if (!startDate && !endDate) return null;
     
     const start = startDate ? this.parseILToUTC(startDate, false) : null;
@@ -99,6 +193,14 @@ class TimeUtils {
     
     if (start && end && start >= end) {
       throw new Error('DATE_RANGE_INVALID: Start date must be before end date');
+    }
+
+    // Validate max range
+    if (start && end && maxDays) {
+      const daysDiff = (end - start) / (1000 * 60 * 60 * 24);
+      if (daysDiff > maxDays) {
+        throw new Error(`DATE_RANGE_INVALID: Date range cannot exceed ${maxDays} days`);
+      }
     }
     
     return { start, end };
@@ -108,7 +210,8 @@ class TimeUtils {
    * Check if hour is during night shift (handles midnight wraparound)
    */
   static isNightHour(hour, nightStart, nightEnd) {
-    if (hour === null) return false;
+    if (hour === null || hour === undefined) return false;
+    
     return nightStart <= nightEnd
       ? (hour >= nightStart && hour < nightEnd)
       : (hour >= nightStart || hour < nightEnd);
@@ -118,7 +221,7 @@ class TimeUtils {
    * Check if hour is during day shift
    */
   static isDayHour(hour, dayStart, dayEnd) {
-    if (hour === null) return false;
+    if (hour === null || hour === undefined) return false;
     return hour >= dayStart && hour < dayEnd;
   }
 
@@ -143,26 +246,36 @@ class TimeUtils {
     const now = DateTime.now().setZone(IL_ZONE);
     return {
       zone: IL_ZONE,
-      offset: now.offsetNameShort, // e.g., "GMT+2" or "GMT+3"
+      offset: now.offsetNameShort,
       isDST: now.isInDST,
-      displayName: 'Israel Time'
+      displayName: 'Israel Time',
+      currentTime: now.toISO()
     };
   }
 
   /**
-   * Debug helper: Show conversion results
+   * Format duration in seconds to human-readable string
    */
-  static debugDateConversion(ilDateString, endOfDay = false) {
-    const utcDate = this.parseILToUTC(ilDateString, endOfDay);
-    const ilDt = DateTime.fromJSDate(utcDate, { zone: 'utc' }).setZone(IL_ZONE);
+  static formatDuration(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
     
-    console.log('Date Conversion Debug:');
-    console.log('  Input (IL):', ilDateString);
-    console.log('  Output (UTC JS Date):', utcDate.toISOString());
-    console.log('  Verify (back to IL):', ilDt.toISO());
-    console.log('  Offset:', ilDt.offsetNameShort);
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
     
-    return utcDate;
+    return `${hours}h ${mins}m ${secs}s`;
+  }
+
+  /**
+   * Get cache statistics (for monitoring)
+   */
+  static getCacheStats() {
+    return {
+      size: this._cache.size,
+      maxSize: this._maxCacheSize,
+      utilization: ((this._cache.size / this._maxCacheSize) * 100).toFixed(1) + '%'
+    };
   }
 }
 

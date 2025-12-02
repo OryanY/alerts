@@ -45,76 +45,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ================== API ROUTES ==================
 
-// Health check endpoint (before other routes for quick response)
-app.get('/api/health', async (req, res) => {
-  try {
-    // Test both SQL and MongoDB connections
-    const { getSqlPool, getMongoDb } = require('./database/connection');
-    
-    // Quick connection tests
-    const sqlPromise = getSqlPool().request().query('SELECT 1 as test');
-    const mongoPromise = getMongoDb().admin().ping();
-    
-    // Set timeout for health checks
-    const timeout = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Health check timeout')), 5000)
-    );
-    
-    await Promise.race([
-      Promise.all([sqlPromise, mongoPromise]),
-      timeout
-    ]);
-    
-    res.json({
-      success: true,
-      data: {
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: Math.floor(process.uptime()),
-        timezone: CONFIG?.tz?.IANA || 'Asia/Jerusalem',
-        version: '4.0.0-modular-with-incidents',
-        databases: {
-          sql: 'connected',
-          mongodb: 'connected'
-        },
-        memory: {
-          used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
-          total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB'
-        }
-      },
-      meta: { 
-        timezone: CONFIG?.tz?.IANA || 'Asia/Jerusalem',
-        cached: false,
-        timestamp: new Date().toISOString()
-      }
-    });
-  } catch (error) {
-    console.error('Health check failed:', error.message);
-    res.status(503).json({ 
-      success: false,
-      error: {
-        code: 'HEALTH_CHECK_FAILED',
-        message: 'Service unhealthy',
-        status: 503,
-        timestamp: new Date().toISOString(),
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      },
-      data: { 
-        status: 'unhealthy',
-        databases: {
-          sql: 'error',
-          mongodb: 'error'
-        }
-      }, 
-      meta: { 
-        timezone: CONFIG?.tz?.IANA || 'Asia/Jerusalem',
-        cached: false,
-        timestamp: new Date().toISOString()
-      }
-    });
-  }
-});
-
 // Configuration endpoint
 app.get('/api/config', (req, res) => {
   try {
@@ -169,7 +99,6 @@ app.get('/', (req, res) => {
       message: 'Alert Management API',
       version: '4.0.0-modular-with-incidents',
       endpoints: {
-        health: '/api/health',
         config: '/api/config',
         alerts: '/api/alerts',
         statistics: '/api/stats/*',
@@ -206,7 +135,6 @@ app.use((req, res) => {
         path: req.path,
         method: req.method,
         available_endpoints: [
-          '/api/health',
           '/api/config',
           '/api/alerts',
           '/api/stats/*',
@@ -274,7 +202,6 @@ async function startServer() {
       console.log(`Timezone: ${CONFIG?.tz?.IANA || 'Asia/Jerusalem'} (DB stored in UTC)`);
       console.log('');
       console.log('Available Endpoints:');
-      console.log(`├── Health: http://localhost:${PORT}/api/health`);
       console.log(`├── Config: http://localhost:${PORT}/api/config`);
       console.log(`├── Alerts: http://localhost:${PORT}/api/alerts`);
       console.log(`├── Stats: http://localhost:${PORT}/api/stats/*`);
