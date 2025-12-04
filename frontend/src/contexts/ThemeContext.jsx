@@ -1,20 +1,24 @@
 // frontend/src/contexts/ThemeContext.jsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 
 const ThemeContext = createContext();
 
 export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within ThemeProvider');
-  }
-  return context;
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
+  return ctx;
 };
 
-// Define your theme tokens
-export const themes = {
+//-----------------------------------------------
+// Helper: Add alpha to hex
+//-----------------------------------------------
+const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
+
+//-----------------------------------------------
+// Base Themes (raw, without computed values)
+//-----------------------------------------------
+const baseThemes = {
   light: {
-    // Background colors
     bg: {
       primary: '#F9FAFB',
       secondary: '#FFFFFF',
@@ -22,7 +26,6 @@ export const themes = {
       elevated: '#FFFFFF',
       overlay: 'rgba(0, 0, 0, 0.5)',
     },
-    // Text colors
     text: {
       primary: '#111827',
       secondary: '#6B7280',
@@ -30,21 +33,21 @@ export const themes = {
       inverse: '#FFFFFF',
       link: '#3B82F6',
     },
-    // Border colors
     border: {
       primary: '#E5E7EB',
       secondary: '#D1D5DB',
       focus: '#3B82F6',
     },
-    // Brand colors
     brand: {
       primary: '#3B82F6',
       primaryHover: '#2563EB',
       primaryActive: '#1D4ED8',
-      secondary: '#8B5CF6',
-      secondaryHover: '#7C3AED',
+      purple: '#8B5CF6',
+      purpleDark: '#6D28D9',
+      purpleLight: '#EDE9FE',
+      yellow: '#FACC15',
+      yellowBorder: '#EAB308',
     },
-    // Semantic colors
     semantic: {
       success: '#10B981',
       successBg: '#D1FAE5',
@@ -69,14 +72,14 @@ export const themes = {
     },
     // Shadow
     shadow: {
-      sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-      md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-      lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-      xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+      sm: '0 1px 2px rgba(0,0,0,0.05)',
+      md: '0 4px 6px rgba(0,0,0,0.1)',
+      lg: '0 10px 15px rgba(0,0,0,0.1)',
+      xl: '0 20px 25px rgba(0,0,0,0.1)',
     },
   },
+
   dark: {
-    // Background colors
     bg: {
       primary: '#111827',
       secondary: '#1F2937',
@@ -84,7 +87,6 @@ export const themes = {
       elevated: '#1F2937',
       overlay: 'rgba(0, 0, 0, 0.8)',
     },
-    // Text colors
     text: {
       primary: '#F9FAFB',
       secondary: '#D1D5DB',
@@ -92,21 +94,29 @@ export const themes = {
       inverse: '#111827',
       link: '#60A5FA',
     },
-    // Border colors
     border: {
       primary: '#374151',
       secondary: '#4B5563',
       focus: '#60A5FA',
     },
-    // Brand colors
     brand: {
       primary: '#3B82F6',
       primaryHover: '#60A5FA',
       primaryActive: '#93C5FD',
-      secondary: '#A78BFA',
-      secondaryHover: '#C4B5FD',
+      purple: '#A78BFA',
+      purpleDark: '#7C3AED',
+      purpleLight: '#4C1D95',
+      yellow: '#FBBF24',
+      yellowBorder: '#F59E0B',
     },
-    // Semantic colors
+    chart: {
+      primary: '#1c5aa6ff',
+      secondary: '#A78BFA',
+      tertiary: '#139346ff',
+      quaternary: '#FBBF24',
+      quinary: '#962121ff',
+    },
+
     semantic: {
       success: '#34D399',
       successBg: '#064E3B',
@@ -121,29 +131,22 @@ export const themes = {
       infoBg: '#1E3A8A',
       infoText: '#BFDBFE',
     },
-    // Chart colors (brighter for dark mode)
-    chart: {
-      primary: '#1c5aa6ff',
-      secondary: '#A78BFA',
-      tertiary: '#139346ff',
-      quaternary: '#FBBF24',
-      quinary: '#962121ff',
-    },
-    // Shadow
     shadow: {
-      sm: '0 1px 2px 0 rgba(0, 0, 0, 0.3)',
-      md: '0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3)',
-      lg: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4)',
-      xl: '0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 10px 10px -5px rgba(0, 0, 0, 0.5)',
+      sm: '0 1px 2px rgba(0,0,0,0.3)',
+      md: '0 4px 6px rgba(0,0,0,0.4)',
+      lg: '0 10px 15px rgba(0,0,0,0.5)',
+      xl: '0 20px 25px rgba(0,0,0,0.6)',
     },
   },
 };
 
+//-----------------------------------------------
+// ThemeProvider
+//-----------------------------------------------
 export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => {
     try {
-      const saved = localStorage.getItem('theme');
-      return saved || 'light';
+      return localStorage.getItem('theme') || 'light';
     } catch {
       return 'light';
     }
@@ -153,26 +156,77 @@ export const ThemeProvider = ({ children }) => {
     try {
       localStorage.setItem('theme', theme);
       document.documentElement.setAttribute('data-theme', theme);
-    } catch (e) {
-      console.warn('Failed to save theme:', e);
-    }
+    } catch {}
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
+  const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+
+
+  const computed = useMemo(() => {
+    const base = baseThemes[theme];
+
+    // Gradients
+    const gradients = {
+      infoGradient: `linear-gradient(135deg, ${base.semantic.infoBg} 0%, ${withAlpha(
+        base.semantic.info,
+        '10'
+      )} 100%)`,
+      warningGradient: `linear-gradient(135deg, ${base.semantic.warningBg} 0%, ${withAlpha(
+        base.semantic.warning,
+        '10'
+      )} 100%)`,
+      successGradient: `linear-gradient(135deg, ${base.semantic.successBg} 0%, ${withAlpha(
+        base.semantic.success,
+        '10'
+      )} 100%)`,
+      errorGradient: `linear-gradient(135deg, ${base.semantic.errorBg} 0%, ${withAlpha(
+        base.semantic.error,
+        '10'
+      )} 100%)`,
+      neutralSoftGradient: `linear-gradient(135deg, ${base.bg.secondary} 0%, ${base.bg.tertiary} 100%)`,
+      headerBarGradient: `linear-gradient(90deg, ${base.brand.primary}, ${base.brand.purple}, ${base.semantic.info})`,
+    };
+
+    // Pattern colors
+    const PATTERN_COLORS = {
+      exact: {
+        main: base.brand.primary,
+        softBg: withAlpha(base.brand.primary, '15'),
+        strongBg: withAlpha(base.brand.primary, '25'),
+        border: base.brand.primary,
+      },
+      contains: {
+        main: base.brand.purple,
+        softBg: withAlpha(base.brand.purple, '15'),
+        strongBg: withAlpha(base.brand.purple, '25'),
+        border: base.brand.purple,
+      },
+      regex: {
+        main: base.brand.yellow,
+        softBg: withAlpha(base.brand.yellow, '15'),
+        strongBg: withAlpha(base.brand.yellow, '25'),
+        border: base.brand.yellowBorder || base.brand.yellow,
+      },
+    };
+
+    return {
+      colors: base,
+      gradients,
+      PATTERN_COLORS,
+    };
+  }, [theme]);
 
   const value = {
     theme,
     setTheme,
     toggleTheme,
-    colors: themes[theme],
+
+    colors: computed.colors,
+    gradients: computed.gradients,
+    PATTERN_COLORS: computed.PATTERN_COLORS,
+
     isDark: theme === 'dark',
   };
 
-  return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };

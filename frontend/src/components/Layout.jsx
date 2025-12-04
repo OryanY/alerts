@@ -1,4 +1,3 @@
-// components/Layout.jsx — Main layout with navigation
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AlertTriangle, BarChart3, Eye, Settings,FileText } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';

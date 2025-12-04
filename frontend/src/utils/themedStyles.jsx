@@ -1,4 +1,5 @@
-// SAFE THEME MERGER -----------------------------------------
+export const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
+
 const normalizeTheme = (c = {}) => ({
 
   bg: {
@@ -9,16 +10,16 @@ const normalizeTheme = (c = {}) => ({
   },
 
   text: {
-    primary: c?.text?.primary || '#111827',      // dark gray
-    secondary: c?.text?.secondary || '#475569',  // slate-600
-    tertiary: c?.text?.tertiary || '#64748b',    // slate-500
+    primary: c?.text?.primary || '#111827',     
+    secondary: c?.text?.secondary || '#475569',  
+    tertiary: c?.text?.tertiary || '#64748b', 
     inverse: c?.text?.inverse || '#FFFFFF',
     link: c?.text?.link || '#2563EB',
   },
 
   border: {
-    primary: c?.border?.primary || '#E2E8F0',   // slate-200
-    secondary: c?.border?.secondary || '#CBD5E1', // slate-300
+    primary: c?.border?.primary || '#E2E8F0',  
+    secondary: c?.border?.secondary || '#CBD5E1',
     focus: c?.border?.focus || '#3B82F6',
   },
 
@@ -26,12 +27,10 @@ const normalizeTheme = (c = {}) => ({
     primary: c?.brand?.primary || '#3B82F6',
     primaryHover: c?.brand?.primaryHover || '#2563EB',
 
-    // NEW PURPLE FAMILY
     purple: c?.brand?.purple || '#9333ea',
     purpleLight: c?.brand?.purpleLight || '#e9d5ff',
     purpleDark: c?.brand?.purpleDark || '#6b21a8',
 
-    // NEW YELLOW FAMILY
     yellow: c?.brand?.yellow || '#f59e0b',
     yellowLight: c?.brand?.yellowLight || '#fde68a',
     yellowBg: c?.brand?.yellowBg || '#fef3c7',
@@ -64,7 +63,6 @@ const normalizeTheme = (c = {}) => ({
   },
 });
 
-// CREATE STYLES ---------------------------------------------
 export const createThemedStyles = (raw) => {
   const colors = normalizeTheme(raw);
 

@@ -2,7 +2,6 @@ import React from 'react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 
 export const useDurationBands = (cfg = DEFAULT_CLIENT_CFG) => {
-  // Guard כפול: גם פרמטר ברירת מחדל וגם בדיקה שזה אובייקט עם bands תקין
   const safeCfg = (cfg && typeof cfg === 'object') ? cfg : DEFAULT_CLIENT_CFG;
   const bands = (Array.isArray(safeCfg.bands) && safeCfg.bands.length)
     ? safeCfg.bands

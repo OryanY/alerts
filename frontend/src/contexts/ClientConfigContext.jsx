@@ -1,17 +1,14 @@
-// contexts/ClientConfigContext.jsx — WITH GLOBAL DATE RANGE
-  
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { DEFAULT_CLIENT_CFG } from '../utils/constants';
+  import { createContext, useContext, useState, useEffect } from 'react';
+  import { DEFAULT_CLIENT_CFG } from '../utils/constants';
+  const ClientConfigContext = createContext();
 
-const ClientConfigContext = createContext();
-
-export const useClientConfig = () => {
+  export const useClientConfig = () => {
   const context = useContext(ClientConfigContext);
   if (!context) {
     throw new Error('useClientConfig must be used within ClientConfigProvider');
   }
   return context;
-};
+  };
 
   // Helper to get default date range (last 7 days)
   const getDefaultDateRange = () => {
@@ -180,6 +177,6 @@ export const useClientConfig = () => {
       {children}
     </ClientConfigContext.Provider>
   );
-};
+  };
 
-export default ClientConfigContext;
+  export default ClientConfigContext;

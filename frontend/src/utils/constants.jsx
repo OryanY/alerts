@@ -1,8 +1,5 @@
-// ===== Config =====
 export const API_BASE = "http://localhost:5000/api";
 export const JERUSALEM_TZ = 'Asia/Jerusalem';
-
-// ===== Default client config (overridable via UI) =====
 export const DEFAULT_CLIENT_CFG = {
   dayStart: 8,
   dayEnd: 22,

@@ -16,11 +16,8 @@ export const DateRangePicker = ({
     fontSize: 12,
     borderRadius: 6,
     cursor: 'pointer',
-
     background: colors.bg.secondary,
     color: colors.text.primary,
-
-    // no border shorthand: avoid React warning
     borderWidth: 1,
     borderStyle: 'solid',
     borderColor: colors.border.secondary,

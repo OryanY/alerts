@@ -3,7 +3,6 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useMemo, useCallback } from 'react';
 import { toYMD_IL } from '../utils/time';
 
-// Hook for managing date range in URL
 export const useDateRangeUrl = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   
@@ -85,7 +84,6 @@ export const useExplorerFilters = () => {
                      key === 'sort_by' ? 'sort' :
                      key === 'sort_order' ? 'order' : key);
         } else {
-          // Store sort_order in lowercase in URL for readability
           const urlValue = key === 'sort_order' ? String(value).toLowerCase() : String(value);
           next.set(key === 'panel_title' ? 'panel' : 
                   key === 'application' ? 'app' : 
@@ -97,7 +95,6 @@ export const useExplorerFilters = () => {
         }
       });
       
-      // Reset page when filters change (except when explicitly setting page)
       if (!('page' in newFilters)) {
         next.delete('page');
       }

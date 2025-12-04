@@ -38,6 +38,8 @@ import { ErrorCallout } from '../components/ErrorCallout';
 import { ChartCard } from '../components/ChartCard';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
+import { formatDateForApi, formatHourAndDay } from "../utils/helpers";
+import { getChartProps } from '../utils/chartConfig';
 
 const PanelResearchPage = () => {
   const {
@@ -55,39 +57,7 @@ const PanelResearchPage = () => {
   const [selectedPanel, setSelectedPanel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ---- helpers (chart theming) ----
-  const chartGridProps = {
-    stroke: colors.border.secondary,
-    strokeDasharray: '3 3',
-  };
-
-  const xAxisProps = {
-    tick: { fill: colors.text.secondary, fontSize: 12 },
-    axisLine: { stroke: colors.border.primary },
-    tickLine: { stroke: colors.border.primary },
-  };
-
-  const yAxisProps = {
-    tick: { fill: colors.text.secondary, fontSize: 12 },
-    axisLine: { stroke: colors.border.primary },
-    tickLine: { stroke: colors.border.primary },
-  };
-
-  const tooltipStyle = {
-    contentStyle: {
-      backgroundColor: colors.bg.secondary,
-      border: `1px solid ${colors.border.primary}`,
-      borderRadius: 6,
-      color: colors.text.primary,
-      fontSize: 12,
-    },
-    labelStyle: {
-      color: colors.text.secondary,
-    },
-    itemStyle: {
-      fontSize: 12,
-    },
-  };
+  const chartProps = useMemo(() => getChartProps(colors), [colors]);
 
   // Adjust date range for "today" selection
   const adjustedDateRange = useMemo(() => {
@@ -98,7 +68,7 @@ const PanelResearchPage = () => {
     ) {
       return {
         start_date: dateRange.start_date,
-        end_date: `${dateRange.end_date}T23:59:59`,
+        end_date: formatDateForApi(dateRange.end_date, true),
       };
     }
     return dateRange;
@@ -141,7 +111,7 @@ const PanelResearchPage = () => {
       panel_title: selectedPanel,
       limit: 100,
       sort_by: 'time_fired',
-      sort_order: 'DESC', // Must be uppercase
+      sort_order: 'DESC',
     };
   }, [adjustedDateRange, getApiParams, selectedPanel]);
 
@@ -168,20 +138,9 @@ const PanelResearchPage = () => {
   }, [panelsList, searchQuery]);
 
   // Format time for IL
-  const formatTime = (iso) => {
-    if (!iso) return '';
-    const d = new Date(iso);
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Jerusalem',
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(d);
-  };
+  const formatTime = formatHourAndDay;
 
-  // Export report (text file)
+  // Export
   const exportReport = () => {
     if (!panelAnalysis || !selectedPanel) return;
 
@@ -231,7 +190,6 @@ const PanelResearchPage = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Severity color + icon, mapped to theme
   const getSeverityColor = (severity) => {
     switch (severity) {
       case 'high':
@@ -957,10 +915,10 @@ const PanelResearchPage = () => {
                 >
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={panelAnalysis.daily_trend || []}>
-                      <CartesianGrid {...chartGridProps} />
+                      <CartesianGrid {...chartProps.grid} />
                       <XAxis
                         dataKey="date"
-                        {...xAxisProps}
+                        {...chartProps.xAxis}
                         tickFormatter={(date) =>
                           new Date(date).toLocaleDateString('en-IL', {
                             month: 'short',
@@ -968,9 +926,9 @@ const PanelResearchPage = () => {
                           })
                         }
                       />
-                      <YAxis {...yAxisProps} />
+                      <YAxis {...chartProps.yAxis} />
                       <Tooltip
-                        {...tooltipStyle}
+                        {...chartProps.tooltip}
                         labelFormatter={(date) =>
                           new Date(date).toLocaleDateString('en-IL')
                         }
@@ -1002,10 +960,10 @@ const PanelResearchPage = () => {
                 >
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={panelAnalysis.duration_distribution || []}>
-                      <CartesianGrid {...chartGridProps} />
-                      <XAxis dataKey="category" {...xAxisProps} />
-                      <YAxis {...yAxisProps} />
-                      <Tooltip {...tooltipStyle} />
+                      <CartesianGrid {...chartProps.grid} />
+                      <XAxis dataKey="category" {...chartProps.xAxis} />
+                      <YAxis {...chartProps.yAxis} />
+                      <Tooltip {...chartProps.tooltip} />
                       <Bar dataKey="count" radius={[8, 8, 0, 0]}>
                         {(panelAnalysis.duration_distribution || []).map(
                           (entry, index) => {
@@ -1033,15 +991,15 @@ const PanelResearchPage = () => {
                 >
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={panelAnalysis.hourly_heatmap || []}>
-                      <CartesianGrid {...chartGridProps} />
+                      <CartesianGrid {...chartProps.grid} />
                       <XAxis
                         dataKey="hour"
-                        {...xAxisProps}
+                        {...chartProps.xAxis}
                         tickFormatter={(h) => `${String(h).padStart(2, '0')}:00`}
                       />
-                      <YAxis {...yAxisProps} />
+                      <YAxis {...chartProps.yAxis} />
                       <Tooltip
-                        {...tooltipStyle}
+                        {...chartProps.tooltip}
                         labelFormatter={(h) =>
                           `${String(h).padStart(2, '0')}:00`
                         }

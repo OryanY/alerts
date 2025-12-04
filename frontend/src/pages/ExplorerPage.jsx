@@ -1,359 +1,26 @@
-import  { useMemo, useEffect, useState, useRef } from 'react';
-import {
-  Search,
-  Filter,
-  Download,
-  RefreshCw,
-  X,
-  ChevronDown,
-  AlertCircle,
-  Eye,
-  EyeOff,
-  Columns,
-} from 'lucide-react';
+import { useMemo, useEffect, useState, useRef } from 'react';
+import { Search, Filter, Download, RefreshCw, X, AlertCircle } from 'lucide-react';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
-
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
+import { formatHourAndDay, formatDateForApi }  from "../utils/helpers";
+import { formatIncidentId, escapeCsv } from '../utils/helpers';
 
 import { DateRangePicker } from '../components/DateRangePicker';
 import { ErrorCallout } from '../components/ErrorCallout';
 import { LoadingSkeleton } from '../components/LoadingSkeleton';
+import { CustomSelect } from '../components/CustomSelect';
+import { ColumnVisibilityPanel, getDefaultVisibleColumns, getAllColumns } from '../components/ColumnVisibilityPanel';
+import { AlertTable } from '../components/AlertTable';
 
 const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 50;
+const ALL_COLUMNS = getAllColumns();
 
-// Define all available columns
-const ALL_COLUMNS = [
-  { key: 'history_id', label: 'INC #', width: '100px', sortable: true, defaultVisible: true },
-  { key: 'panel_title', label: 'Panel', width: '180px', sortable: true, defaultVisible: true },
-  { key: 'application', label: 'Application', width: '140px', sortable: true, defaultVisible: true },
-  { key: 'message', label: 'Message', width: '250px', sortable: false, defaultVisible: true },
-  { key: 'time_fired', label: 'Time Fired', width: '140px', sortable: true, defaultVisible: true },
-  { key: 'duration_sec', label: 'Duration', width: '110px', sortable: true, defaultVisible: true },
-  { key: 'operator', label: 'Operator', width: '120px', sortable: true, defaultVisible: true },
-  { key: 'node_name', label: 'Node', width: '120px', sortable: true, defaultVisible: false },
-  { key: 'network', label: 'Network', width: '120px', sortable: true, defaultVisible: false },
-  { key: 'object', label: 'Object', width: '120px', sortable: true, defaultVisible: false },
-  { key: 'shift', label: 'Shift', width: '100px', sortable: true, defaultVisible: false },
-  { key: 'time_resolved', label: 'Time Resolved', width: '140px', sortable: true, defaultVisible: false },
-];
-
-// Helpers
-const getDefaultVisibleColumns = () => {
-  const initial = {};
-  ALL_COLUMNS.forEach((col) => {
-    initial[col.key] = col.defaultVisible;
-  });
-  return initial;
-};
-
-const formatIncidentId = (historyId) => {
-  if (historyId === null || historyId === undefined) return null;
-  return String(historyId).trim() || null;
-};
-
-// Custom Select Component
-const CustomSelect = ({ value, onChange, options, placeholder, disabled, colors }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setIsOpen(false);
-        setSearchTerm('');
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const filteredOptions = options.filter((opt) =>
-    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const selectedLabel = options.find((opt) => opt.value === value)?.label || placeholder;
-
-  return (
-    <div ref={ref} style={{ position: 'relative', width: '100%' }}>
-      <button
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-        disabled={disabled}
-        style={{
-          width: '100%',
-          padding: '10px 12px',
-          background: colors.bg.secondary,
-          border: `1px solid ${colors.border.primary}`,
-          borderRadius: 8,
-          fontSize: 14,
-          color: value ? colors.text.primary : colors.text.tertiary,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          opacity: disabled ? 0.5 : 1,
-          transition: 'all 0.2s ease',
-        }}
-        onMouseEnter={(e) =>
-          !disabled && (e.currentTarget.style.borderColor = colors.border.secondary)
-        }
-        onMouseLeave={(e) => (e.currentTarget.style.borderColor = colors.border.primary)}
-      >
-        <span
-          style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            flex: 1,
-            textAlign: 'left',
-          }}
-        >
-          {selectedLabel}
-        </span>
-        <ChevronDown
-          size={16}
-          style={{
-            marginLeft: 8,
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0)',
-            transition: 'transform 0.2s ease',
-          }}
-        />
-      </button>
-
-      {isOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            marginTop: 4,
-            background: colors.bg.elevated,
-            border: `1px solid ${colors.border.primary}`,
-            borderRadius: 8,
-            maxHeight: 300,
-            overflowY: 'auto',
-            zIndex: 1000,
-            boxShadow: colors.shadow.lg,
-          }}
-        >
-          {options.length > 8 && (
-            <div style={{ padding: '8px', borderBottom: `1px solid ${colors.border.primary}` }}>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: colors.bg.secondary,
-                  border: `1px solid ${colors.border.primary}`,
-                  borderRadius: 6,
-                  fontSize: 13,
-                  color: colors.text.primary,
-                  outline: 'none',
-                }}
-              />
-            </div>
-          )}
-          <div style={{ padding: '4px' }}>
-            {filteredOptions.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                  setSearchTerm('');
-                }}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  background: value === opt.value ? colors.brand.primary + '15' : 'transparent',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontSize: 14,
-                  color: value === opt.value ? colors.brand.primary : colors.text.primary,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontWeight: value === opt.value ? 600 : 400,
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  if (value !== opt.value) {
-                    e.currentTarget.style.background = colors.bg.tertiary;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (value !== opt.value) {
-                    e.currentTarget.style.background = 'transparent';
-                  }
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-            {filteredOptions.length === 0 && (
-              <div
-                style={{
-                  padding: '20px',
-                  textAlign: 'center',
-                  color: colors.text.tertiary,
-                  fontSize: 13,
-                }}
-              >
-                No options found
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Column Visibility Panel
-const ColumnVisibilityPanel = ({ visibleColumns, onToggle, colors }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const visibleCount = Object.values(visibleColumns).filter(Boolean).length;
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          padding: '10px 16px',
-          background: colors.bg.secondary,
-          border: `1px solid ${colors.border.primary}`,
-          borderRadius: 8,
-          fontSize: 14,
-          color: colors.text.primary,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          transition: 'all 0.2s ease',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = colors.border.secondary;
-          e.currentTarget.style.background = colors.bg.tertiary;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = colors.border.primary;
-          e.currentTarget.style.background = colors.bg.secondary;
-        }}
-      >
-        <Columns size={16} />
-        <span>Columns ({visibleCount})</span>
-        <ChevronDown
-          size={14}
-          style={{
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0)',
-            transition: 'transform 0.2s ease',
-          }}
-        />
-      </button>
-
-      {isOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: 8,
-            background: colors.bg.elevated,
-            border: `1px solid ${colors.border.primary}`,
-            borderRadius: 8,
-            minWidth: 250,
-            maxHeight: 400,
-            overflowY: 'auto',
-            zIndex: 1000,
-            boxShadow: colors.shadow.lg,
-            padding: 8,
-          }}
-        >
-          <div
-            style={{
-              padding: '8px 12px',
-              borderBottom: `1px solid ${colors.border.primary}`,
-              marginBottom: 8,
-              fontWeight: 600,
-              fontSize: 13,
-              color: colors.text.secondary,
-            }}
-          >
-            Select Columns to Display
-          </div>
-          {ALL_COLUMNS.map((col) => (
-            <label
-              key={col.key}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 12px',
-                cursor: 'pointer',
-                borderRadius: 6,
-                transition: 'background 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = colors.bg.tertiary;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={visibleColumns[col.key]}
-                onChange={() => onToggle(col.key)}
-                style={{
-                  width: 18,
-                  height: 18,
-                  cursor: 'pointer',
-                  accentColor: colors.brand.primary,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 14,
-                  color: colors.text.primary,
-                  flex: 1,
-                }}
-              >
-                {col.label}
-              </span>
-              {visibleColumns[col.key] ? (
-                <Eye size={14} style={{ color: colors.brand.primary }} />
-              ) : (
-                <EyeOff size={14} style={{ color: colors.text.tertiary }} />
-              )}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 const ExplorerPage = () => {
   const { config, getApiParams, dateRange, setDateRange, setPresetRange } = useClientConfig();
@@ -362,7 +29,6 @@ const ExplorerPage = () => {
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { colorByDuration } = useDurationBands(config);
 
-  // -------- DATE RANGE NORMALIZATION --------
   const adjustedDateRange = useMemo(() => {
     if (
       dateRange.start_date &&
@@ -371,13 +37,12 @@ const ExplorerPage = () => {
     ) {
       return {
         start_date: dateRange.start_date,
-        end_date: `${dateRange.end_date}T23:59:59`,
+        end_date: formatDateForApi(dateRange.end_date, true),
       };
     }
     return dateRange;
   }, [dateRange]);
 
-  // -------- FILTERS + DEBOUNCE --------
   const rawPage = Number(filters.page) || 1;
   const { page: _omitPage, ...filtersNoPage } = filters;
 
@@ -403,9 +68,8 @@ const ExplorerPage = () => {
         debounceIdRef.current = null;
       }
     };
-  }, [filtersKey, setPage]);
+  }, [filtersNoPage,filtersKey, setPage]);
 
-  // -------- API PARAMS --------
   const apiParams = useMemo(() => {
     const f = debouncedFilters || {};
     const normalizedSortOrder = (f.sort_order || 'desc').toString().toUpperCase();
@@ -429,10 +93,8 @@ const ExplorerPage = () => {
     };
   }, [debouncedFilters, adjustedDateRange, getApiParams]);
 
-  // -------- DATA FETCH --------
   const { data: alerts, loading, error, refetch } = useApiData('/alerts', apiParams);
 
-  // -------- DROPDOWN OPTIONS --------
   const dropdownOptions = useMemo(() => {
     if (!alerts || !Array.isArray(alerts)) return {};
 
@@ -468,7 +130,6 @@ const ExplorerPage = () => {
     };
   }, [alerts, config.bands]);
 
-  // -------- CLIENT-SIDE FILTERING + SORTING --------
   const processedAlerts = useMemo(() => {
     if (!alerts || !Array.isArray(alerts)) return [];
     const f = debouncedFilters || {};
@@ -519,7 +180,6 @@ const ExplorerPage = () => {
     return filtered;
   }, [alerts, debouncedFilters, config.bands]);
 
-  // -------- PAGINATION --------
   const totalItems = processedAlerts.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const currentPage = Math.min(Math.max(rawPage, 1), totalPages);
@@ -541,7 +201,6 @@ const ExplorerPage = () => {
     [processedAlerts, startIndex, endIndex]
   );
 
-  // -------- COLUMN VISIBILITY (WITH PERSISTENCE) --------
   const [visibleColumns, setVisibleColumns] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -587,7 +246,6 @@ const ExplorerPage = () => {
     [visibleColumns]
   );
 
-  // -------- SORT HANDLER --------
   const handleSort = (key) => {
     const col = ALL_COLUMNS.find((c) => c.key === key);
     if (!col || !col.sortable) return;
@@ -599,19 +257,6 @@ const ExplorerPage = () => {
     setPage(1);
   };
 
-  // -------- FORMATTERS --------
-  const formatHourAndDay = (iso) => {
-    if (!iso) return '';
-    const d = new Date(iso);
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Jerusalem',
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(d);
-  };
 
   const renderShiftBadge = (shiftValue) => {
     if (!shiftValue) {
@@ -652,16 +297,11 @@ const ExplorerPage = () => {
     );
   };
 
-  // -------- CSV EXPORT (RESPECTS VISIBLE COLUMNS) --------
   const exportToCsv = () => {
     if (!processedAlerts.length || !visibleOrderedColumns.length) return;
 
     const headers = visibleOrderedColumns.map((c) => c.label);
 
-    const escapeCsv = (val) => {
-      const s = String(val ?? '');
-      return `"${s.replace(/"/g, '""')}"`;
-    };
 
     const rows = processedAlerts.map((alert) => {
       const cols = visibleOrderedColumns.map((col) => {
@@ -721,7 +361,6 @@ const ExplorerPage = () => {
     URL.revokeObjectURL(url);
   };
 
-  // -------- ACTIVE FILTER COUNT --------
   const activeFilterCount = useMemo(
     () =>
       Object.entries(filters).filter(
@@ -752,11 +391,9 @@ const ExplorerPage = () => {
     return <ErrorCallout message={error.message} details={error} />;
   }
 
-  // -------- RENDER --------
   return (
     <div style={S.page}>
       <div style={S.container}>
-        {/* HEADER */}
         <div
           style={{
             display: 'flex',
@@ -1109,356 +746,15 @@ const ExplorerPage = () => {
             </div>
           ) : (
             <>
-              <div style={{ overflowX: 'auto' }}>
-                <table
-                  style={{
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    fontSize: 14,
-                    minWidth: 1100,
-                  }}
-                >
-                  <thead>
-                    <tr
-                      style={{
-                        background: colors.bg.tertiary,
-                        borderBottom: `2px solid ${colors.border.secondary}`,
-                      }}
-                    >
-                      {visibleOrderedColumns.map(({ key, label, width }) => {
-                        const isSorted = filters.sort_by === key;
-                        const colDef = ALL_COLUMNS.find((c) => c.key === key);
-                        const sortable = colDef?.sortable;
-
-                        return (
-                          <th
-                            key={key}
-                            onClick={() => sortable && handleSort(key)}
-                            style={{
-                              padding: '14px 16px',
-                              textAlign: 'left',
-                              fontWeight: 700,
-                              fontSize: 12,
-                              color: isSorted ? colors.brand.primary : colors.text.secondary,
-                              cursor: sortable ? 'pointer' : 'default',
-                              background: isSorted
-                                ? colors.brand.primary + '10'
-                                : colors.bg.tertiary,
-                              width,
-                              position: 'sticky',
-                              top: 0,
-                              zIndex: 10,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.06em',
-                              transition: 'all 0.2s ease',
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                              }}
-                            >
-                              {label}
-                              {isSorted && sortable && (
-                                <span style={{ fontSize: 11 }}>
-                                  {filters.sort_order === 'asc' ? '↑' : '↓'}
-                                </span>
-                              )}
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedAlerts.map((alert, i) => (
-                      <tr
-                        key={alert.history_id || i}
-                        style={{
-                          borderBottom: `1px solid ${colors.border.primary}`,
-                          transition: 'background 0.15s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = colors.bg.tertiary;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent';
-                        }}
-                      >
-                        {visibleOrderedColumns.map((col) => {
-                          const key = col.key;
-
-                          if (key === 'history_id') {
-                            const formatted = formatIncidentId(alert.history_id);
-                            return (
-                              <td
-                                key={key}
-                                style={{
-                                  padding: '16px',
-                                  fontFamily: 'monospace',
-                                  fontSize: 13,
-                                  fontWeight: 600,
-                                  color: colors.text.primary,
-                                }}
-                              >
-                                {formatted ? (
-                                  formatted
-                                ) : (
-                                  <span
-                                    style={{
-                                      fontStyle: 'italic',
-                                      color: colors.text.tertiary,
-                                    }}
-                                  >
-                                    —
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          }
-
-                          if (key === 'panel_title') {
-                            const value = alert.panel_title;
-                            return (
-                              <td
-                                key={key}
-                                style={{
-                                  padding: '16px',
-                                  color: colors.text.primary,
-                                }}
-                                title={value || ''}
-                              >
-                                {value ? (
-                                  <div
-                                    style={{
-                                      maxWidth: 180,
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                      fontWeight: 500,
-                                    }}
-                                  >
-                                    {value}
-                                  </div>
-                                ) : (
-                                  <span
-                                    style={{
-                                      fontStyle: 'italic',
-                                      color: colors.text.tertiary,
-                                    }}
-                                  >
-                                    No panel
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          }
-
-                          if (key === 'application') {
-                            const value = alert.application;
-                            return (
-                              <td
-                                key={key}
-                                style={{ padding: '16px', color: colors.text.secondary }}
-                              >
-                                {value ? (
-                                  value
-                                ) : (
-                                  <span
-                                    style={{
-                                      fontStyle: 'italic',
-                                      color: colors.text.tertiary,
-                                    }}
-                                  >
-                                    No application
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          }
-
-                          if (key === 'message') {
-                            const message = alert.message;
-                            const hasMessage = !!message;
-                            return (
-                              <td
-                                key={key}
-                                style={{
-                                  padding: '16px',
-                                  color: hasMessage
-                                    ? colors.text.secondary
-                                    : colors.text.tertiary,
-                                  fontSize: 13,
-                                }}
-                                title={hasMessage ? message : 'No message'}
-                              >
-                                {hasMessage ? (
-                                  <div
-                                    style={{
-                                      maxWidth: 350,
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {message}
-                                  </div>
-                                ) : (
-                                  <span
-                                    style={{
-                                      fontStyle: 'italic',
-                                    }}
-                                  >
-                                    No message
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          }
-
-                          if (key === 'time_fired' || key === 'time_resolved') {
-                            const value = key === 'time_fired' ? alert.time_fired : alert.time_resolved;
-                            const formatted = formatHourAndDay(value);
-                            return (
-                              <td
-                                key={key}
-                                style={{
-                                  padding: '16px',
-                                  fontSize: 13,
-                                  fontFamily: 'monospace',
-                                  color: colors.text.primary,
-                                }}
-                              >
-                                {formatted || (
-                                  <span
-                                    style={{
-                                      fontStyle: 'italic',
-                                      color: colors.text.tertiary,
-                                    }}
-                                  >
-                                    —
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          }
-
-                          if (key === 'duration_sec') {
-                            const d = alert.duration_sec;
-                            if (d === null || d === undefined || d === '') {
-                              return (
-                                <td key={key} style={{ padding: '16px' }}>
-                                  <span
-                                    style={{
-                                      fontStyle: 'italic',
-                                      color: colors.text.tertiary,
-                                    }}
-                                  >
-                                    —
-                                  </span>
-                                </td>
-                              );
-                            }
-                            const color = colorByDuration(d);
-                            return (
-                              <td key={key} style={{ padding: '16px' }}>
-                                <span
-                                  style={{
-                                    background: color + '20',
-                                    color,
-                                    padding: '6px 12px',
-                                    borderRadius: 16,
-                                    fontSize: 12,
-                                    fontWeight: 700,
-                                    display: 'inline-block',
-                                  }}
-                                >
-                                  {d}s
-                                </span>
-                              </td>
-                            );
-                          }
-
-                          if (key === 'operator') {
-                            const value = alert.operator || 'System';
-                            return (
-                              <td
-                                key={key}
-                                style={{ padding: '16px', color: colors.text.secondary }}
-                              >
-                                {value}
-                              </td>
-                            );
-                          }
-
-                          if (key === 'shift') {
-                            return (
-                              <td key={key} style={{ padding: '16px' }}>
-                                {renderShiftBadge(alert.shift)}
-                              </td>
-                            );
-                          }
-
-                          if (key === 'node_name' || key === 'network' || key === 'object') {
-                            const value = alert[key];
-                            return (
-                              <td
-                                key={key}
-                                style={{ padding: '16px', color: colors.text.secondary }}
-                                title={value || ''}
-                              >
-                                {value ? (
-                                  <div
-                                    style={{
-                                      maxWidth: 180,
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {value}
-                                  </div>
-                                ) : (
-                                  <span
-                                    style={{
-                                      fontStyle: 'italic',
-                                      color: colors.text.tertiary,
-                                    }}
-                                  >
-                                    —
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          }
-
-                          // Fallback for any other columns
-                          const generic = alert[key];
-                          return (
-                            <td
-                              key={key}
-                              style={{ padding: '16px', color: colors.text.secondary }}
-                            >
-                              {generic ?? (
-                                <span
-                                  style={{
-                                    fontStyle: 'italic',
-                                    color: colors.text.tertiary,
-                                  }}
-                                >
-                                  —
-                                </span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <AlertTable
+                alerts={paginatedAlerts}
+                visibleColumns={visibleOrderedColumns}
+                sortConfig={{ sort_by: filters.sort_by, sort_order: filters.sort_order }}
+                onSort={handleSort}
+                colorByDuration={colorByDuration}
+                colors={colors}
+                renderShiftBadge={renderShiftBadge}
+              />
 
               {/* PAGINATION */}
               {totalPages > 1 && (

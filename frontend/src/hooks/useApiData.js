@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '../utils/constants';
 
-export const useApiData = (endpoint, params = {}) => {
-  const [data, setData]   = useState(null);
-  const [loading, setLoading] = useState(true);
+export const useApiData = (endpoint, params = {}, options = {}) => {
+  const { skip = false } = options;
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(!skip);
   const [error, setError] = useState(null);
 
   const fetchData = async () => {
+    if (skip || !params) return;
+    
     try {
       setLoading(true);
       setError(null);
@@ -39,6 +42,11 @@ export const useApiData = (endpoint, params = {}) => {
     }
   };
 
-  useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, [endpoint, JSON.stringify(params)]);
+  useEffect(() => {
+    if (!skip && params) {
+      fetchData();
+    }
+  }, [endpoint, JSON.stringify(params), skip]);
+
   return { data, loading, error, refetch: fetchData };
 };

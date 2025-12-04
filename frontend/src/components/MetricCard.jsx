@@ -11,10 +11,9 @@ export const MetricCard = memo(function MetricCard({
   icon: Icon,
   color = 'blue',
 }) {
-  const { colors } = useTheme();        // <— THIS is your theme
+  const { colors } = useTheme();       
   const S = createThemedStyles(colors);
 
-  // Themed palette mapping (your brand colors)
   const palette = {
     blue: colors.brand?.primary || '#3B82F6',
     purple: '#8B5CF6',
@@ -26,7 +25,6 @@ export const MetricCard = memo(function MetricCard({
 
   const c = palette[color] || palette.blue;
 
-  // Themed text
   const textPrimary = colors.text.primary;
   const textSecondary = colors.text.secondary;
   const textMuted = colors.text.tertiary || colors.text.secondary;

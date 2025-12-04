@@ -51,9 +51,6 @@ const SettingsPage = () => {
     });
   };
 
-  // ---------------------------------------
-  // ColorInput Component (now fully themed)
-  // ---------------------------------------
   const ColorInput = ({ label, value, onChange }) => (
     <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
       <label

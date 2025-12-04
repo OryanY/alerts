@@ -1,4 +1,3 @@
-// frontend/src/components/ThemeToggle.jsx
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -7,7 +6,7 @@ export const ThemeToggle = ({ variant = 'default' }) => {
   const isDark = theme === 'dark';
 
   const variants = {
-    // Default: Icon button
+    // default: Icon button
     default: {
       button: {
         display: 'flex',
@@ -24,7 +23,7 @@ export const ThemeToggle = ({ variant = 'default' }) => {
       },
       icon: 20,
     },
-    // Compact: Smaller button
+    // compact: Smaller button
     compact: {
       button: {
         display: 'flex',
@@ -41,7 +40,7 @@ export const ThemeToggle = ({ variant = 'default' }) => {
       },
       icon: 16,
     },
-    // Switch: iOS-style toggle
+    // switch toggle
     switch: {
       button: {
         position: 'relative',

@@ -34,10 +34,9 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
   const total = falseWakeups + trueAlerts;
   const falsePct = total ? (falseWakeups / total) * 100 : 0;
 
-  // THEMIZED COLORS
-  const arcColor = colors.semantic.error;              // red arc
-  const arcBackground = colors.border.secondary;       // background track
-  const iconColor = colors.brand.primary;              // moon icon
+  const arcColor = colors.semantic.error;            
+  const arcBackground = colors.border.secondary;    
+  const iconColor = colors.brand.primary;          
   const textPrimary = colors.text.primary;
   const textSecondary = colors.text.secondary;
 

@@ -1,4 +1,3 @@
-// components/LoadingSpinner.jsx — Loading spinner component
 export const LoadingSpinner = ({ size = 40 }) => (
   <div style={{
     display: 'flex',

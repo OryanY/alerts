@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Settings, Target, CheckCircle } from 'lucide-react';
 
-import IncidentMappings from './IncidentMappings.jsx';
+import IncidentMappings from './IncidentMappings/IncidentMappings.jsx';
 import IncidentRules from './IncidentRules.jsx';
 
 import { useTheme } from '../contexts/ThemeContext';

@@ -31,20 +31,12 @@ import {
   Network,
   Filter,
   X,
-  HardDrive, // <-- NEW ICON
+  HardDrive,
 } from '../icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
-
-// Extracted helper to prevent timezone shifts. 
-const formatForApi = (dateStr, isEnd = false) => {
-  if (!dateStr) return null;
-  // Ensure we are working with YYYY-MM-DD
-  const cleanDate = dateStr.split('T')[0];
-  const time = isEnd ? '23:59:59' : '00:00:00';
-  // Return ISO-like string expected by SQL DateTime2 without timezone offset issues
-  return `${cleanDate}T${time}`;
-};
+import { formatDateForApi } from "../utils/helpers";
+import { createChartConfig } from '../utils/chartConfig';
 
 const NocDashboard = () => {
   const {
@@ -60,56 +52,25 @@ const NocDashboard = () => {
   const { Legend } = useDurationBands(config);
   const { colors } = useTheme();
   
-  // Memoize styles to prevent object recreation on render
   const S = useMemo(() => createThemedStyles(colors), [colors]);
+  const chartConfig = useMemo(() => createChartConfig(colors), [colors]);
 
-  // ---- Memoized Chart Configurations (Performance Critical) ----
-  
-  const chartConfig = useMemo(() => ({
-    grid: {
-      stroke: colors.border.secondary,
-      strokeDasharray: '3 3',
-    },
-    axis: {
-      tick: { fill: colors.text.secondary, fontSize: 12 },
-      axisLine: { stroke: colors.border.primary },
-      tickLine: { stroke: colors.border.primary },
-    },
-    tooltip: {
-      contentStyle: {
-        backgroundColor: colors.bg.secondary,
-        border: `1px solid ${colors.border.primary}`,
-        borderRadius: 6,
-        color: colors.text.primary,
-        fontSize: 12,
-      },
-      labelStyle: { color: colors.text.secondary },
-      itemStyle: { fontSize: 12 },
-      cursor: { fill: colors.bg.tertiary, opacity: 0.4 }
-    }
-  }), [colors]);
-
-  // ---- Logic ----
 
   const adjustedDateRange = useMemo(() => {
-    // If dates are valid strings
     if (dateRange.start_date && dateRange.end_date) {
-        return {
-            start_date: formatForApi(dateRange.start_date),
-            end_date: formatForApi(dateRange.end_date, true)
-        };
+      return {
+        start_date: formatDateForApi(dateRange.start_date),
+        end_date: formatDateForApi(dateRange.end_date, true),
+      };
     }
     return {};
   }, [dateRange]);
 
-  // Build API params with optional panel filter
   const apiParams = useMemo(() => {
     const params = {
       ...adjustedDateRange,
       false_wakeup_threshold: config.falseWakeupThreshold || 120,
       ...getApiParams(),
-      // Add minimum percent filter for the new chart logic (optional)
-      // min_percent: 1, // Example: only show nodes that account for at least 1% of total alerts
     };
 
     if (selectedPanel) {
@@ -119,39 +80,28 @@ const NocDashboard = () => {
     return params;
   }, [adjustedDateRange, config.falseWakeupThreshold, getApiParams, selectedPanel]);
 
-  // Fetch panel list for dropdown (without panel filter)
   const panelListParams = useMemo(
     () => ({
       ...adjustedDateRange,
       ...getApiParams(),
-      // Optimization: Limit panel list fetching if list is huge, or add specific search endpoint
       limit: 1000 
     }),
     [adjustedDateRange, getApiParams]
   );
 
   // ---- Data Fetching ----
-  // Using a small delay on loading states prevents flickering for fast cache hits
-  
   const exec = useApiData('/stats/executive-kpis', apiParams);
   const shifts = useApiData('/stats/shift-analysis', apiParams);
   const duration = useApiData('/stats/duration-histogram', apiParams);
   const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
   const timeseries = useApiData('/stats/timeseries', apiParams);
   
-  // NEW DATA FETCH
-  const topNodes = useApiData('/stats/top-nodes', apiParams);
-  
-  // Only fetch detailed panel stats if we are NOT filtered by a specific panel
-  const panelStats = useApiData(
-    '/stats/by-panel',
-    selectedPanel ? null : { ...apiParams, limit: 20 }
-  );
-  
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
+  // Only fetch detailed panel stats if we are NOT filtered by a specific panel
+  const panelStats = useApiData('/stats/by-panel',selectedPanel ? null : { ...apiParams, limit: 20 });
 
   // Aggregate loading state, but we won't block the UI with it
-  const isGlobalLoading = exec.loading || shifts.loading || duration.loading || topNodes.loading;
+  const isGlobalLoading = exec.loading || shifts.loading || duration.loading 
 
   // Handlers
   const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);
@@ -159,7 +109,6 @@ const NocDashboard = () => {
 
   return (
     <div>
-      {/* Header Controls */}
       <div style={styles.headerContainer}>
         <div style={styles.controlsWrapper}>
           <DateRangePicker
@@ -220,7 +169,7 @@ const NocDashboard = () => {
           />
         </div>
         
-        {/* Subtle Global Loading Indicator (Top Right) */}
+        {/*  Loading Indicator */}
         {isGlobalLoading && (
            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: colors.text.secondary }}>
              <LoadingSpinner size={16} />
@@ -329,7 +278,7 @@ const NocDashboard = () => {
                 <Tooltip {...chartConfig.tooltip} />
                 <Bar
                   dataKey="alert_count"
-                  fill={colors.chart.primary}
+                  fill={colors.brand.primary}
                   radius={[4, 4, 0, 0]}
                   name="Alert Count"
                 />
@@ -394,7 +343,7 @@ const NocDashboard = () => {
                   {(heatmap.data || []).map((entry, idx) => (
                     <Cell
                       key={idx}
-                      fill={entry?.is_night ? colors.brand.secondary : colors.chart.primary}
+                      fill={entry?.is_night ? colors.brand.purple : colors.chart.primary}
                     />
                   ))}
                 </Bar>
@@ -457,7 +406,7 @@ const NocDashboard = () => {
           )}
         </div>
         
-        {/* Charts Row 3 - Timeseries + NEW TOP NODES CHART */}
+        {/* Charts Row 3 */}
         <div style={S.grid('2fr 1fr')}>
           <ChartCard
             title="כמות התראות לאורך זמן + ממוצע זמן התראה"
@@ -472,10 +421,11 @@ const NocDashboard = () => {
                   dataKey="date_il"
                   {...chartConfig.axis}
                   tickFormatter={(d) => {
-                    // Safe formatting for display only
                     try {
-                        return new Date(d).toLocaleDateString('en-IL', { month: 'short', day: 'numeric' });
-                    } catch (e) { return d; }
+                      return new Date(d).toLocaleDateString('en-IL', { month: 'short', day: 'numeric' });
+                    } catch {
+                      return d;
+                    }
                   }}
                 />
                 <YAxis yAxisId="left" {...chartConfig.axis} />
@@ -483,9 +433,11 @@ const NocDashboard = () => {
                 <Tooltip
                   {...chartConfig.tooltip}
                   labelFormatter={(d) => {
-                      try {
-                        return new Date(d).toLocaleDateString('en-IL', { weekday: 'short', month: 'short', day: 'numeric' });
-                      } catch(e) { return d; }
+                    try {
+                      return new Date(d).toLocaleDateString('en-IL', { weekday: 'short', month: 'short', day: 'numeric' });
+                    } catch {
+                      return d;
+                    }
                   }}
                 />
                 <Area
@@ -510,68 +462,13 @@ const NocDashboard = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
-
-          {/* NEW CHART: Top Noisy Nodes */}
-          <ChartCard
-            title="Top Noisy Nodes/Objects"
-            icon={HardDrive}
-            loading={topNodes.loading}
-            error={topNodes.error}
-            legend={
-              <div style={{ fontSize: 11, color: colors.text.secondary }}>
-                Alert Count and % of Total, grouped by Node/Object.
-              </div>
-            }
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={topNodes.data || []}
-                layout="vertical"
-                margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-              >
-                <CartesianGrid {...chartConfig.grid} horizontal={false} />
-                <XAxis type="number" {...chartConfig.axis} />
-                <YAxis
-                  type="category"
-                  dataKey={(data) => `${data.node_name}/${data.object}`}
-                  {...chartConfig.axis}
-                  width={120} // Space for long labels
-                  tickFormatter={(val) => {
-                    return val.length > 30 ? val.substring(0, 27) + '...' : val;
-                  }}
-                />
-                <Tooltip
-                  {...chartConfig.tooltip}
-                  formatter={(value, name, props) => {
-                    if (name === 'Count') return [`${value} alerts`, 'Count'];
-                    if (name === 'Percent') return [`${value}% of total`, '% of Total'];
-                    return value;
-                  }}
-                />
-                <Bar
-                  dataKey="alert_count"
-                  fill={colors.chart.primary}
-                  name="Count"
-                  unit=" alerts"
-                />
-               <Line
-                  type="monotone"
-                  dataKey="alert_percent"
-                  stroke={colors.chart.quaternary}
-                  strokeWidth={2}
-                  name="Percent"
-                  unit="%"
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
         </div>
       </Suspense>
     </div>
   );
 };
 
-// Static styles to reduce clutter and object recreation
+// Static styles
 const styles = {
   headerContainer: {
     display: 'flex',
