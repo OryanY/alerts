@@ -611,9 +611,10 @@ const startEdit = (rule) => {
 
                       {mappings.map((m) => (
                         <option key={String(m._id)} value={m._id}>
-                          [{(m.grafana_names || []).join(', ')}] →{' '}
-                          {String(m.service_offering)}
-                        </option>
+                            {m.grafana_names?.map(name => 
+                              typeof name === 'object' ? name.value : name
+                            ).join(', ')} → {m.service_offering}
+                          </option>
                       ))}
                     </select>
 

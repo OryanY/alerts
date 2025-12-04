@@ -1017,7 +1017,6 @@ const IncidentMappings = () => {
                           marginBottom: 6,
                         }}
                       >
-                        Test Application Name
                       </label>
                       <input
                         type="text"
