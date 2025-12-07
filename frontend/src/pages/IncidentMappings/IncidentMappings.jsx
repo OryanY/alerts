@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState,useRef } from 'react';
 import {
   Settings,
   Plus,
@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
-
 import IncidentMappingsForm from './IncidentMappingsForm';
 import IncidentMappingsList from './IncidentMappingsList';
 
@@ -42,8 +41,7 @@ export const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
 
 const IncidentMappings = () => {
   const { colors,gradients,PATTERN_COLORS } = useTheme();
-
-
+  const formRef = useRef(null);
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -92,13 +90,13 @@ const IncidentMappings = () => {
   };
 
   const handleEdit = (m) => {
-    setEditingItem(m);
-    setShowForm(true);
-    setTimeout(() => {
-      document.getElementById('mapping-form')?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
+  setEditingItem(m);
+  setShowForm(true);
+  setTimeout(() => {
+    formRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
     }, 100);
   };
 
@@ -301,6 +299,7 @@ const IncidentMappings = () => {
 
       {/* FORM */}
       {showForm && (
+          <div ref={formRef}> 
         <IncidentMappingsForm
           colors={colors}
           gradients={gradients}
@@ -313,6 +312,7 @@ const IncidentMappings = () => {
           onCancel={handleCancelForm}
           onError={setError}
         />
+        </div>
       )}
 
       {/* LIST */}

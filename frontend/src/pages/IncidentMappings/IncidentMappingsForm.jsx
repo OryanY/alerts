@@ -117,9 +117,10 @@ const IncidentMappingsForm = ({
       return;
     }
 
+    // Validate regex BEFORE normalization
     if (newPattern.type === 'regex') {
       try {
-        new RegExp(trimmed, 'i');
+        new RegExp(trimmed);
       } catch (e) {
         alert(`Invalid regex pattern: ${e.message}`);
         return;
@@ -131,8 +132,17 @@ const IncidentMappingsForm = ({
       return;
     }
 
+    // CRITICAL FIX: Only normalize exact matches
+    const normalizedValue = newPattern.type === 'exact' 
+      ? trimmed.toLowerCase() 
+      : trimmed; // Keep regex as-is
+
     const isDuplicate = form.grafana_names.some(
-      (p) => p.value.toLowerCase() === trimmed.toLowerCase() && p.type === newPattern.type
+      (p) => {
+        const compareValue = p.type === 'exact' ? p.value.toLowerCase() : p.value;
+        const compareNew = newPattern.type === 'exact' ? normalizedValue : trimmed;
+        return compareValue === compareNew && p.type === newPattern.type;
+      }
     );
 
     if (isDuplicate) {
@@ -145,7 +155,7 @@ const IncidentMappingsForm = ({
       grafana_names: [
         ...prev.grafana_names,
         {
-          value: newPattern.type === 'exact' ? trimmed.toLowerCase() : trimmed,
+          value: normalizedValue,
           type: newPattern.type,
         },
       ],
@@ -168,26 +178,29 @@ const IncidentMappingsForm = ({
   };
 
   const testPattern = (pattern, input) => {
-    if (!input) return false;
+  if (!input) return false;
 
-    const normalizedInput = input.toLowerCase();
-    const normalizedPattern = pattern.value.toLowerCase();
-
-    switch (pattern.type) {
-      case 'exact':
-        return normalizedInput === normalizedPattern;
-      case 'contains':
-        return normalizedInput.includes(normalizedPattern);
-      case 'regex':
-        try {
-          const regex = new RegExp(normalizedPattern, 'i');
-          return regex.test(input);
-        } catch {
-          return false;
-        }
-      default:
+  switch (pattern.type) {
+    case 'exact':
+      // Case-insensitive exact match
+      return input.toLowerCase() === pattern.value.toLowerCase();
+      
+    case 'contains':
+      // Case-insensitive substring
+      return input.toLowerCase().includes(pattern.value.toLowerCase());
+      
+    case 'regex':
+      try {
+        // Use the regex as-is, with case-insensitive flag
+        const regex = new RegExp(pattern.value, 'i');
+        return regex.test(input);
+      } catch {
         return false;
-    }
+      }
+      
+    default:
+      return false;
+  }
   };
 
   const testAllPatterns = () => {
@@ -239,11 +252,55 @@ const IncidentMappingsForm = ({
 
   // ================== SAVE ==================
 
+  const validateForm = () => {
+    const errors = [];
+
+    if (!form.grafana_names || form.grafana_names.length === 0) {
+      errors.push('At least one Grafana application pattern is required');
+    }
+
+    form.grafana_names.forEach((pattern, idx) => {
+      if (!pattern.value || !pattern.value.trim()) {
+        errors.push(`Pattern ${idx + 1}: Value is required`);
+      }
+      
+      if (pattern.type === 'regex') {
+        try {
+          new RegExp(pattern.value);
+        } catch (e) {
+          errors.push(`Pattern ${idx + 1}: Invalid regex - ${e.message}`);
+        }
+      }
+    });
+
+    const requiredFields = {
+      service_offering: 'Service Offering',
+      business_service: 'Business Service',
+      u_network: 'Network',
+      u_impact_technology: 'Impact Technology',
+      assignment_group: 'Assignment Group',
+    };
+
+    Object.entries(requiredFields).forEach(([key, label]) => {
+      if (!form[key] || !form[key].trim()) {
+        errors.push(`${label} is required`);
+      }
+    });
+
+    return errors;
+  };
+
   const save = async (e) => {
     e.preventDefault();
 
-    if (form.grafana_names.length === 0) {
-      onError?.('Please add at least one Grafana application pattern');
+    // Validate form
+    const validationErrors = validateForm();
+    if (validationErrors.length > 0) {
+      const errorMessage = 'Please fix the following errors:\n\n' + 
+        validationErrors.map((err, i) => `${i + 1}. ${err}`).join('\n');
+      
+      onError?.(errorMessage);
+      alert(errorMessage);
       return;
     }
 
@@ -251,6 +308,11 @@ const IncidentMappingsForm = ({
       const dataToSave = {
         ...form,
         ...customFields,
+        service_offering: form.service_offering?.trim(),
+        business_service: form.business_service?.trim(),
+        u_network: form.u_network?.trim(),
+        u_impact_technology: form.u_impact_technology?.trim(),
+        assignment_group: form.assignment_group?.trim(),
       };
 
       const url = editingItem
@@ -263,6 +325,7 @@ const IncidentMappingsForm = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dataToSave),
       });
+      
       const data = await res.json();
 
       if (data.success) {
@@ -308,7 +371,6 @@ const IncidentMappingsForm = ({
 
   return (
     <div
-      id="mapping-form"
       style={{
         background: colors.bg.secondary,
         borderRadius: 12,
