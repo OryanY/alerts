@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
-import { TrendingUp, TrendingDown } from '../icons';
-import { useTheme } from '../contexts/ThemeContext';
-import { createThemedStyles } from '../utils/themedStyles';
+import { TrendingUp, TrendingDown } from '../../icons';
+import { useTheme } from '../../contexts/ThemeContext';
+import { createThemedStyles } from '../../utils/themedStyles';
 
 export const MetricCard = memo(function MetricCard({
   title,
@@ -11,7 +11,7 @@ export const MetricCard = memo(function MetricCard({
   icon: Icon,
   color = 'blue',
 }) {
-  const { colors } = useTheme();       
+  const { colors } = useTheme();
   const S = createThemedStyles(colors);
 
   const palette = {

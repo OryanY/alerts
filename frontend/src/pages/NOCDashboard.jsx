@@ -16,11 +16,11 @@ import {
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { useClientConfig } from '../contexts/ClientConfigContext';
-import { LoadingSpinner } from '../components/LoadingSpinner';
-import { DateRangePicker } from '../components/DateRangePicker';
-import { MetricCard } from '../components/MetricCard';
-import { ChartCard } from '../components/ChartCard';
-import { WakeupGauge } from '../components/WakeupGauge';
+import { LoadingSpinner } from '../components/ui/LoadingSpinner';
+import { DateRangePicker } from '../components/ui/DateRangePicker';
+import { MetricCard } from '../components/ui/MetricCard';
+import { ChartCard } from '../components/ui/ChartCard';
+import { WakeupGauge } from '../components/dashboard/WakeupGauge';
 import {
   AlertTriangle,
   Clock,
@@ -51,7 +51,7 @@ const NocDashboard = () => {
 
   const { Legend } = useDurationBands(config);
   const { colors } = useTheme();
-  
+
   const S = useMemo(() => createThemedStyles(colors), [colors]);
   const chartConfig = useMemo(() => createChartConfig(colors), [colors]);
 
@@ -84,7 +84,7 @@ const NocDashboard = () => {
     () => ({
       ...adjustedDateRange,
       ...getApiParams(),
-      limit: 1000 
+      limit: 1000
     }),
     [adjustedDateRange, getApiParams]
   );
@@ -95,13 +95,13 @@ const NocDashboard = () => {
   const duration = useApiData('/stats/duration-histogram', apiParams);
   const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
   const timeseries = useApiData('/stats/timeseries', apiParams);
-  
+
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
   // Only fetch detailed panel stats if we are NOT filtered by a specific panel
-  const panelStats = useApiData('/stats/by-panel',selectedPanel ? null : { ...apiParams, limit: 20 });
+  const panelStats = useApiData('/stats/by-panel', selectedPanel ? null : { ...apiParams, limit: 20 });
 
   // Aggregate loading state, but we won't block the UI with it
-  const isGlobalLoading = exec.loading || shifts.loading || duration.loading 
+  const isGlobalLoading = exec.loading || shifts.loading || duration.loading
 
   // Handlers
   const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);
@@ -168,13 +168,13 @@ const NocDashboard = () => {
             }
           />
         </div>
-        
+
         {/*  Loading Indicator */}
         {isGlobalLoading && (
-           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: colors.text.secondary }}>
-             <LoadingSpinner size={16} />
-             <span style={{ fontSize: 12 }}>Updating...</span>
-           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: colors.text.secondary }}>
+            <LoadingSpinner size={16} />
+            <span style={{ fontSize: 12 }}>Updating...</span>
+          </div>
         )}
       </div>
 
@@ -219,7 +219,7 @@ const NocDashboard = () => {
 
       {/* Main Dashboard Grid */}
       <Suspense fallback={<div style={styles.suspenseFallback}><LoadingSpinner /></div>}>
-        
+
         {/* KPI Cards */}
         <div style={{ ...S.grid('repeat(auto-fit, minmax(200px, 1fr))'), direction: 'rtl' }}>
           <MetricCard
@@ -405,7 +405,7 @@ const NocDashboard = () => {
             </ChartCard>
           )}
         </div>
-        
+
         {/* Charts Row 3 */}
         <div style={S.grid('2fr 1fr')}>
           <ChartCard

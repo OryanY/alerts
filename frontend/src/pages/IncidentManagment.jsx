@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Target, CheckCircle } from 'lucide-react';
+import { Settings, Target, History } from 'lucide-react'; // Added History icon
 
 import IncidentMappings from './IncidentMappings/IncidentMappings.jsx';
 import IncidentRules from './IncidentRules.jsx';
@@ -8,13 +8,31 @@ import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
 
 const IncidentManagement = () => {
-  const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules'
+  const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules' | 'history'
 
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
 
   const isMappings = activeTab === 'mappings';
   const isRules = activeTab === 'rules';
+  const isHistory = activeTab === 'history';
+
+  // Helper for button style
+  const getButtonStyle = (isActive, baseColor) => ({
+    border: 'none',
+    borderRadius: 12,
+    padding: '12px 24px',
+    fontSize: 16,
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    transition: 'all 0.2s ease',
+    background: isActive ? baseColor : 'transparent',
+    color: isActive ? colors.text.inverse : colors.text.secondary,
+    boxShadow: isActive ? colors.shadow.md : 'none'
+  });
 
   return (
     <div style={{
@@ -43,30 +61,7 @@ const IncidentManagement = () => {
           {/* --- MAPPINGS TAB BUTTON --- */}
           <button
             onClick={() => setActiveTab('mappings')}
-            style={{
-              border: 'none',
-              borderRadius: 12,
-              padding: '12px 24px',
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              transition: 'all 0.2s ease',
-
-              background: isMappings
-                ? colors.brand.primary
-                : 'transparent',
-
-              color: isMappings
-                ? colors.text.inverse
-                : colors.text.secondary,
-
-              boxShadow: isMappings
-                ? colors.shadow.md
-                : 'none'
-            }}
+            style={getButtonStyle(isMappings, colors.brand.primary)}
           >
             <Settings size={20} />
             System Mappings
@@ -75,33 +70,19 @@ const IncidentManagement = () => {
           {/* --- RULES TAB BUTTON --- */}
           <button
             onClick={() => setActiveTab('rules')}
-            style={{
-              border: 'none',
-              borderRadius: 12,
-              padding: '12px 24px',
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              transition: 'all 0.2s ease',
-
-              background: isRules
-                ? colors.semantic.info
-                : 'transparent',
-
-              color: isRules
-                ? colors.text.inverse
-                : colors.text.secondary,
-
-              boxShadow: isRules
-                ? colors.shadow.md
-                : 'none'
-            }}
+            style={getButtonStyle(isRules, colors.semantic.info)}
           >
             <Target size={20} />
             Smart Rules
+          </button>
+
+          {/* --- HISTORY TAB BUTTON --- */}
+          <button
+            onClick={() => setActiveTab('history')}
+            style={getButtonStyle(isHistory, colors.semantic.warning)} // Using warning/orange for history/logs
+          >
+            <History size={20} />
+            Execution History
           </button>
         </div>
       </div>
@@ -117,34 +98,8 @@ const IncidentManagement = () => {
         border: `1px solid ${colors.border.primary}`,
         minHeight: 'calc(100vh - 300px)'
       }}>
-        {isMappings ? (
-          <IncidentMappings />
-        ) : (
-          <IncidentRules />
-        )}
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        textAlign: 'center',
-        marginTop: 48,
-        padding: 24,
-        color: colors.text.secondary,
-        fontSize: 14
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 8
-        }}>
-          <CheckCircle size={16} style={{ color: colors.brand.primary }} />
-          <span>Incident Management System</span>
-        </div>
-        <p style={{ margin: 0 }}>
-          Streamlining alert-to-incident workflows with intelligent automation
-        </p>
+        {isMappings && <IncidentMappings />}
+        {isRules && <IncidentRules />}
       </div>
 
     </div>
@@ -152,3 +107,4 @@ const IncidentManagement = () => {
 };
 
 export default IncidentManagement;
+

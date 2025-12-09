@@ -1,15 +1,10 @@
-import { useEffect, useState,useRef } from 'react';
-import {
-  Settings,
-  Plus,
-  RefreshCw,
-  AlertTriangle,
-  X,
-} from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
-import IncidentMappingsForm from './IncidentMappingsForm';
+import MappingForm from '../../components/IncidentMappings/MappingForm';
 import IncidentMappingsList from './IncidentMappingsList';
+import IncidentMappingsHeader from '../../components/IncidentMappings/IncidentMappingsHeader';
 
 // Pattern types are semantic only (no colors here)
 export const PATTERN_TYPES = {
@@ -36,11 +31,8 @@ export const PATTERN_TYPES = {
   },
 };
 
-  // Helper to add alpha to a hex from theme (e.g. "#3B82F6" + "20" = "#3B82F620")
-export const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
-
 const IncidentMappings = () => {
-  const { colors,gradients,PATTERN_COLORS } = useTheme();
+  const { colors, gradients, PATTERN_COLORS } = useTheme();
   const formRef = useRef(null);
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -90,13 +82,13 @@ const IncidentMappings = () => {
   };
 
   const handleEdit = (m) => {
-  setEditingItem(m);
-  setShowForm(true);
-  setTimeout(() => {
-    formRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    setEditingItem(m);
+    setShowForm(true);
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
     }, 100);
   };
 
@@ -129,6 +121,60 @@ const IncidentMappings = () => {
     setShowForm(false);
   };
 
+  // FILTERING & PAGINATION
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const filteredMappings = mappings.filter((m) => {
+    if (!searchTerm) return true;
+    const lower = searchTerm.toLowerCase();
+
+    // Fields to search
+    const groupLabel = assignmentGroups.find(g => g.value === m.assignment_group)?.label || '';
+
+    const fieldsToCheck = [
+      m.service_offering,
+      m.business_service,
+      m.assignment_group,
+      groupLabel
+    ];
+
+    // Check basic fields
+    const basicMatch = fieldsToCheck.some(val => val && val.toLowerCase().includes(lower));
+    if (basicMatch) return true;
+
+    // Check grafana names (patterns)
+    if (m.grafana_names && Array.isArray(m.grafana_names)) {
+      return m.grafana_names.some(p => {
+        const val = typeof p === 'string' ? p : p.value;
+        return val.toLowerCase().includes(lower);
+      });
+    }
+
+    return false;
+  });
+
+  // Reset page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  // Slicing
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredMappings.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredMappings.length / itemsPerPage);
+
+  // Handlers
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      // smooth scroll top of list
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   if (loading) {
     return (
       <div
@@ -143,14 +189,7 @@ const IncidentMappings = () => {
         }}
       >
         <div style={{ textAlign: 'center' }}>
-          <RefreshCw
-            size={32}
-            style={{
-              animation: 'spin 1s linear infinite',
-              color: colors.brand.primary,
-              marginBottom: 16,
-            }}
-          />
+          {/* We can use a simpler loading indicator or extract RefreshCw if needed, but for now simple text is fine or import RefreshCw */}
           <div
             style={{
               fontSize: 18,
@@ -223,109 +262,46 @@ const IncidentMappings = () => {
       )}
 
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 32,
-          padding: '0 8px',
-        }}
-      >
-        <div>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 28,
-              fontWeight: 700,
-              color: colors.text.primary,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-            }}
-          >
-            <Settings size={28} color={colors.text.primary} />
-            System Mappings
-          </h2>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button
-            onClick={handleCreateClick}
-            style={{
-              background: showForm
-                ? `linear-gradient(135deg, ${colors.brand.yellow} 0%, ${colors.semantic.warning} 100%)`
-                : `linear-gradient(135deg, ${colors.brand.primary} 0%, ${colors.brand.primaryHover} 100%)`,
-              color: colors.text.inverse,
-              border: 'none',
-              borderRadius: 12,
-              padding: '12px 24px',
-              fontSize: 16,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: `0 4px 12px ${withAlpha(colors.brand.primary, '40')}`,
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {showForm ? <X size={18} /> : <Plus size={18} />}
-            {showForm ? 'Cancel' : 'Create New Mapping'}
-          </button>
-
-          <button
-            onClick={fetchMappings}
-            style={{
-              background: colors.bg.secondary,
-              color: colors.text.secondary,
-              border: `2px solid ${colors.border.primary}`,
-              borderRadius: 12,
-              padding: '12px 20px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 14,
-              fontWeight: 500,
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-        </div>
-      </div>
+      <IncidentMappingsHeader
+        showForm={showForm}
+        onCreateClick={handleCreateClick}
+        onRefresh={fetchMappings}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+      />
 
       {/* FORM */}
       {showForm && (
-          <div ref={formRef}> 
-        <IncidentMappingsForm
-          colors={colors}
-          gradients={gradients}
-          PATTERN_TYPES={PATTERN_TYPES}
-          PATTERN_COLORS={PATTERN_COLORS}
-          assignmentGroups={assignmentGroups}
-          loadingGroups={loadingGroups}
-          editingItem={editingItem}
-          onSaved={handleSaved}
-          onCancel={handleCancelForm}
-          onError={setError}
-        />
+        <div ref={formRef}>
+          <MappingForm
+            PATTERN_TYPES={PATTERN_TYPES}
+            PATTERN_COLORS={PATTERN_COLORS}
+            assignmentGroups={assignmentGroups}
+            loadingGroups={loadingGroups}
+            editingItem={editingItem}
+            onSaved={handleSaved}
+            onCancel={handleCancelForm}
+            onError={setError}
+          />
         </div>
       )}
 
-      {/* LIST */}
-      <IncidentMappingsList
-        mappings={mappings}
-        colors={colors}
-        gradients={gradients}
-        PATTERN_TYPES={PATTERN_TYPES}
-        PATTERN_COLORS={PATTERN_COLORS}
-        assignmentGroups={assignmentGroups}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
+      {/* LIST (Only show when NOT editing) */}
+      {!showForm && (
+        <IncidentMappingsList
+          mappings={currentItems}
+          totalItems={filteredMappings.length}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+          colors={colors}
+          PATTERN_TYPES={PATTERN_TYPES}
+          PATTERN_COLORS={PATTERN_COLORS}
+          assignmentGroups={assignmentGroups}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
+      )}
     </div>
   );
 };

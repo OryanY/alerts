@@ -7,15 +7,15 @@ import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
-import { formatHourAndDay, formatDateForApi }  from "../utils/helpers";
+import { formatHourAndDay, formatDateForApi } from "../utils/helpers";
 import { formatIncidentId, escapeCsv } from '../utils/helpers';
 
-import { DateRangePicker } from '../components/DateRangePicker';
-import { ErrorCallout } from '../components/ErrorCallout';
-import { LoadingSkeleton } from '../components/LoadingSkeleton';
-import { CustomSelect } from '../components/CustomSelect';
-import { ColumnVisibilityPanel, getDefaultVisibleColumns, getAllColumns } from '../components/ColumnVisibilityPanel';
-import { AlertTable } from '../components/AlertTable';
+import { DateRangePicker } from '../components/ui/DateRangePicker';
+import { ErrorCallout } from '../components/ui/ErrorCallout';
+import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
+import { CustomSelect } from '../components/ui/CustomSelect';
+import { ColumnVisibilityPanel, getDefaultVisibleColumns, getAllColumns } from '../components/layout/ColumnVisibilityPanel';
+import { AlertTable } from '../components/dashboard/AlertTable';
 
 const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 50;
@@ -68,7 +68,7 @@ const ExplorerPage = () => {
         debounceIdRef.current = null;
       }
     };
-  }, [filtersNoPage,filtersKey, setPage]);
+  }, [filtersNoPage, filtersKey, setPage]);
 
   const apiParams = useMemo(() => {
     const f = debouncedFilters || {};
@@ -424,9 +424,8 @@ const ExplorerPage = () => {
             >
               {loading
                 ? 'Loading alerts…'
-                : `${processedAlerts.length.toLocaleString()} ${
-                    processedAlerts.length === 1 ? 'alert' : 'alerts'
-                  } found`}
+                : `${processedAlerts.length.toLocaleString()} ${processedAlerts.length === 1 ? 'alert' : 'alerts'
+                } found`}
             </p>
           </div>
 

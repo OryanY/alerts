@@ -1,5 +1,3 @@
-export const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
-
 const normalizeTheme = (c = {}) => ({
 
   bg: {
@@ -10,15 +8,15 @@ const normalizeTheme = (c = {}) => ({
   },
 
   text: {
-    primary: c?.text?.primary || '#111827',     
-    secondary: c?.text?.secondary || '#475569',  
-    tertiary: c?.text?.tertiary || '#64748b', 
+    primary: c?.text?.primary || '#111827',
+    secondary: c?.text?.secondary || '#475569',
+    tertiary: c?.text?.tertiary || '#64748b',
     inverse: c?.text?.inverse || '#FFFFFF',
     link: c?.text?.link || '#2563EB',
   },
 
   border: {
-    primary: c?.border?.primary || '#E2E8F0',  
+    primary: c?.border?.primary || '#E2E8F0',
     secondary: c?.border?.secondary || '#CBD5E1',
     focus: c?.border?.focus || '#3B82F6',
   },
@@ -218,79 +216,78 @@ export const createThemedStyles = (raw) => {
     activeTab: { color: colors.brand.primary, borderBottomColor: colors.brand.primary },
 
     inactiveTab: { color: colors.text.secondary, borderBottomColor: 'transparent' },
-button: {
-  primary: (disabled = false) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '10px 20px',
-    borderRadius: 6,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontSize: 14,
-    fontWeight: 600,
-    background: disabled
-      ? colors.brand.primary + '50'
-      : colors.brand.primary,
-    color: disabled ? colors.text.inverse + '90' : colors.text.inverse,
-    border: 'none',
-    opacity: disabled ? 0.6 : 1,
-  }),
+    button: {
+      primary: (disabled = false) => ({
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '10px 20px',
+        borderRadius: 6,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontSize: 14,
+        fontWeight: 600,
+        background: disabled
+          ? colors.brand.primary + '50'
+          : colors.brand.primary,
+        color: disabled ? colors.text.inverse + '90' : colors.text.inverse,
+        border: 'none',
+        opacity: disabled ? 0.6 : 1,
+      }),
 
-  secondary: (disabled = false) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '8px 16px',
-    borderRadius: 6,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontSize: 13,
-    fontWeight: 600,
-    background: disabled
-      ? colors.bg.tertiary
-      : colors.bg.secondary,
-    color: disabled
-      ? colors.text.tertiary
-      : colors.text.primary,
-    border: `1px solid ${
-      disabled ? colors.border.secondary : colors.border.primary
-    }`,
-    opacity: disabled ? 0.6 : 1,
-  }),
+      secondary: (disabled = false) => ({
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '8px 16px',
+        borderRadius: 6,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontSize: 13,
+        fontWeight: 600,
+        background: disabled
+          ? colors.bg.tertiary
+          : colors.bg.secondary,
+        color: disabled
+          ? colors.text.tertiary
+          : colors.text.primary,
+        border: `1px solid ${disabled ? colors.border.secondary : colors.border.primary
+          }`,
+        opacity: disabled ? 0.6 : 1,
+      }),
 
-  danger: (disabled = false) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '8px 16px',
-    borderRadius: 6,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontSize: 13,
-    fontWeight: 600,
-    background: disabled
-      ? colors.semantic.error + '60'
-      : colors.semantic.error,
-    color: colors.text.inverse,
-    border: 'none',
-    opacity: disabled ? 0.6 : 1,
-  }),
+      danger: (disabled = false) => ({
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '8px 16px',
+        borderRadius: 6,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontSize: 13,
+        fontWeight: 600,
+        background: disabled
+          ? colors.semantic.error + '60'
+          : colors.semantic.error,
+        color: colors.text.inverse,
+        border: 'none',
+        opacity: disabled ? 0.6 : 1,
+      }),
 
-  success: (disabled = false) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '8px 16px',
-    borderRadius: 6,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontSize: 13,
-    fontWeight: 600,
-    background: disabled
-      ? colors.semantic.success + '60'
-      : colors.semantic.success,
-    color: colors.text.inverse,
-    border: 'none',
-    opacity: disabled ? 0.6 : 1,
-  }),
-},
+      success: (disabled = false) => ({
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '8px 16px',
+        borderRadius: 6,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontSize: 13,
+        fontWeight: 600,
+        background: disabled
+          ? colors.semantic.success + '60'
+          : colors.semantic.success,
+        color: colors.text.inverse,
+        border: 'none',
+        opacity: disabled ? 0.6 : 1,
+      }),
+    },
 
 
     buttonDanger: {

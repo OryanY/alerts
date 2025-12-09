@@ -1,13 +1,13 @@
-import { formatHourAndDay,formatIncidentId } from "../utils/helpers";
+import { formatHourAndDay, formatIncidentId } from "../../utils/helpers";
 
-export const AlertTable = ({ 
-  alerts, 
-  visibleColumns, 
-  sortConfig, 
-  onSort, 
+export const AlertTable = ({
+  alerts,
+  visibleColumns,
+  sortConfig,
+  onSort,
   colorByDuration,
   colors,
-  renderShiftBadge 
+  renderShiftBadge
 }) => {
   const renderCell = (alert, col) => {
     const key = col.key;

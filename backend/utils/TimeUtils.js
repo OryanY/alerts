@@ -44,7 +44,7 @@ class TimeUtils {
     const timestamp = utcDate.getTime();
     const cacheKey = `il_iso_${timestamp}`;
 
-    return this._getOrCache(cacheKey, () => 
+    return this._getOrCache(cacheKey, () =>
       DateTime.fromJSDate(utcDate, { zone: 'utc' })
         .setZone(IL_ZONE)
         .toISO()
@@ -104,31 +104,31 @@ class TimeUtils {
    */
   static batchGetILHours(utcDates) {
     const results = new Map();
-    
+
     for (const date of utcDates) {
       if (!date) continue;
       const timestamp = date.getTime();
-      
+
       if (!results.has(timestamp)) {
         results.set(timestamp, this.getILHour(date));
       }
     }
-    
+
     return results;
   }
 
   static batchGetILDates(utcDates) {
     const results = new Map();
-    
+
     for (const date of utcDates) {
       if (!date) continue;
       const timestamp = date.getTime();
-      
+
       if (!results.has(timestamp)) {
         results.set(timestamp, this.getILDate(date));
       }
     }
-    
+
     return results;
   }
 
@@ -142,41 +142,38 @@ class TimeUtils {
       throw new Error('Date is required');
     }
 
-    let dateStr = ilDateString;
-    
-    // Strip timezone info if frontend sent full ISO
-    if (typeof dateStr === 'string' && dateStr.includes('T')) {
-      dateStr = dateStr.split('T')[0];
-    }
-    
-    // Check if date-only format
+    const dateStr = String(ilDateString).trim();
+
+    // Check if date-only format (YYYY-MM-DD)
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
-    
+
     let dt;
-    
+
     if (isDateOnly) {
       // Parse as IL date explicitly in IL timezone
       dt = DateTime.fromISO(dateStr, { zone: IL_ZONE });
-      
+
       if (!dt.isValid) {
         throw new Error(`Invalid date format: ${dateStr}. Use YYYY-MM-DD or ISO datetime`);
       }
-      
+
       // Set to start or end of day IN ISRAELI TIME
       dt = endOfDay ? dt.endOf('day') : dt.startOf('day');
     } else {
       // For datetime strings, check if they have timezone info
       if (dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr)) {
+        // Has explicit timezone, parse as-is
         dt = DateTime.fromISO(dateStr);
       } else {
+        // No timezone, assume IL timezone
         dt = DateTime.fromISO(dateStr, { zone: IL_ZONE });
       }
-      
+
       if (!dt.isValid) {
         throw new Error(`Invalid date format: ${dateStr}. Use YYYY-MM-DD or ISO datetime`);
       }
     }
-    
+
     // Convert to UTC and return as JS Date
     return dt.toUTC().toJSDate();
   }
@@ -187,10 +184,10 @@ class TimeUtils {
    */
   static validateDateRange(startDate, endDate, maxDays = 730) {
     if (!startDate && !endDate) return null;
-    
+
     const start = startDate ? this.parseILToUTC(startDate, false) : null;
     const end = endDate ? this.parseILToUTC(endDate, true) : null;
-    
+
     if (start && end && start >= end) {
       throw new Error('DATE_RANGE_INVALID: Start date must be before end date');
     }
@@ -202,7 +199,7 @@ class TimeUtils {
         throw new Error(`DATE_RANGE_INVALID: Date range cannot exceed ${maxDays} days`);
       }
     }
-    
+
     return { start, end };
   }
 
@@ -211,7 +208,7 @@ class TimeUtils {
    */
   static isNightHour(hour, nightStart, nightEnd) {
     if (hour === null || hour === undefined) return false;
-    
+
     return nightStart <= nightEnd
       ? (hour >= nightStart && hour < nightEnd)
       : (hour >= nightStart || hour < nightEnd);
@@ -259,11 +256,11 @@ class TimeUtils {
   static formatDuration(seconds) {
     if (seconds < 60) return `${seconds}s`;
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    
+
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     return `${hours}h ${mins}m ${secs}s`;
   }
 

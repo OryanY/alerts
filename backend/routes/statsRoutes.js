@@ -163,4 +163,22 @@ router.get('/top-nodes', ...createStatsHandler(
   'top-nodes'
 ));
 
+router.get('/top-applications', ...createStatsHandler(
+  statsSchema,
+  alertService.getTopApplications,
+  'top-apps'
+));
+
+router.get('/top-nodes-by-app', ...createStatsHandler(
+  statsSchema,
+  alertService.getTopNodesByApp,
+  'top-nodes-app'
+));
+
+router.get('/consecutive-days', ...createStatsHandler(
+  statsSchema,
+  alertService.getConsecutiveDaysNodes,
+  'consecutive-days'
+));
+
 module.exports = router;

@@ -1,45 +1,29 @@
 import { useState, useMemo } from 'react';
 import {
-  AlertTriangle,
-  TrendingUp,
-  Clock,
-  Moon,
   Download,
-  Activity,
-  Zap,
-  Target,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
-  ChevronRight,
   Search,
-  Sun,
+  ChevronRight,
 } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  ComposedChart,
-  Area,
-} from 'recharts';
+
 
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useApiData } from '../hooks/useApiData';
-import { useDurationBands } from '../hooks/useDurationBands';
-import { DateRangePicker } from '../components/DateRangePicker';
-import { LoadingSkeleton } from '../components/LoadingSkeleton';
-import { ErrorCallout } from '../components/ErrorCallout';
-import { ChartCard } from '../components/ChartCard';
+import { DateRangePicker } from '../components/ui/DateRangePicker';
+import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
+import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
-import { formatDateForApi, formatHourAndDay } from "../utils/helpers";
-import { getChartProps } from '../utils/chartConfig';
+import { formatDateForApi } from "../utils/helpers";
+
+// New Components
+import ResearchSummaryCards from '../components/PanelResearch/ResearchSummaryCards';
+import ResearchTrendCharts from '../components/PanelResearch/ResearchTrendCharts';
+import ResearchHourlyHeatmap from '../components/PanelResearch/ResearchHourlyHeatmap';
+import TopNoisyAlertsList from '../components/PanelResearch/TopNoisyAlertsList';
+import TopApplicationsChart from '../components/PanelResearch/TopApplicationsChart';
+import ConsecutiveDaysTable from '../components/PanelResearch/ConsecutiveDaysTable';
+import TopNoisyNodesTable from '../components/PanelResearch/TopNoisyNodesTable';
+import RecentAlertsTable from '../components/PanelResearch/RecentAlertsTable';
 
 const PanelResearchPage = () => {
   const {
@@ -50,14 +34,12 @@ const PanelResearchPage = () => {
     setPresetRange,
   } = useClientConfig();
 
-  const { colorByDuration } = useDurationBands(config);
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
 
   const [selectedPanel, setSelectedPanel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-
-  const chartProps = useMemo(() => getChartProps(colors), [colors]);
+  const [selectedNode, setSelectedNode] = useState(null);
 
   // Adjust date range for "today" selection
   const adjustedDateRange = useMemo(() => {
@@ -112,13 +94,31 @@ const PanelResearchPage = () => {
       limit: 100,
       sort_by: 'time_fired',
       sort_order: 'DESC',
+      ...(selectedNode ? { node_name: selectedNode } : {}),
     };
-  }, [adjustedDateRange, getApiParams, selectedPanel]);
+  }, [adjustedDateRange, getApiParams, selectedPanel, selectedNode]);
 
   const {
     data: recentAlerts,
     loading: alertsLoading,
   } = useApiData('/alerts', alertsParams, { skip: !selectedPanel });
+
+  // --- NEW STATISTICS ---
+
+  const {
+    data: topApps,
+    loading: topAppsLoading
+  } = useApiData('/stats/top-applications', panelApiParams, { skip: !selectedPanel });
+
+  const {
+    data: topNodes,
+    loading: topNodesLoading
+  } = useApiData('/stats/top-nodes-by-app', panelApiParams, { skip: !selectedPanel });
+
+  const {
+    data: consecutiveNodes,
+    loading: consecutiveNodesLoading
+  } = useApiData('/stats/consecutive-days', panelApiParams, { skip: !selectedPanel });
 
   // Filter panels by search
   const filteredPanels = useMemo(() => {
@@ -137,14 +137,11 @@ const PanelResearchPage = () => {
     return filtered;
   }, [panelsList, searchQuery]);
 
-  // Format time for IL
-  const formatTime = formatHourAndDay;
-
   // Export
   const exportReport = () => {
     if (!panelAnalysis || !selectedPanel) return;
 
-    const { summary, recommendations, top_noisy_alerts } = panelAnalysis;
+    const { summary, top_noisy_alerts } = panelAnalysis;
 
     const reportLines = [
       `Panel Health Report: ${selectedPanel}`,
@@ -161,17 +158,11 @@ const PanelResearchPage = () => {
       `Alert Velocity: ${summary.alerts_per_day} alerts/day`,
       `Trend: ${summary.trend_direction.toUpperCase()}`,
       '',
-      '=== RECOMMENDATIONS ===',
-      ...recommendations.map(
-        (rec, i) =>
-          `\n${i + 1}. [${rec.severity.toUpperCase()}] ${rec.category}\n   ${rec.message}\n   Action: ${rec.action}\n   Impact: ${rec.impact}`
-      ),
-      '',
+
       '=== TOP NOISY ALERTS ===',
       ...top_noisy_alerts.slice(0, 5).map(
         (alert, i) =>
-          `${i + 1}. ${alert.message}\n   Count: ${alert.count} | Avg Duration: ${
-            alert.avg_duration
+          `${i + 1}. ${alert.message}\n   Count: ${alert.count} | Avg Duration: ${alert.avg_duration
           }s | False Positive Rate: ${alert.false_positive_rate}%`
       ),
     ];
@@ -188,32 +179,6 @@ const PanelResearchPage = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
-
-  const getSeverityColor = (severity) => {
-    switch (severity) {
-      case 'high':
-        return colors.semantic.error;
-      case 'medium':
-        return colors.semantic.warning;
-      case 'low':
-        return colors.semantic.success;
-      default:
-        return colors.text.secondary;
-    }
-  };
-
-  const getSeverityIcon = (severity) => {
-    switch (severity) {
-      case 'high':
-        return XCircle;
-      case 'medium':
-        return AlertCircle;
-      case 'low':
-        return CheckCircle;
-      default:
-        return AlertTriangle;
-    }
   };
 
   if (panelsError) {
@@ -311,46 +276,53 @@ const PanelResearchPage = () => {
             {panelsLoading ? (
               <div
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                  gap: 12,
+                  display: 'flex',
+                  justifyContent: 'center',
+                  padding: 40,
                 }}
               >
-                {Array(6)
-                  .fill()
-                  .map((_, i) => (
-                    <LoadingSkeleton key={i} width="100%" height={120} />
-                  ))}
+                <div className="spinner" />
               </div>
+            ) : panelsError ? (
+              <ErrorCallout
+                message="Failed to load panels list"
+                details={panelsError}
+              />
             ) : (
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
                   gap: 12,
+                  maxHeight: 500,
+                  overflowY: 'auto',
                 }}
               >
-                {filteredPanels.map((panel) => (
+                {filteredPanels.map((p) => (
                   <div
-                    key={panel.panel_title}
-                    onClick={() => setSelectedPanel(panel.panel_title)}
+                    key={p.panel_title}
+                    onClick={() => {
+                      setSelectedPanel(p.panel_title);
+                      setSelectedNode(null);
+                    }}
                     style={{
                       padding: 16,
                       borderRadius: 8,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
+                      border: `1px solid ${colors.border.primary}`,
                       background: colors.bg.secondary,
-                      borderWidth: 1,
-                      borderStyle: 'solid',
-                      borderColor: colors.border.primary,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = colors.brand.primary;
-                      e.currentTarget.style.boxShadow = colors.shadow.md;
+                      e.currentTarget.style.background =
+                        colors.bg.tertiary;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = colors.border.primary;
-                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.borderColor =
+                        colors.border.primary;
+                      e.currentTarget.style.background =
+                        colors.bg.secondary;
                     }}
                   >
                     <div
@@ -362,27 +334,26 @@ const PanelResearchPage = () => {
                       }}
                     >
                       <div style={{ flex: 1 }}>
-                        <h4
-                          style={{
-                            fontSize: 16,
-                            fontWeight: 600,
-                            margin: '0 0 4px 0',
-                            color: colors.text.primary,
-                          }}
-                        >
-                          {panel.panel_title}
-                        </h4>
                         <div
                           style={{
-                            fontSize: 12,
-                            color: colors.text.secondary,
+                            fontWeight: 600,
+                            color: colors.text.primary,
+                            marginBottom: 4,
+                            fontSize: 16,
                           }}
                         >
-                          {panel.application_count}{' '}
-                          {panel.application_count === 1
-                            ? 'application'
-                            : 'applications'}
+                          {p.panel_title}
                         </div>
+                        {(p.application && p.application !== 'N/A' && p.application !== 'Unknown App') && (
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: colors.text.secondary,
+                            }}
+                          >
+                            {p.application}
+                          </div>
+                        )}
                       </div>
                       <ChevronRight
                         size={20}
@@ -394,12 +365,12 @@ const PanelResearchPage = () => {
                       <div>
                         <div
                           style={{
-                            fontSize: 24,
+                            fontSize: 20,
                             fontWeight: 700,
                             color: colors.chart.primary,
                           }}
                         >
-                          {panel.alert_count}
+                          {p.alert_count}
                         </div>
                         <div
                           style={{
@@ -413,12 +384,12 @@ const PanelResearchPage = () => {
                       <div>
                         <div
                           style={{
-                            fontSize: 24,
+                            fontSize: 20,
                             fontWeight: 700,
                             color: colors.semantic.error,
                           }}
                         >
-                          {panel.false_positive_count}
+                          {p.false_positive_count}
                         </div>
                         <div
                           style={{
@@ -435,9 +406,10 @@ const PanelResearchPage = () => {
                             fontSize: 16,
                             fontWeight: 600,
                             color: colors.text.secondary,
+                            marginTop: 4
                           }}
                         >
-                          {panel.avg_duration}s
+                          {p.avg_duration}s
                         </div>
                         <div
                           style={{
@@ -451,46 +423,54 @@ const PanelResearchPage = () => {
                     </div>
                   </div>
                 ))}
+                {filteredPanels.length === 0 && (
+                  <div
+                    style={{
+                      gridColumn: '1 / -1',
+                      padding: 20,
+                      textAlign: 'center',
+                      color: colors.text.secondary,
+                    }}
+                  >
+                    No panels found matching &quot;{searchQuery}&quot;
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Panel Analysis View */}
+      {/* Selected Panel Analysis */}
       {selectedPanel && (
-        <div>
-          {/* Back button and actions */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 20,
-            }}
-          >
-            <button
-              onClick={() => setSelectedPanel(null)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 16px',
-                borderRadius: 6,
-                fontSize: 14,
-                cursor: 'pointer',
-
-                background: colors.bg.secondary,
-                borderWidth: 1,
-                borderStyle: 'solid',
-                borderColor: colors.border.primary,
-                color: colors.text.primary,
-              }}
-            >
-              ← Back to Panel List
-            </button>
+        <div className="fade-in">
+          <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: colors.text.primary, marginBottom: 4 }}>
+                {selectedPanel}
+              </h2>
+              {panelAnalysis && panelAnalysis.application && panelAnalysis.application !== 'N/A' && (
+                <div style={{ fontSize: 13, color: colors.text.secondary }}>
+                  Application: {panelAnalysis.application}
+                </div>
+              )}
+            </div>
 
             <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setSelectedPanel(null)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  border: `1px solid ${colors.border.primary}`,
+                  background: colors.bg.secondary,
+                  color: colors.text.primary,
+                  cursor: 'pointer',
+                  fontSize: 13
+                }}
+              >
+                Change Panel
+              </button>
               <button
                 onClick={exportReport}
                 disabled={!panelAnalysis}
@@ -539,737 +519,58 @@ const PanelResearchPage = () => {
           ) : panelAnalysis ? (
             <>
               {/* Summary Cards */}
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                  gap: 16,
-                  marginBottom: 20,
-                }}
-              >
-                {/* Total Alerts */}
-                <div style={S.card()}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <AlertTriangle
-                      size={20}
-                      style={{ color: colors.semantic.warning }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: colors.text.secondary,
-                      }}
-                    >
-                      Total Alerts
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 32,
-                      fontWeight: 700,
-                      color: colors.text.primary,
-                    }}
-                  >
-                    {panelAnalysis.summary.total_alerts}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: colors.text.secondary,
-                      marginTop: 4,
-                    }}
-                  >
-                    {panelAnalysis.summary.alerts_per_day} per day
-                  </div>
-                </div>
+              <ResearchSummaryCards summary={panelAnalysis.summary} />
 
-                {/* Avg Duration */}
-                <div style={S.card()}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Clock
-                      size={20}
-                      style={{ color: colors.chart.primary }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: colors.text.secondary,
-                      }}
-                    >
-                      Avg Duration
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 32,
-                      fontWeight: 700,
-                      color: colors.text.primary,
-                    }}
-                  >
-                    {panelAnalysis.summary.avg_duration}s
-                  </div>
-                </div>
+              {/* Trend Charts */}
+              <ResearchTrendCharts
+                daily_trend={panelAnalysis.daily_trend}
+                duration_distribution={panelAnalysis.duration_distribution}
+                loading={analysisLoading}
+              />
 
-                {/* False Positive Rate */}
-                <div style={S.card()}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <XCircle
-                      size={20}
-                      style={{ color: colors.semantic.error }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: colors.text.secondary,
-                      }}
-                    >
-                      False Positive Rate
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 32,
-                      fontWeight: 700,
-                      color: colors.semantic.error,
-                    }}
-                  >
-                    {panelAnalysis.summary.false_positive_rate}%
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: colors.text.secondary,
-                      marginTop: 4,
-                    }}
-                  >
-                    {panelAnalysis.summary.false_positive_count} alerts
-                  </div>
-                </div>
-
-                {/* Night Wakeups */}
-                <div style={S.card()}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Moon
-                      size={20}
-                      style={{ color: colors.brand.secondary }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: colors.text.secondary,
-                      }}
-                    >
-                      Night Wakeups
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 32,
-                      fontWeight: 700,
-                      color: colors.brand.secondary,
-                    }}
-                  >
-                    {panelAnalysis.summary.night_wakeups}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: colors.semantic.error,
-                      marginTop: 4,
-                    }}
-                  >
-                    {panelAnalysis.summary.night_false_wakeups} false wakeups
-                  </div>
-                </div>
-
-                {/* Trend */}
-                <div style={S.card()}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <TrendingUp
-                      size={20}
-                      style={{
-                        color:
-                          panelAnalysis.summary.trend_direction === 'increasing'
-                            ? colors.semantic.error
-                            : panelAnalysis.summary.trend_direction ===
-                              'decreasing'
-                            ? colors.semantic.success
-                            : colors.text.secondary,
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: colors.text.secondary,
-                      }}
-                    >
-                      Trend
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 20,
-                      fontWeight: 700,
-                      color:
-                        panelAnalysis.summary.trend_direction === 'increasing'
-                          ? colors.semantic.error
-                          : panelAnalysis.summary.trend_direction ===
-                            'decreasing'
-                          ? colors.semantic.success
-                          : colors.text.secondary,
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {panelAnalysis.summary.trend_direction}
-                  </div>
-                </div>
-              </div>
-
-              {/* Recommendations */}
-              {panelAnalysis.recommendations &&
-                panelAnalysis.recommendations.length > 0 && (
-                  <div
-                    style={{
-                      ...S.card(),
-                      marginBottom: 20,
-                      background: colors.semantic.errorBg,
-                      borderWidth: 2,
-                      borderStyle: 'solid',
-                      borderColor: colors.semantic.error,
-                    }}
-                  >
-                    <h3
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        fontSize: 18,
-                        fontWeight: 700,
-                        margin: '0 0 16px 0',
-                        color: colors.semantic.errorText,
-                      }}
-                    >
-                      <Target
-                        size={20}
-                        style={{ color: colors.semantic.error }}
-                      />
-                      Action Items & Recommendations
-                    </h3>
-
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 12,
-                      }}
-                    >
-                      {panelAnalysis.recommendations.map((rec, idx) => {
-                        const Icon = getSeverityIcon(rec.severity);
-                        const sevColor = getSeverityColor(rec.severity);
-                        return (
-                          <div
-                            key={idx}
-                            style={{
-                              padding: 16,
-                              background: colors.bg.secondary,
-                              borderRadius: 8,
-                              borderLeftWidth: 4,
-                              borderLeftStyle: 'solid',
-                              borderLeftColor: sevColor,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                gap: 12,
-                              }}
-                            >
-                              <Icon
-                                size={20}
-                                style={{
-                                  color: sevColor,
-                                  flexShrink: 0,
-                                  marginTop: 2,
-                                }}
-                              />
-                              <div style={{ flex: 1 }}>
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 8,
-                                    marginBottom: 8,
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      padding: '2px 8px',
-                                      borderRadius: 4,
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      textTransform: 'uppercase',
-
-                                      background: `${sevColor}20`,
-                                      color: sevColor,
-                                    }}
-                                  >
-                                    {rec.severity}
-                                  </span>
-                                  <span
-                                    style={{
-                                      fontSize: 12,
-                                      color: colors.text.secondary,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    {rec.category
-                                      .replace(/-/g, ' ')
-                                      .toUpperCase()}
-                                  </span>
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: 14,
-                                    fontWeight: 600,
-                                    marginBottom: 8,
-                                    color: colors.text.primary,
-                                  }}
-                                >
-                                  {rec.message}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: 13,
-                                    color: colors.text.primary,
-                                    marginBottom: 6,
-                                  }}
-                                >
-                                  <strong>Action:</strong> {rec.action}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: 12,
-                                    color: colors.text.secondary,
-                                    fontStyle: 'italic',
-                                  }}
-                                >
-                                  Impact: {rec.impact}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-              {/* Charts Row 1 */}
-              <div style={S.grid('1fr 1fr')}>
-                {/* Alert Frequency Trend */}
-                <ChartCard
-                  title="Alert Frequency Trend"
-                  icon={Activity}
-                  loading={analysisLoading}
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={panelAnalysis.daily_trend || []}>
-                      <CartesianGrid {...chartProps.grid} />
-                      <XAxis
-                        dataKey="date"
-                        {...chartProps.xAxis}
-                        tickFormatter={(date) =>
-                          new Date(date).toLocaleDateString('en-IL', {
-                            month: 'short',
-                            day: 'numeric',
-                          })
-                        }
-                      />
-                      <YAxis {...chartProps.yAxis} />
-                      <Tooltip
-                        {...chartProps.tooltip}
-                        labelFormatter={(date) =>
-                          new Date(date).toLocaleDateString('en-IL')
-                        }
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="count"
-                        fill={colors.chart.primary}
-                        fillOpacity={0.25}
-                        stroke={colors.chart.primary}
-                        strokeWidth={2}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="count"
-                        stroke={colors.chart.secondary}
-                        strokeWidth={2}
-                        dot={{ r: 4, fill: colors.chart.primary }}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-
-                {/* Duration Distribution */}
-                <ChartCard
-                  title="Duration Distribution"
-                  icon={Clock}
-                  loading={analysisLoading}
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={panelAnalysis.duration_distribution || []}>
-                      <CartesianGrid {...chartProps.grid} />
-                      <XAxis dataKey="category" {...chartProps.xAxis} />
-                      <YAxis {...chartProps.yAxis} />
-                      <Tooltip {...chartProps.tooltip} />
-                      <Bar dataKey="count" radius={[8, 8, 0, 0]}>
-                        {(panelAnalysis.duration_distribution || []).map(
-                          (entry, index) => {
-                            let fillColor = colors.semantic.error;
-                            if (index === 1) fillColor = colors.semantic.warning;
-                            if (index >= 2) fillColor = colors.semantic.success;
-                            return (
-                              <Cell key={`cell-${index}`} fill={fillColor} />
-                            );
-                          }
-                        )}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-              </div>
-
-              {/* Charts Row 2 */}
               <div style={S.grid('2fr 1fr')}>
                 {/* Hourly Alert Pattern */}
-                <ChartCard
-                  title="Hourly Alert Pattern"
-                  icon={Clock}
+                <ResearchHourlyHeatmap
+                  hourly_heatmap={panelAnalysis.hourly_heatmap}
                   loading={analysisLoading}
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={panelAnalysis.hourly_heatmap || []}>
-                      <CartesianGrid {...chartProps.grid} />
-                      <XAxis
-                        dataKey="hour"
-                        {...chartProps.xAxis}
-                        tickFormatter={(h) => `${String(h).padStart(2, '0')}:00`}
-                      />
-                      <YAxis {...chartProps.yAxis} />
-                      <Tooltip
-                        {...chartProps.tooltip}
-                        labelFormatter={(h) =>
-                          `${String(h).padStart(2, '0')}:00`
-                        }
-                        formatter={(value, name) => [
-                          value,
-                          name === 'count' ? 'Alerts' : 'Avg Duration',
-                        ]}
-                      />
-                      <Bar dataKey="count">
-                        {(panelAnalysis.hourly_heatmap || []).map(
-                          (entry, idx) => (
-                            <Cell
-                              key={idx}
-                              fill={
-                                entry.is_night
-                                  ? colors.brand.secondary
-                                  : colors.chart.primary
-                              }
-                            />
-                          )
-                        )}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartCard>
+                />
 
                 {/* Top Noisy Alerts */}
-                <ChartCard
-                  title="Top Noisy Alerts"
-                  icon={Zap}
+                <TopNoisyAlertsList
+                  alerts={panelAnalysis.top_noisy_alerts}
                   loading={analysisLoading}
-                >
-                  <div
-                    style={{
-                      maxHeight: 300,
-                      overflowY: 'auto',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                    }}
-                  >
-                    {(panelAnalysis.top_noisy_alerts || [])
-                      .slice(0, 10)
-                      .map((alert, idx) => {
-                        const isTop = idx < 3;
-                        return (
-                          <div
-                            key={idx}
-                            style={{
-                              padding: 10,
-                              borderRadius: 6,
-
-                              background: isTop
-                                ? colors.semantic.errorBg
-                                : colors.bg.tertiary,
-                              borderWidth: 1,
-                              borderStyle: 'solid',
-                              borderColor: isTop
-                                ? colors.semantic.error
-                                : colors.border.primary,
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 600,
-                                marginBottom: 4,
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                color: colors.text.primary,
-                              }}
-                              title={alert.message}
-                            >
-                              {alert.message || 'N/A'}
-                            </div>
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                fontSize: 11,
-                                color: colors.text.secondary,
-                              }}
-                            >
-                              <span>{alert.count} occurrences</span>
-                              <span>{alert.avg_duration}s avg</span>
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 10,
-                                color: colors.semantic.error,
-                                marginTop: 2,
-                              }}
-                            >
-                              {alert.false_positive_rate}% false positive
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </ChartCard>
+                />
               </div>
 
-              {/* Recent Alerts Table */}
-              <div style={{ ...S.card(), marginTop: 20 }}>
-                <h3
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 600,
-                    marginBottom: 16,
-                    color: colors.text.primary,
-                  }}
-                >
-                  Recent Alerts (Last 100)
-                </h3>
+              {/* === NEW SECTIONS === */}
 
-                {alertsLoading ? (
-                  <LoadingSkeleton width="100%" height={400} />
-                ) : recentAlerts && recentAlerts.length > 0 ? (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table
-                      style={{
-                        width: '100%',
-                        borderCollapse: 'collapse',
-                        fontSize: 13,
-                      }}
-                    >
-                      <thead>
-                        <tr
-                          style={{
-                            background: colors.bg.tertiary,
-                            borderBottom: `2px solid ${colors.border.primary}`,
-                          }}
-                        >
-                          <th
-                            style={{
-                              ...S.tableHeadCell,
-                              textAlign: 'left',
-                            }}
-                          >
-                            Time Fired (IL)
-                          </th>
-                          <th
-                            style={{
-                              ...S.tableHeadCell,
-                              textAlign: 'left',
-                            }}
-                          >
-                            Message
-                          </th>
-                          <th
-                            style={{
-                              ...S.tableHeadCell,
-                              textAlign: 'center',
-                            }}
-                          >
-                            Duration
-                          </th>
-                          <th
-                            style={{
-                              ...S.tableHeadCell,
-                              textAlign: 'center',
-                            }}
-                          >
-                            Shift
-                          </th>
-                          <th
-                            style={{
-                              ...S.tableHeadCell,
-                              textAlign: 'left',
-                            }}
-                          >
-                            Operator
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentAlerts.map((alert, idx) => (
-                          <tr
-                            key={alert.id || idx}
-                            style={{
-                              borderBottom: `1px solid ${colors.border.primary}`,
-                            }}
-                          >
-                            <td
-                              style={{
-                                ...S.tableCell,
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                              }}
-                            >
-                              {formatTime(alert.time_fired)}
-                            </td>
-                            <td
-                              style={{
-                                ...S.tableCell,
-                                maxWidth: 300,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  color: colors.text.primary,
-                                }}
-                                title={alert.message}
-                              >
-                                {alert.message || 'N/A'}
-                              </div>
-                            </td>
-                            <td
-                              style={{
-                                ...S.tableCell,
-                                textAlign: 'center',
-                              }}
-                            >
-                              <span
-                                style={{
-                                  background: `${colorByDuration(
-                                    alert.duration_sec
-                                  )}20`,
-                                  color: colorByDuration(alert.duration_sec),
-                                  padding: '4px 8px',
-                                  borderRadius: 12,
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {alert.duration_sec}s
-                              </span>
-                            </td>
-                            <td
-                              style={{
-                                ...S.tableCell,
-                                textAlign: 'center',
-                              }}
-                            >
-                              {alert.shift === 'Night' ? (
-                                <Moon
-                                  size={14}
-                                  style={{ color: colors.brand.secondary }}
-                                />
-                              ) : (
-                                <Sun
-                                  size={14}
-                                  style={{ color: colors.semantic.warning }}
-                                />
-                              )}
-                            </td>
-                            <td style={S.tableCell}>
-                              {alert.operator || 'System/Auto'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      padding: 40,
-                      textAlign: 'center',
-                      color: colors.text.secondary,
-                    }}
-                  >
-                    No recent alerts found for this panel
-                  </div>
-                )}
+              <div style={S.grid('1fr 1fr')}>
+                {/* Top Applications */}
+                <TopApplicationsChart data={topApps} loading={topAppsLoading} />
+
+                {/* Consecutive Days Patterns */}
+                <ConsecutiveDaysTable
+                  nodes={consecutiveNodes}
+                  loading={consecutiveNodesLoading}
+                  onSelectNode={setSelectedNode}
+                  selectedNode={selectedNode}
+                />
               </div>
+
+              {/* Top Nodes Table */}
+              <TopNoisyNodesTable
+                nodes={topNodes}
+                loading={topNodesLoading}
+                selectedNode={selectedNode}
+                onSelectNode={setSelectedNode}
+              />
+
+              {/* Recent Alerts */}
+              <RecentAlertsTable
+                alerts={recentAlerts}
+                loading={alertsLoading}
+                selectedNode={selectedNode}
+              />
             </>
           ) : null}
         </div>

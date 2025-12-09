@@ -1,61 +1,21 @@
-import { Edit, Trash2 } from 'lucide-react';
-
-const baseMandatoryFields = [
-  'service_offering',
-  'business_service',
-  'u_network',
-  'u_impact_technology',
-  'assignment_group',
-  'u_system_failure',
-];
-
-const excludeFromCustom = [
-  '_id',
-  'grafana_names',
-  'created_at',
-  'updated_at',
-  ...baseMandatoryFields,
-];
+import { ChevronLeft, ChevronRight } from 'lucide-react'; // Need to add import
+import MappingCardComponent from '../../components/IncidentMappings/MappingCard';
 
 const IncidentMappingsList = ({
   mappings,
+  totalItems,
+  currentPage,
+  totalPages,
+  onPageChange,
   colors,
-  gradients,
   PATTERN_TYPES,
   PATTERN_COLORS,
   assignmentGroups,
   onEdit,
   onDelete,
 }) => {
-  const renderPatternChip = (pattern, idx) => {
-    const p = typeof pattern === 'string' ? { value: pattern, type: 'exact' } : pattern;
-    const colorsForType = PATTERN_COLORS[p.type] || PATTERN_COLORS.exact;
-
-    return (
-      <span
-        key={idx}
-        style={{
-          background: colors.bg.tertiary,
-          color: colors.text.primary,
-          padding: '6px 12px',
-          borderRadius: 6,
-          fontSize: 13,
-          fontWeight: 500,
-          border: `1px solid ${colors.border.primary}`,
-          borderLeft: `3px solid ${colorsForType.main}`,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          fontFamily: p.type === 'regex' ? 'monospace' : 'inherit',
-        }}
-      >
-        <span style={{ opacity: 0.6 }}>{PATTERN_TYPES[p.type].icon}</span>
-        <span>{p.value}</span>
-      </span>
-    );
-  };
-
-  if (mappings.length === 0) {
+  if (totalItems === 0 && mappings.length === 0) {
+    // Empty state
     return (
       <div
         style={{
@@ -75,7 +35,7 @@ const IncidentMappingsList = ({
             marginBottom: 8,
           }}
         >
-          No Mappings Yet
+          No Mappings Found
         </h3>
         <p
           style={{
@@ -86,8 +46,7 @@ const IncidentMappingsList = ({
             margin: '0 auto',
           }}
         >
-          Create your first system mapping to configure how Grafana applications create ServiceNow
-          incidents.
+          Try adjusting your search or create a new mapping.
         </p>
       </div>
     );
@@ -112,8 +71,12 @@ const IncidentMappingsList = ({
             color: colors.text.primary,
           }}
         >
-          Your Mappings ({mappings.length})
+          Found {totalItems} Mappings
         </h3>
+
+        <div style={{ fontSize: 13, color: colors.text.secondary }}>
+          Page {currentPage} of {totalPages}
+        </div>
       </div>
 
       <div
@@ -123,330 +86,72 @@ const IncidentMappingsList = ({
           gap: 16,
         }}
       >
-        {mappings.map((m) => {
-          const customFieldsInMapping = Object.keys(m).filter(
-            (k) => !excludeFromCustom.includes(k)
-          );
-
-          return (
-            <div
-              key={m._id}
-              style={{
-                background: colors.bg.secondary,
-                borderRadius: 12,
-                padding: 20,
-                border: `1px solid ${colors.border.primary}`,
-                borderTop: `3px solid ${colors.brand.primary}`,
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  marginBottom: 16,
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <h4
-                    style={{
-                      margin: '0 0 10px 0',
-                      fontSize: 18,
-                      fontWeight: 600,
-                      color: colors.text.primary,
-                    }}
-                  >
-                    {m.service_offering}
-                  </h4>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: 6,
-                      marginBottom: 8,
-                    }}
-                  >
-                    {(m.grafana_names || []).map((pattern, idx) =>
-                      renderPatternChip(pattern, idx)
-                    )}
-
-                    {m.u_system_failure && (
-                      <span
-                        style={{
-                          background: colors.bg.tertiary,
-                          color: colors.semantic.error,
-                          padding: '6px 12px',
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          border: `1px solid ${colors.border.primary}`,
-                          borderLeft: `3px solid ${colors.semantic.error}`,
-                        }}
-                      >
-                        SYSTEM FAILURE
-                      </span>
-                    )}
-                    {customFieldsInMapping.length > 0 && (
-                      <span
-                        style={{
-                          background: colors.bg.tertiary,
-                          color: colors.text.primary,
-                          padding: '6px 12px',
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          border: `1px solid ${colors.border.primary}`,
-                          borderLeft: `3px solid ${colors.brand.purple}`,
-                        }}
-                      >
-                        {customFieldsInMapping.length} Custom Field
-                        {customFieldsInMapping.length > 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={() => onEdit(m)}
-                    style={{
-                      background: colors.brand.primary,
-                      color: colors.text.inverse,
-                      border: 'none',
-                      borderRadius: 6,
-                      padding: '8px 14px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    <Edit size={14} />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => onDelete(m._id)}
-                    style={{
-                      background: 'transparent',
-                      color: colors.semantic.error,
-                      border: `1px solid ${colors.semantic.error}`,
-                      borderRadius: 6,
-                      padding: '8px 14px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    <Trash2 size={14} />
-                    Delete
-                  </button>
-                </div>
-              </div>
-
-              {/* Base Required Fields */}
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-                  gap: 12,
-                  marginBottom: customFieldsInMapping.length > 0 ? 12 : 0,
-                }}
-              >
-                <div
-                  style={{
-                    background: colors.bg.tertiary,
-                    padding: 12,
-                    borderRadius: 6,
-                    border: `1px solid ${colors.border.primary}`,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: colors.text.secondary,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Assignment Group
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: colors.text.primary,
-                    }}
-                  >
-                    {assignmentGroups.find((g) => g.value === m.assignment_group)?.label ||
-                      m.assignment_group}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: colors.bg.tertiary,
-                    padding: 12,
-                    borderRadius: 6,
-                    border: `1px solid ${colors.border.primary}`,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: colors.text.secondary,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Business Service
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: colors.text.primary,
-                    }}
-                  >
-                    {m.business_service}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: colors.bg.tertiary,
-                    padding: 12,
-                    borderRadius: 6,
-                    border: `1px solid ${colors.border.primary}`,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: colors.text.secondary,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Network
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: colors.text.primary,
-                    }}
-                  >
-                    {m.u_network}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: colors.bg.tertiary,
-                    padding: 12,
-                    borderRadius: 6,
-                    border: `1px solid ${colors.border.primary}`,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: colors.text.secondary,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Impact Technology
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: colors.text.primary,
-                    }}
-                  >
-                    {m.u_impact_technology}
-                  </div>
-                </div>
-              </div>
-
-              {/* Custom Fields Display */}
-              {customFieldsInMapping.length > 0 && (
-                <div
-                  style={{
-                    padding: 12,
-                    background: colors.bg.tertiary,
-                    borderRadius: 6,
-                    border: `1px solid ${colors.border.primary}`,
-                    borderLeft: `3px solid ${colors.brand.purple}`,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: colors.text.secondary,
-                      marginBottom: 10,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                  >
-                    Custom Fields:
-                  </div>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                      gap: 10,
-                    }}
-                  >
-                    {customFieldsInMapping.map((fieldName) => (
-                      <div
-                        key={fieldName}
-                        style={{
-                          background: colors.bg.secondary,
-                          padding: 10,
-                          borderRadius: 6,
-                          border: `1px solid ${colors.border.primary}`,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 500,
-                            color: colors.text.secondary,
-                            marginBottom: 4,
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {fieldName}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 13,
-                            color: colors.text.primary,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {m[fieldName] || (
-                            <span style={{ color: colors.text.tertiary }}>—</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {mappings.map((m) => (
+          <MappingCardComponent
+            key={m._id}
+            mapping={m}
+            colors={colors}
+            PATTERN_TYPES={PATTERN_TYPES}
+            PATTERN_COLORS={PATTERN_COLORS}
+            assignmentGroups={assignmentGroups}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ))}
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 16,
+          marginTop: 32,
+          paddingTop: 20,
+          borderTop: `1px solid ${colors.border.primary}`
+        }}>
+          <button
+            disabled={currentPage === 1}
+            onClick={() => onPageChange(currentPage - 1)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: `1px solid ${colors.border.primary}`,
+              background: currentPage === 1 ? colors.bg.tertiary : colors.bg.secondary,
+              color: currentPage === 1 ? colors.text.tertiary : colors.text.primary,
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <ChevronLeft size={16} /> Previous
+          </button>
+
+          <span style={{ fontSize: 14, fontWeight: 600, color: colors.text.primary }}>
+            {currentPage} / {totalPages}
+          </span>
+
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => onPageChange(currentPage + 1)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: `1px solid ${colors.border.primary}`,
+              background: currentPage === totalPages ? colors.bg.tertiary : colors.bg.secondary,
+              color: currentPage === totalPages ? colors.text.tertiary : colors.text.primary,
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Next <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
