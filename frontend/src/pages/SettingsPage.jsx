@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Settings, Save, RotateCcw, Info } from 'lucide-react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 import { useClientConfig } from '../contexts/ClientConfigContext';
-import LabeledInput from '../components/LabeledInput';
+import LabeledInput from '../components/ui/LabeledInput';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
 

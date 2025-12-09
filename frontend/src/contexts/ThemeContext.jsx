@@ -1,6 +1,8 @@
 // frontend/src/contexts/ThemeContext.jsx
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 
+import { withAlpha } from '../utils/helpers';
+
 const ThemeContext = createContext();
 
 export const useTheme = () => {
@@ -8,11 +10,6 @@ export const useTheme = () => {
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
   return ctx;
 };
-
-//-----------------------------------------------
-// Helper: Add alpha to hex
-//-----------------------------------------------
-const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
 
 //-----------------------------------------------
 // Base Themes (raw, without computed values)
@@ -156,7 +153,7 @@ export const ThemeProvider = ({ children }) => {
     try {
       localStorage.setItem('theme', theme);
       document.documentElement.setAttribute('data-theme', theme);
-    } catch {}
+    } catch { }
   }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));

@@ -1,6 +1,6 @@
-import { Calendar } from '../icons';
-import { useTheme } from '../contexts/ThemeContext';
-import { createThemedStyles } from '../utils/themedStyles';
+import { Calendar } from '../../icons';
+import { useTheme } from '../../contexts/ThemeContext';
+import { createThemedStyles } from '../../utils/themedStyles';
 
 export const DateRangePicker = ({
   dateRange,

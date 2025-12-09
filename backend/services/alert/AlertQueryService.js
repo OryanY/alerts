@@ -20,7 +20,7 @@ class AlertQueryService {
    */
   async fetchAlerts(params) {
     const request = this.pool.request();
-    
+
     // Build query context
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.applyToRequest(request);
@@ -61,10 +61,10 @@ class AlertQueryService {
    */
   async fetchBasicRecords(params, fields = 'time_fired, duration_sec') {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     const cap = context.getLimit(params.limit);
-    
+
     context.applyToRequest(request);
     context.addCapParam(request, cap);
 
@@ -82,7 +82,7 @@ class AlertQueryService {
    */
   async fetchHourlyHeatmap(params) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.applyToRequest(request);
 
@@ -99,7 +99,7 @@ class AlertQueryService {
    */
   async fetchDurationHistogram(params, thresholds) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.addThresholdParams(thresholds);
     context.applyToRequest(request);
@@ -117,7 +117,7 @@ class AlertQueryService {
    */
   async fetchShiftAnalysis(params, thresholds) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.addThresholdParams(thresholds);
     context.applyToRequest(request);
@@ -135,7 +135,7 @@ class AlertQueryService {
    */
   async fetchOverviewStats(params, thresholds) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.addThresholdParams(thresholds);
     context.applyToRequest(request);
@@ -153,7 +153,7 @@ class AlertQueryService {
    */
   async fetchPanelList(params, thresholds) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.addThresholdParams(thresholds);
     context.applyToRequest(request);
@@ -171,12 +171,12 @@ class AlertQueryService {
    */
   async fetchPanelStats(params, thresholds) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.addThresholdParams(thresholds);
     context.applyToRequest(request);
 
-    const topClause = params.limit 
+    const topClause = params.limit
       ? SqlTemplates.buildTopClause(params.limit)
       : '';
 
@@ -198,10 +198,10 @@ class AlertQueryService {
    */
   async fetchTopNoisyNodes(params) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     const limit = Math.min(params.limit || 10, 50);
-    
+
     context.applyToRequest(request);
     request.input('limit_param', sql.Int, limit);
 
@@ -218,7 +218,7 @@ class AlertQueryService {
    */
   async fetchMessageBreakdown(params, thresholds) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants, {
       requirePanelTitle: true
     });
@@ -238,7 +238,7 @@ class AlertQueryService {
    */
   async countAlerts(params) {
     const request = this.pool.request();
-    
+
     const context = QueryContextBuilder.fromParams(params, this.constants);
     context.applyToRequest(request);
 
@@ -248,6 +248,66 @@ class AlertQueryService {
 
     const result = await request.query(sqlQuery);
     return result.recordset[0].total;
+  }
+
+  /**
+   * Fetch top applications per panel
+   */
+  async fetchTopApplicationsPerPanel(params) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    const limit = Math.min(params.limit || 10, 50);
+
+    context.applyToRequest(request);
+    request.input('limit_param', sql.Int, limit);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.TOP_APPLICATIONS)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset;
+  }
+
+  /**
+   * Fetch top nodes per application
+   */
+  async fetchTopNodesPerApplication(params) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    const limit = Math.min(params.limit || 10, 50);
+
+    context.applyToRequest(request);
+    request.input('limit_param', sql.Int, limit);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.TOP_NODES_BY_APP)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset;
+  }
+
+  /**
+   * Fetch nodes with consecutive days of alerts
+   */
+  async fetchConsecutiveDaysNodes(params) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    const limit = Math.min(params.limit || 10, 50);
+
+    context.applyToRequest(request);
+    request.input('limit_param', sql.Int, limit);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.CONSECUTIVE_DAYS_NODES)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset;
   }
 
   /**

@@ -2,29 +2,15 @@
 const { getSqlPool } = require('../database/connection');
 const { AlertQueryService } = require('./alert/AlertQueryService');
 const { AlertAnalysisService } = require('./alert/AlertAnalysisService');
-const { AlertRecommendationService } = require('./alert/AlertRecommendationService');
 const { AlertTransformService } = require('./alert/AlertTransformService');
 const { ResponseFormatter } = require('../utils/ResponseFormatter');
 const { CONFIG } = require('../config');
 
-/**
- * AlertService - REFACTORED
- * 
- * Responsibilities:
- * - Orchestrate calls between specialized services
- * - Manage thresholds and configuration
- * - Format final responses
- * 
- * NO LONGER DOES:
- * - Direct SQL queries (delegated to AlertQueryService)
- * - Analytics computations (delegated to AlertAnalysisService)
- * - Business rules (delegated to AlertRecommendationService)
- * - Data transformation (delegated to AlertTransformService)
- */
+
 class AlertService {
   constructor() {
     this.pool = null;
-    
+
     // Configuration constants (frozen to prevent mutation)
     this.CONSTANTS = Object.freeze({
       DEFAULT_CAP: CONFIG.limits?.defaultCap || 100000,
@@ -42,15 +28,13 @@ class AlertService {
     // Lazy-loaded services
     this._queryService = null;
     this._analysisService = null;
-    this._recommendationService = null;
+
     this._transformService = null;
   }
 
   // ================== INFRASTRUCTURE ==================
 
-  /**
-   * Get SQL pool (lazy initialization)
-   */
+  
   getPool() {
     if (!this.pool) {
       this.pool = getSqlPool();
@@ -58,9 +42,6 @@ class AlertService {
     return this.pool;
   }
 
-  /**
-   * Get query service (lazy initialization)
-   */
   get queryService() {
     if (!this._queryService) {
       this._queryService = new AlertQueryService(this.getPool(), this.CONSTANTS);
@@ -68,9 +49,6 @@ class AlertService {
     return this._queryService;
   }
 
-  /**
-   * Get analysis service (lazy initialization)
-   */
   get analysisService() {
     if (!this._analysisService) {
       this._analysisService = new AlertAnalysisService();
@@ -78,29 +56,13 @@ class AlertService {
     return this._analysisService;
   }
 
-  /**
-   * Get recommendation service (lazy initialization)
-   */
-  get recommendationService() {
-    if (!this._recommendationService) {
-      this._recommendationService = new AlertRecommendationService();
-    }
-    return this._recommendationService;
-  }
-
-  /**
-   * Get transform service (lazy initialization)
-   */
   get transformService() {
     if (!this._transformService) {
       this._transformService = new AlertTransformService();
     }
     return this._transformService;
   }
-
-  /**
-   * Get normalized thresholds (merges user params with defaults)
-   */
+  
   _getThresholds(params = {}) {
     return {
       day_start: params.day_start ?? this.CONSTANTS.DAY_START,
@@ -120,10 +82,10 @@ class AlertService {
    */
   async getAlerts(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch data
     const rawRecords = await this.queryService.fetchAlerts(params);
-    
+
     // 2. Handle pagination
     let records = rawRecords;
     let pagination = null;
@@ -149,13 +111,13 @@ class AlertService {
    */
   async getExecutiveKPIs(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch data
     const records = await this.queryService.fetchBasicRecords(params);
-    
+
     // 2. Compute analytics
     const kpis = this.analysisService.computeKPIs(records, thresholds);
-    
+
     return ResponseFormatter.success(kpis);
   }
 
@@ -164,10 +126,10 @@ class AlertService {
    */
   async getDurationHistogram(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch from SQL (optimized aggregation)
     const sqlResult = await this.queryService.fetchDurationHistogram(params, thresholds);
-    
+
     // 2. Format as histogram
     const histogram = [
       {
@@ -198,10 +160,10 @@ class AlertService {
    */
   async getHourlyHeatmap(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch from SQL (optimized query with CTEs)
     const heatmap = await this.queryService.fetchHourlyHeatmap(params);
-    
+
     // 2. Format with metadata
     const formatted = this.transformService.formatHourlyHeatmap(heatmap, thresholds);
 
@@ -213,7 +175,7 @@ class AlertService {
    */
   async getShiftAnalysis(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch from SQL (optimized aggregation)
     const analysis = await this.queryService.fetchShiftAnalysis(params, thresholds);
 
@@ -233,7 +195,7 @@ class AlertService {
    */
   async getOverviewStats(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch from SQL (optimized aggregation)
     const sqlStats = await this.queryService.fetchOverviewStats(params, thresholds);
 
@@ -256,13 +218,13 @@ class AlertService {
    */
   async getHourlyStats(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch data
     const records = await this.queryService.fetchBasicRecords(
       params,
       'time_fired, duration_sec'
     );
-    
+
     // 2. Compute analytics
     const hourlyStats = this.analysisService.computeHourlyStats(records, thresholds);
 
@@ -274,13 +236,13 @@ class AlertService {
    */
   async getTimeseriesStats(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch data
     const records = await this.queryService.fetchBasicRecords(
       params,
       'time_fired, duration_sec'
     );
-    
+
     // 2. Compute analytics
     const timeseries = this.analysisService.computeTimeseries(records, thresholds);
 
@@ -292,7 +254,7 @@ class AlertService {
    */
   async getPanelList(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch from SQL (optimized aggregation)
     const panels = await this.queryService.fetchPanelList(params, thresholds);
 
@@ -307,7 +269,7 @@ class AlertService {
    */
   async getPanelStats(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch from SQL (optimized aggregation)
     const stats = await this.queryService.fetchPanelStats(params, thresholds);
 
@@ -319,28 +281,20 @@ class AlertService {
    */
   async getPanelAnalysis(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch data (requires more fields for deep analysis)
     const records = await this.queryService.fetchBasicRecords(
       params,
       'time_fired, time_resolved, duration_sec, operator, message, application'
     );
-    
+
     // 2. Compute analytics
     const analysis = this.analysisService.computePanelAnalysis(records, thresholds);
 
-    // 3. Generate recommendations
-    const recommendations = this.recommendationService.generateRecommendations(
-      analysis,
-      thresholds
-    );
 
-    // 4. Sort recommendations by priority
-    const sortedRecommendations = this.recommendationService.sortByPriority(recommendations);
 
     return ResponseFormatter.success({
-      ...analysis,
-      recommendations: sortedRecommendations
+      ...analysis
     });
   }
 
@@ -349,7 +303,7 @@ class AlertService {
    */
   async getAlertMessageBreakdown(params) {
     const thresholds = this._getThresholds(params);
-    
+
     // 1. Fetch from SQL (optimized aggregation)
     const breakdown = await this.queryService.fetchMessageBreakdown(params, thresholds);
 
@@ -373,6 +327,30 @@ class AlertService {
     }
 
     return ResponseFormatter.success(filtered);
+  }
+
+  /**
+   * Get top applications per panel
+   */
+  async getTopApplications(params) {
+    const apps = await this.queryService.fetchTopApplicationsPerPanel(params);
+    return ResponseFormatter.success(apps);
+  }
+
+  /**
+   * Get top nodes per application
+   */
+  async getTopNodesByApp(params) {
+    const nodes = await this.queryService.fetchTopNodesPerApplication(params);
+    return ResponseFormatter.success(nodes);
+  }
+
+  /**
+   * Get consecutive days analysis
+   */
+  async getConsecutiveDaysNodes(params) {
+    const nodes = await this.queryService.fetchConsecutiveDaysNodes(params);
+    return ResponseFormatter.success(nodes);
   }
 }
 

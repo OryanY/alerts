@@ -82,3 +82,5 @@ export const JerusalemTime = {
     }).format(new Date(ts));
   }
 };
+
+export const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;

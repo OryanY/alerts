@@ -1,8 +1,8 @@
-import { Moon } from '../icons';
-import { LoadingSkeleton } from './LoadingSkeleton';
-import { ErrorCallout } from './ErrorCallout';
-import { useTheme } from '../contexts/ThemeContext';
-import { createThemedStyles } from '../utils/themedStyles';
+import { Moon } from '../../icons';
+import { LoadingSkeleton } from '../ui/LoadingSkeleton';
+import { ErrorCallout } from '../ui/ErrorCallout';
+import { useTheme } from '../../contexts/ThemeContext';
+import { createThemedStyles } from '../../utils/themedStyles';
 
 export const WakeupGauge = ({ shiftData, loading, error }) => {
   const { colors } = useTheme();
@@ -34,15 +34,15 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
   const total = falseWakeups + trueAlerts;
   const falsePct = total ? (falseWakeups / total) * 100 : 0;
 
-  const arcColor = colors.semantic.error;            
-  const arcBackground = colors.border.secondary;    
-  const iconColor = colors.brand.primary;          
+  const arcColor = colors.semantic.error;
+  const arcBackground = colors.border.secondary;
+  const iconColor = colors.brand.primary;
   const textPrimary = colors.text.primary;
   const textSecondary = colors.text.secondary;
 
   return (
     <div style={S.card()}>
-      
+
       {/* TITLE */}
       <h3 style={{
         display: 'flex',
@@ -55,13 +55,13 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
         position: 'relative',
         color: textPrimary
       }}>
-        <Moon 
+        <Moon
           size={16}
-          style={{ 
+          style={{
             color: iconColor,
             position: 'absolute',
-            right: 'calc(50% + 80px)' 
-          }} 
+            right: 'calc(50% + 80px)'
+          }}
         />
         <span>התראות שווא בלילה</span>
       </h3>
@@ -108,17 +108,17 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
             transform: 'translate(-50%, -50%)',
             textAlign: 'center'
           }}>
-            <div style={{ 
+            <div style={{
               fontSize: 22,
               fontWeight: 700,
-              color: textPrimary 
+              color: textPrimary
             }}>
               {falseWakeups} / {total} שקריות
             </div>
 
-            <div style={{ 
-              fontSize: 12, 
-              color: textSecondary 
+            <div style={{
+              fontSize: 12,
+              color: textSecondary
             }}>
               אחוז התראות שקריות: {nightShift?.false_wakeup_rate || 0}%
             </div>
@@ -127,10 +127,10 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
       </div>
 
       {/* FOOTER ROW */}
-      <div style={{ 
+      <div style={{
         textAlign: 'center',
         fontSize: 12,
-        color: textSecondary 
+        color: textSecondary
       }}>
         <span style={{ marginRight: 12 }}> אמת: {trueAlerts} </span>
         <span>שקרי: {falseWakeups}</span>

@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
-import { useTheme } from '../contexts/ThemeContext';
-import { createThemedStyles } from '../utils/themedStyles';
+import { useTheme } from '../../contexts/ThemeContext';
+import { createThemedStyles } from '../../utils/themedStyles';
 
-const LabeledInput = ({ 
-  label, 
-  value, 
-  onChange, 
-  type = 'number', 
-  min, 
-  max, 
-  placeholder, 
-  description 
+const LabeledInput = ({
+  label,
+  value,
+  onChange,
+  type = 'number',
+  min,
+  max,
+  placeholder,
+  description
 }) => {
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
@@ -47,24 +47,24 @@ const LabeledInput = ({
 
   return (
     <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-      
+
       {/* LABEL + DESCRIPTION — now fully themed */}
-      <label 
-        style={{ 
-          fontSize: 14, 
-          fontWeight: 600, 
-          color: colors.text.secondary 
+      <label
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: colors.text.secondary
         }}
       >
         {label}
 
         {description && (
-          <span 
-            style={{ 
-              fontSize: 12, 
-              fontWeight: 400, 
-              color: colors.text.tertiary, 
-              marginLeft: 8 
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 400,
+              color: colors.text.tertiary,
+              marginLeft: 8
             }}
           >
             {description}

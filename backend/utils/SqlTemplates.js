@@ -17,25 +17,25 @@ class SqlBuilder {
     if (!this.placeholders.has(placeholder)) {
       throw new Error(`Unknown placeholder: {${placeholder}}`);
     }
-    
+
     this.sql = this.sql.replace(`{${placeholder}}`, value || '');
     this.placeholders.delete(placeholder);
     return this;
   }
 
- build() {
+  build() {
     // Validate all placeholders were replaced
     if (this.placeholders.size > 0) {
-        throw new Error(`Unreplaced placeholders: ${[...this.placeholders].join(', ')}`);
+      throw new Error(`Unreplaced placeholders: ${[...this.placeholders].join(', ')}`);
     }
-    
+
     let finalSql = this.sql.trim().replace(/\s+/g, ' ');
-    
+
     // Remove any leftover curly braces (e.g., '{WHERE_CLAUSE}' or '{TOP_CLAUSE}' that might have been missed)
     finalSql = finalSql.replace(/{.*?}/g, '');  // This will strip any leftover placeholders
-    
+
     return finalSql;
-}
+  }
 
 }
 
@@ -45,7 +45,7 @@ class SqlBuilder {
  */
 class SqlTemplates {
   // ============ ALERT QUERIES ============
-  
+
   static SELECT_ALERTS = `
     SELECT {TOP_CLAUSE}
       incident_id,
@@ -217,6 +217,74 @@ class SqlTemplates {
     ORDER BY occurrence_count DESC
   `;
 
+  static TOP_APPLICATIONS = `
+    SELECT TOP (@limit_param)
+      application,
+      COUNT(*) AS alert_count,
+      COUNT(DISTINCT node_name) AS node_count,
+      ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration
+    FROM dbo.historicalAlerts
+    {WHERE_CLAUSE}
+    GROUP BY application
+    ORDER BY alert_count DESC
+  `;
+
+  static TOP_NODES_BY_APP = `
+    SELECT TOP (@limit_param)
+      node_name,
+      CASE 
+        WHEN COUNT(DISTINCT object) > 1 THEN 'Multiple (' + CAST(COUNT(DISTINCT object) AS VARCHAR) + ')' 
+        ELSE MAX(object) 
+      END AS object,
+      COUNT(*) AS alert_count,
+      MAX(time_fired) AS last_alert,
+      ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration
+    FROM dbo.historicalAlerts
+    {WHERE_CLAUSE}
+    GROUP BY node_name
+    ORDER BY alert_count DESC
+  `;
+
+  static CONSECUTIVE_DAYS_NODES = `
+    WITH DailyAlerts AS (
+      SELECT
+        node_name,
+        CAST(time_fired AS DATE) AS alert_date,
+        COUNT(*) as daily_count
+      FROM dbo.historicalAlerts
+      {WHERE_CLAUSE}
+      GROUP BY node_name, CAST(time_fired AS DATE)
+    ),
+    ConsecutiveGroups AS (
+      SELECT
+        node_name,
+        alert_date,
+        daily_count,
+        DATEADD(day, -DENSE_RANK() OVER (PARTITION BY node_name ORDER BY alert_date), alert_date) AS grp
+      FROM DailyAlerts
+    ),
+    Grouped AS (
+      SELECT
+        node_name,
+        grp,
+        COUNT(*) AS consecutive_days,
+        SUM(daily_count) as total_alerts,
+        MIN(alert_date) AS first_alert_date,
+        MAX(alert_date) AS last_alert_date
+      FROM ConsecutiveGroups
+      GROUP BY node_name, grp
+    )
+    SELECT TOP (@limit_param)
+      node_name,
+      consecutive_days,
+      total_alerts,
+      first_alert_date,
+      last_alert_date
+    FROM Grouped
+    WHERE consecutive_days >= 3
+    ORDER BY consecutive_days DESC
+  `;
+
   // ============ HELPER METHODS ============
 
   /**
@@ -231,12 +299,12 @@ class SqlTemplates {
    */
   static buildOrderClause(sortBy, sortOrder, validColumns = []) {
     if (!sortBy) return '';
-    
+
     // Validate column name to prevent SQL injection
     if (validColumns.length > 0 && !validColumns.includes(sortBy)) {
       throw new Error(`Invalid sort column: ${sortBy}`);
     }
-    
+
     const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
     return `ORDER BY ${sortBy} ${order}`;
   }
@@ -246,7 +314,7 @@ class SqlTemplates {
    */
   static buildPaginationClause(page, limit) {
     if (!page || !limit) return '';
-    
+
     const offset = (page - 1) * limit;
     return `OFFSET ${offset} ROWS FETCH NEXT ${limit + 1} ROWS ONLY`;
   }
