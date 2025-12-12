@@ -1,5 +1,6 @@
-import React, { memo } from 'react';
-import { TrendingUp, TrendingDown } from '../../icons';
+import { memo } from 'react';
+import { TrendingUp, TrendingDown, AlertTriangle } from '../../icons';
+import { LoadingSkeleton } from './LoadingSkeleton';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
 
@@ -9,7 +10,9 @@ export const MetricCard = memo(function MetricCard({
   subtitle,
   trend,
   icon: Icon,
-  color = 'blue',
+  logoColor = 'blue',
+  loading = false,
+  error,
 }) {
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
@@ -23,12 +26,47 @@ export const MetricCard = memo(function MetricCard({
     yellow: '#EAB308',
   };
 
-  const c = palette[color] || palette.blue;
-
+  const c = palette[logoColor] || palette.blue;
   const textPrimary = colors.text.primary;
   const textSecondary = colors.text.secondary;
-  const textMuted = colors.text.tertiary || colors.text.secondary;
 
+  /* ---------- ERROR STATE ---------- */
+  if (error) {
+    return (
+      <div style={S.card({ border: '1px solid #FCA5A5' })}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          color: '#991B1B',
+        }}>
+          <AlertTriangle size={16} />
+          <span style={{ fontWeight: 600 }}>Error loading metric</span>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- LOADING STATE ---------- */
+  if (loading) {
+    return (
+      <div style={S.card()}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 12,
+        }}>
+          <LoadingSkeleton width={48} height={48} style={{ borderRadius: 8 }} />
+          <LoadingSkeleton width={40} height={16} />
+          <LoadingSkeleton width={80} height={28} />
+          <LoadingSkeleton width={120} height={14} />
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------- NORMAL STATE ---------- */
   return (
     <div style={S.card()}>
       <div style={{
@@ -58,13 +96,11 @@ export const MetricCard = memo(function MetricCard({
             display: 'flex',
             alignItems: 'center',
             gap: 4,
-            color: trend > 0 ? colors.semantic.success : colors.semantic.error
+            color: trend > 0
+              ? colors.semantic.success
+              : colors.semantic.error
           }}>
-            {trend > 0 ? (
-              <TrendingUp size={16} />
-            ) : (
-              <TrendingDown size={16} />
-            )}
+            {trend > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
             <span style={{ fontSize: 12, fontWeight: 500 }}>
               {Math.abs(trend)}%
             </span>

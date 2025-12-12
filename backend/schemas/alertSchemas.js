@@ -130,17 +130,7 @@ const timeseriesSchema = Joi.object({
   const end = new Date(value.end_date);
   if (start >= end) {
     return helpers.error('any.invalid', { message: 'start_date must be before end_date' });
-  }
-  
-  // Limit time range for performance (max 1 year)
-  const maxDays = 730;
-  const daysDiff = (end - start) / (1000 * 60 * 60 * 24);
-  if (daysDiff > maxDays) {
-    return helpers.error('any.invalid', { 
-      message: `Date range cannot exceed ${maxDays} days` 
-    });
-  }
-  
+  }  
   return value;
 });
 

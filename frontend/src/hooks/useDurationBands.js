@@ -26,6 +26,13 @@ export const useDurationBands = (cfg = DEFAULT_CLIENT_CFG) => {
       ))}
     </div>
   );
+  const getDurationColorFromBands = (entry, bands) => {
+    const band = bands.find(
+      b => b.label.trim().toLowerCase() === entry.category.toLowerCase()
+    );
 
-  return { bands, colorByDuration, Legend };
+    return band ? band.color : '#9CA3AF'; // fallback gray
+  };
+
+  return { bands, getDurationColorFromBands,colorByDuration, Legend };
 };

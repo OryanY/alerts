@@ -2,7 +2,6 @@ import { useMemo, useEffect, useState, useRef } from 'react';
 import { Search, Filter, Download, RefreshCw, X, AlertCircle } from 'lucide-react';
 
 import { useTheme } from '../contexts/ThemeContext';
-import { createThemedStyles } from '../utils/themedStyles';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
@@ -24,8 +23,7 @@ const ALL_COLUMNS = getAllColumns();
 
 const ExplorerPage = () => {
   const { config, getApiParams, dateRange, setDateRange, setPresetRange } = useClientConfig();
-  const { colors } = useTheme();
-  const S = useMemo(() => createThemedStyles(colors), [colors]);
+  const { colors, styles: S } = useTheme();
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { colorByDuration } = useDurationBands(config);
 

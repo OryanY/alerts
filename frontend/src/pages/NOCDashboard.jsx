@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo, useCallback } from 'react';
+import { Suspense, useMemo, useCallback } from 'react';
 import {
   BarChart,
   Bar,
@@ -12,7 +12,6 @@ import {
   Area,
   ComposedChart,
 } from 'recharts';
-
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { useClientConfig } from '../contexts/ClientConfigContext';
@@ -31,14 +30,13 @@ import {
   Network,
   Filter,
   X,
-  HardDrive,
 } from '../icons';
 import { useTheme } from '../contexts/ThemeContext';
-import { createThemedStyles } from '../utils/themedStyles';
 import { formatDateForApi } from "../utils/helpers";
 import { createChartConfig } from '../utils/chartConfig';
 
 const NocDashboard = () => {
+
   const {
     config,
     getApiParams,
@@ -49,10 +47,8 @@ const NocDashboard = () => {
     setSelectedPanel,
   } = useClientConfig();
 
-  const { Legend } = useDurationBands(config);
-  const { colors } = useTheme();
-
-  const S = useMemo(() => createThemedStyles(colors), [colors]);
+  const { Legend,getDurationColorFromBands } = useDurationBands(config);
+  const { colors, styles: S } = useTheme(); // ✅ Get pre-computed styles
   const chartConfig = useMemo(() => createChartConfig(colors), [colors]);
 
 
@@ -97,15 +93,13 @@ const NocDashboard = () => {
   const timeseries = useApiData('/stats/timeseries', apiParams);
 
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
-  // Only fetch detailed panel stats if we are NOT filtered by a specific panel
+  // Only fetch detailed panel stats if we are not filtered by a specific panel
   const panelStats = useApiData('/stats/by-panel', selectedPanel ? null : { ...apiParams, limit: 20 });
-
-  // Aggregate loading state, but we won't block the UI with it
-  const isGlobalLoading = exec.loading || shifts.loading || duration.loading
 
   // Handlers
   const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);
   const handlePanelChange = useCallback((e) => setSelectedPanel(e.target.value || null), [setSelectedPanel]);
+
 
   return (
     <div>
@@ -168,14 +162,6 @@ const NocDashboard = () => {
             }
           />
         </div>
-
-        {/*  Loading Indicator */}
-        {isGlobalLoading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: colors.text.secondary }}>
-            <LoadingSpinner size={16} />
-            <span style={{ fontSize: 12 }}>Updating...</span>
-          </div>
-        )}
       </div>
 
       {/* Active Filter Indicator */}
@@ -226,7 +212,7 @@ const NocDashboard = () => {
             title="סך כל ההתראות"
             value={exec.data?.total_alerts ?? '—'}
             icon={AlertTriangle}
-            color="orange"
+            logoColor="orange"
             loading={exec.loading}
           />
           <MetricCard
@@ -234,15 +220,15 @@ const NocDashboard = () => {
             value={`${exec.data?.signal_ratio ?? '—'}%`}
             subtitle="יחס התראות ארוכות לקצרות"
             icon={TrendingUp}
-            color="blue"
+            logoColor="blue"
             loading={exec.loading}
           />
           <MetricCard
             title="התראות אמיתיות"
             value={exec.data?.true_wakeups ?? '—'}
-            subtitle={`התראות שזמנן ≤ ${config.falseWakeupThreshold || 120} ש' בלילה`}
+            subtitle={`התראות שזמנן ≥ ${config.falseWakeupThreshold || 120} ש' בלילה`}
             icon={Moon}
-            color="purple"
+            logoColor="purple"
             loading={exec.loading}
           />
           <MetricCard
@@ -250,14 +236,14 @@ const NocDashboard = () => {
             value={`${exec.data?.false_wakeup_rate ?? '—'}%`}
             subtitle={`התראות שזמנן ≤ ${config.falseWakeupThreshold || 120} ש' בלילה`}
             icon={Shield}
-            color="red"
+            logoColor="red"
             loading={exec.loading}
           />
           <MetricCard
-            title="ממוצע זמן התראה"
+            title=" זמן התראה ממוצע"
             value={`${exec.data?.avg_duration ?? '—'} ש'`}
             icon={Clock}
-            color="green"
+            logoColor="green"
             loading={exec.loading}
           />
         </div>
@@ -292,7 +278,7 @@ const NocDashboard = () => {
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
-
+          
           <ChartCard
             title="התפלגות משכי התראות"
             icon={Clock}
@@ -308,13 +294,20 @@ const NocDashboard = () => {
                 <Tooltip {...chartConfig.tooltip} />
                 <Bar
                   dataKey="count"
-                  fill={colors.chart.tertiary}
                   radius={[4, 4, 0, 0]}
                   name="Count"
-                />
+                >
+                  {(duration.data || []).map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={getDurationColorFromBands(entry, config.bands)}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
+
 
           <WakeupGauge
             shiftData={shifts.data}
