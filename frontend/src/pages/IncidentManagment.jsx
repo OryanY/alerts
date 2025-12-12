@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Target, History } from 'lucide-react'; // Added History icon
+import { Settings, Target } from 'lucide-react'; // Added History icon
 
 import IncidentMappings from './IncidentMappings/IncidentMappings.jsx';
 import IncidentRules from './IncidentRules.jsx';
@@ -8,15 +8,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
 
 const IncidentManagement = () => {
-  const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules' | 'history'
+  const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules' 
 
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
 
   const isMappings = activeTab === 'mappings';
   const isRules = activeTab === 'rules';
-  const isHistory = activeTab === 'history';
-
   // Helper for button style
   const getButtonStyle = (isActive, baseColor) => ({
     border: 'none',
@@ -74,15 +72,6 @@ const IncidentManagement = () => {
           >
             <Target size={20} />
             Smart Rules
-          </button>
-
-          {/* --- HISTORY TAB BUTTON --- */}
-          <button
-            onClick={() => setActiveTab('history')}
-            style={getButtonStyle(isHistory, colors.semantic.warning)} // Using warning/orange for history/logs
-          >
-            <History size={20} />
-            Execution History
           </button>
         </div>
       </div>
