@@ -8,9 +8,8 @@ const navigationItems = [
   { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { path: '/explorer', label: 'Explorer', icon: Eye },
   { path: '/research', label: 'Panel Research', icon: FileText },
-  { path: '/settings', label: 'Settings', icon: Settings },
   { path: '/incident', label: 'Incident Managment', icon: AlertTriangle },
-
+  { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export const Layout = () => {
