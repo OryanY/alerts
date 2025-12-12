@@ -1,32 +1,9 @@
 import { Moon } from '../../icons';
-import { LoadingSkeleton } from '../ui/LoadingSkeleton';
-import { ErrorCallout } from '../ui/ErrorCallout';
+import { ChartCard } from '../ui/ChartCard';
 import { useTheme } from '../../contexts/ThemeContext';
-import { createThemedStyles } from '../../utils/themedStyles';
 
 export const WakeupGauge = ({ shiftData, loading, error }) => {
   const { colors } = useTheme();
-  const S = createThemedStyles(colors);
-
-  if (error) {
-    return <ErrorCallout message={error.message} details={error} />;
-  }
-
-  if (loading) {
-    return (
-      <div style={S.card({ height: 350 })}>
-        <LoadingSkeleton width="40%" height={20} style={{ marginBottom: 20 }} />
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: 200
-        }}>
-          <LoadingSkeleton width={200} height={200} style={{ borderRadius: '50%' }} />
-        </div>
-      </div>
-    );
-  }
 
   const nightShift = shiftData?.find(s => s.shift === 'Night');
   const falseWakeups = nightShift?.false_wakeups || 0;
@@ -36,36 +13,17 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
 
   const arcColor = colors.semantic.error;
   const arcBackground = colors.border.secondary;
-  const iconColor = colors.brand.primary;
   const textPrimary = colors.text.primary;
   const textSecondary = colors.text.secondary;
 
   return (
-    <div style={S.card()}>
-
-      {/* TITLE */}
-      <h3 style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        fontSize: 16,
-        fontWeight: 600,
-        margin: '0 0 20px 0',
-        position: 'relative',
-        color: textPrimary
-      }}>
-        <Moon
-          size={16}
-          style={{
-            color: iconColor,
-            position: 'absolute',
-            right: 'calc(50% + 80px)'
-          }}
-        />
-        <span>התראות שווא בלילה</span>
-      </h3>
-
+    <ChartCard
+      title="התראות שווא בלילה"
+      icon={Moon}
+      loading={loading}
+      error={error}
+      height={230}
+    >
       {/* GAUGE */}
       <div style={{
         display: 'flex',
@@ -73,10 +31,8 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
         alignItems: 'center',
         marginBottom: 16
       }}>
-
         <div style={{ position: 'relative', width: 200, height: 200 }}>
           <svg width="200" height="200" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
-
             {/* background circle */}
             <circle
               cx="50"
@@ -132,10 +88,9 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
         fontSize: 12,
         color: textSecondary
       }}>
-        <span style={{ marginRight: 12 }}> אמת: {trueAlerts} </span>
-        <span>שקרי: {falseWakeups}</span>
+        <span style={{ marginRight: 12 }}>אמת: {trueAlerts} </span>
+        <span>שקר: {falseWakeups}</span>
       </div>
-
-    </div>
+    </ChartCard>
   );
 };

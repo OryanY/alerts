@@ -1,7 +1,7 @@
 // frontend/src/contexts/ThemeContext.jsx
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { withAlpha } from '../utils/helpers';
+import { createThemedStyles } from '../utils/themedStyles';
 
 const ThemeContext = createContext();
 
@@ -11,9 +11,6 @@ export const useTheme = () => {
   return ctx;
 };
 
-//-----------------------------------------------
-// Base Themes (raw, without computed values)
-//-----------------------------------------------
 const baseThemes = {
   light: {
     bg: {
@@ -59,7 +56,6 @@ const baseThemes = {
       infoBg: '#DBEAFE',
       infoText: '#1E40AF',
     },
-    // Chart colors
     chart: {
       primary: '#3B82F6',
       secondary: '#8B5CF6',
@@ -67,7 +63,6 @@ const baseThemes = {
       quaternary: '#F59E0B',
       quinary: '#EF4444',
     },
-    // Shadow
     shadow: {
       sm: '0 1px 2px rgba(0,0,0,0.05)',
       md: '0 4px 6px rgba(0,0,0,0.1)',
@@ -113,7 +108,6 @@ const baseThemes = {
       quaternary: '#FBBF24',
       quinary: '#962121ff',
     },
-
     semantic: {
       success: '#34D399',
       successBg: '#064E3B',
@@ -137,9 +131,7 @@ const baseThemes = {
   },
 };
 
-//-----------------------------------------------
-// ThemeProvider
-//-----------------------------------------------
+
 export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => {
     try {
@@ -157,7 +149,6 @@ export const ThemeProvider = ({ children }) => {
   }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-
 
   const computed = useMemo(() => {
     const base = baseThemes[theme];
@@ -205,11 +196,13 @@ export const ThemeProvider = ({ children }) => {
         border: base.brand.yellowBorder || base.brand.yellow,
       },
     };
+    const styles = createThemedStyles(base);
 
     return {
       colors: base,
       gradients,
       PATTERN_COLORS,
+      styles,
     };
   }, [theme]);
 
@@ -217,11 +210,10 @@ export const ThemeProvider = ({ children }) => {
     theme,
     setTheme,
     toggleTheme,
-
     colors: computed.colors,
     gradients: computed.gradients,
     PATTERN_COLORS: computed.PATTERN_COLORS,
-
+    styles: computed.styles,
     isDark: theme === 'dark',
   };
 

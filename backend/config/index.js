@@ -43,7 +43,7 @@ const CONFIG = Object.freeze({
   limits: {
     defaultCap: 100000,
     maxPageSize: 1000,
-    maxDateRangeDays: 730,
+    maxDateRangeDays: 100000,
   }
 });
 
