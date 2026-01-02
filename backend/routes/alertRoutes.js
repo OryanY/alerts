@@ -4,7 +4,7 @@ const { validateQuery } = require('../middleware/validation');
 const { handleError } = require('../middleware/errorHandler');
 const { cache } = require('../utils/cache');
 const { alertsSchema } = require('../schemas/alertSchemas');
-const AlertService = require('../services/AlertService');
+const AlertService = require('../services/alert/AlertService');
 
 const router = express.Router();
 const alertService = new AlertService();
@@ -64,15 +64,10 @@ function generateCacheKey(prefix, params) {
 
 // ================== ALERT ENDPOINTS ==================
 
-router.get('/alerts', ...createCachedHandler(
+router.get('/', ...createCachedHandler(
   alertsSchema,
   alertService.getAlerts,
   'alerts'
 ));
-
-// ================== MOUNT SUB-ROUTERS ==================
-
-const statsRoutes = require('./statsRoutes');
-router.use('/stats', statsRoutes);
 
 module.exports = router;

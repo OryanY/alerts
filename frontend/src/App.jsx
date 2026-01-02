@@ -7,6 +7,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import { ClientConfigProvider } from './contexts/ClientConfigContext';
 import IncidentManagment from './pages/IncidentManagment';
 import PanelResearchPage from './pages/PanelResearchPage';
+import HowToUsePage from './pages/HowToUsePage';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 
@@ -34,6 +35,7 @@ function App() {
 
                 <Route path="incident" element={<IncidentManagment />} />
                 <Route path="research" element={<PanelResearchPage />} />
+                <Route path="how-to-use" element={<HowToUsePage />} />
 
                 {/* 404 */}
                 <Route path="*" element={<NotFoundPage />} />

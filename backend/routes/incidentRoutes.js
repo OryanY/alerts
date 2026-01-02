@@ -1,11 +1,27 @@
 // routes/incidentRoutes.js - system_offering fetched from mapping, not request
 const express = require('express');
 const Joi = require('joi');
-const incidentService = require('../services/incidentService');
+const IncidentService = require('../services/incident/IncidentService');
 const { validateQuery, validateBody } = require('../middleware/validation');
 const { handleError } = require('../middleware/errorHandler');
+const { getErrorHtml } = require('../utils/htmlTemplates');
 
 const router = express.Router();
+
+// Initialize service
+const incidentService = new IncidentService();
+
+// Helper to generate error action link
+const getErrorAction = (error) => {
+  if (error.message.includes('No system mapping')) {
+    const frontendUrl = 'http://localhost:3000';
+    return {
+      label: '➕ יצירת מיפוי חדש',
+      url: `${frontendUrl}/incident`
+    };
+  }
+  return null;
+};
 
 // ================== VALIDATION SCHEMAS ==================
 
@@ -14,9 +30,10 @@ const alertQuerySchema = Joi.object({
   object_name: Joi.string().required().trim().max(100),
   node_name: Joi.string().required().trim().max(100),
   message: Joi.string().required().trim().max(500),
-  time_created: Joi.string().required().trim(),
+  time_created: Joi.string().optional().allow('').trim(),
   operator: Joi.string().required().trim().max(50),
-  network: Joi.string().trim().max(50).optional()
+  network: Joi.string().trim().max(50).optional(),
+  user: Joi.string().trim().optional()
 });
 
 // ServiceNow alert creation (system_offering REMOVED)
@@ -25,10 +42,11 @@ const serviceNowAlertSchema = Joi.object({
   object_name: Joi.string().required().trim(),
   node_name: Joi.string().required().trim(),
   message: Joi.string().required().trim(),
-  time_created: Joi.string().required().trim(),
+  time_created: Joi.string().optional().allow('').trim(),
   operator: Joi.string().required().trim().max(50),
   incident_number: Joi.string().trim().optional(),
-  network: Joi.string().trim().max(50).optional()
+  network: Joi.string().trim().max(50).optional(),
+  user: Joi.string().trim().optional()
 });
 
 // Combined incident + alert creation (system_offering REMOVED)
@@ -37,9 +55,10 @@ const combinedCreateSchema = Joi.object({
   object_name: Joi.string().required().trim().max(100),
   node_name: Joi.string().required().trim().max(100),
   message: Joi.string().required().trim().max(500),
-  time_created: Joi.string().required().trim(),
+  time_created: Joi.string().optional().allow('').trim(),
   operator: Joi.string().required().trim().max(50),
   network: Joi.string().trim().max(50).optional(),
+  user: Joi.string().trim().optional(),
   create_servicenow_alert: Joi.string().valid('true', 'false', '1', '0').default('true'),
   link_to_incident: Joi.string().valid('true', 'false', '1', '0').default('true'),
 });
@@ -120,20 +139,30 @@ router.get('/incident', validateQuery(alertQuerySchema), async (req, res) => {
     const alertData = req.validatedQuery;
     console.log('Creating incident only (GET):', alertData);
     const result = await incidentService.createIncidentFromAlert(alertData);
+
+    // Success: Redirect to ServiceNow
+    if (result.serviceNowResult && result.serviceNowResult.link) {
+      return res.redirect(result.serviceNowResult.link);
+    }
+
+    // Fallback if no link
     res.json({
       success: true,
       message: 'Incident created successfully',
       data: result
     });
   } catch (error) {
-    if (error.message.includes('No system mapping') || error.message.includes('not found')) {
-      return res.status(404).json({
-        success: false,
-        error: 'No system mapping or rules found',
-        details: error.message
-      });
-    }
-    handleError(res, error);
+    console.error('❌ Error in GET /incident:', error.message);
+    const isMappingError = error.message.includes('No system mapping');
+    const statusCode = isMappingError ? 404 : 500;
+    const userMessage = isMappingError
+      ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
+      : 'אירעה שגיאה פנימית במערכת';
+
+    // Suggest creating a mapping if missing
+    const action = getErrorAction(error);
+
+    res.status(statusCode).send(getErrorHtml(userMessage, error.message, action));
   }
 });
 
@@ -168,13 +197,29 @@ router.get('/alert', validateQuery(serviceNowAlertSchema), async (req, res) => {
     const alertData = req.validatedQuery;
     console.log('Creating ServiceNow alert only (GET):', alertData);
     const result = await incidentService.createServiceNowAlert(alertData);
+
+    // Success: Redirect to ServiceNow (via Incident link if available, or just success message)
+    // Note: Alert creation usually returns an incident link too if we used the table API
+    if (result.serviceNowResult && result.serviceNowResult.link) {
+      return res.redirect(result.serviceNowResult.link);
+    }
+
     res.json({
       success: true,
       message: 'ServiceNow alert created successfully',
       data: result
     });
   } catch (error) {
-    handleError(res, error);
+    console.error('❌ Error in GET /alert:', error.message);
+    const isMappingError = error.message.includes('No system mapping');
+    const statusCode = isMappingError ? 404 : 500;
+    const userMessage = isMappingError
+      ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
+      : 'אירעה שגיאה ביצירת ההתראה';
+
+    const action = getErrorAction(error);
+
+    res.status(statusCode).send(getErrorHtml(userMessage, error.message, action));
   }
 });
 
@@ -223,13 +268,29 @@ router.get('/incident-with-alert', validateQuery(combinedCreateSchema), async (r
       linkToIncident
     );
 
+    // Redirect logic: prefer incident link, then alert link
+    const redirectLink = result.incident?.serviceNowResult?.link || result.alert?.serviceNowResult?.link;
+
+    if (redirectLink) {
+      return res.redirect(redirectLink);
+    }
+
     res.json({
       success: true,
       message: 'Incident and alert created successfully',
       data: result
     });
   } catch (error) {
-    handleError(res, error);
+    console.error('❌ Error in GET /incident-with-alert:', error.message);
+    const isMappingError = error.message.includes('No system mapping');
+    const statusCode = isMappingError ? 404 : 500;
+    const userMessage = isMappingError
+      ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
+      : 'אירעה שגיאה ביצירת התקלה וההתראה';
+
+    const action = getErrorAction(error);
+
+    res.status(statusCode).send(getErrorHtml(userMessage, error.message, action));
   }
 });
 
@@ -432,7 +493,7 @@ router.patch('/incident-rules/:id/toggle', async (req, res) => {
         details: 'enabled field must be a boolean'
       });
     }
-    
+
     const result = await incidentService.toggleIncidentRule(id, enabled);
 
     res.json({
@@ -465,7 +526,7 @@ router.get('/distinct/:field', async (req, res) => {
       'u_impact_technology',
       'u_monitor_identifier'
     ];
-    
+
     if (!validFields.includes(field)) {
       return res.status(400).json({
         success: false,
@@ -473,7 +534,7 @@ router.get('/distinct/:field', async (req, res) => {
         details: `Valid fields are: ${validFields.join(', ')}`
       });
     }
-    
+
     const values = await incidentService.getDistinctValues(field);
     res.json({
       success: true,

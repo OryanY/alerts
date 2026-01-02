@@ -13,7 +13,7 @@ import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
-import { formatDateForApi } from "../utils/helpers";
+
 
 // New Components
 import ResearchSummaryCards from '../components/PanelResearch/ResearchSummaryCards';
@@ -41,20 +41,8 @@ const PanelResearchPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
 
-  // Adjust date range for "today" selection
-  const adjustedDateRange = useMemo(() => {
-    if (
-      dateRange.start_date &&
-      dateRange.end_date &&
-      dateRange.start_date === dateRange.end_date
-    ) {
-      return {
-        start_date: dateRange.start_date,
-        end_date: formatDateForApi(dateRange.end_date, true),
-      };
-    }
-    return dateRange;
-  }, [dateRange]);
+  // No need to adjust date range - backend handles Israeli timezone conversion
+  const adjustedDateRange = dateRange;
 
   const apiParams = useMemo(
     () => ({

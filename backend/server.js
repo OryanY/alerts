@@ -1,4 +1,6 @@
 // server.js - Main server with modularized structure and improved error handling
+require('dotenv').config();  // Load .env file FIRST
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -11,6 +13,7 @@ const { initializeSqlDatabase, initializeMongoDatabase, closeConnections } = req
 
 // Import route modules
 const alertRoutes = require('./routes/alertRoutes');
+const statsRoutes = require('./routes/statsRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
 
 // Import middleware
@@ -23,14 +26,14 @@ const PORT = CONFIG?.server?.port || process.env.PORT || 3000;
 // ================== SECURITY & PERFORMANCE MIDDLEWARE ==================
 
 // Security headers
-app.use(helmet({ 
+app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: false // Allow for development - configure for production
 }));
 
 // CORS configuration
 app.use(cors(CONFIG?.cors || {
-  origin: process.env.NODE_ENV === 'production' 
+  origin: process.env.NODE_ENV === 'production'
     ? process.env.ALLOWED_ORIGINS?.split(',') || false
     : true,
   credentials: true,
@@ -60,14 +63,14 @@ app.get('/api/config', (req, res) => {
           medium_max: 300
         },
         timezone: CONFIG?.tz || { IANA: 'Asia/Jerusalem' },
-        cache: { 
+        cache: {
           ttl: CONFIG?.cache?.ttl || 300,
           enabled: CONFIG?.cache?.enabled !== false
         },
         version: '4.0.0-modular-with-incidents',
         features: ['alerts', 'statistics', 'incidents', 'system_mappings', 'incident_rules']
       },
-      meta: { 
+      meta: {
         timezone: CONFIG?.tz?.IANA || 'Asia/Jerusalem',
         cached: false,
         timestamp: new Date().toISOString()
@@ -87,8 +90,9 @@ app.get('/api/config', (req, res) => {
   }
 });
 
-// Main API routes
-app.use('/api', alertRoutes);
+// API Routes
+app.use('/api/alerts', alertRoutes);
+app.use('/api/stats', statsRoutes);
 app.use('/api/incidents', incidentRoutes);
 
 // Root endpoint
@@ -124,7 +128,7 @@ app.get('/', (req, res) => {
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
     error: {
       code: 'NOT_FOUND',
@@ -148,11 +152,11 @@ app.use((req, res) => {
 // Global error handler
 app.use(globalErrorHandler || ((error, req, res, next) => {
   console.error('Unhandled error:', error);
-  
+
   // Don't expose internal errors in production
   const isDev = process.env.NODE_ENV === 'development';
-  
-  res.status(error.status || 500).json({ 
+
+  res.status(error.status || 500).json({
     success: false,
     error: {
       code: error.code || 'INTERNAL_ERROR',
@@ -172,14 +176,14 @@ let isShuttingDown = false;
 async function startServer() {
   try {
     console.log('Starting Alert Management API...');
-    
+
     // Initialize databases with timeout
     console.log('Initializing databases...');
-    
+
     const dbTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Database initialization timeout')), 30000)
     );
-    
+
     await Promise.race([
       Promise.all([
         initializeSqlDatabase(),
@@ -187,13 +191,13 @@ async function startServer() {
       ]),
       dbTimeout
     ]);
-    
+
     console.log('✓ Databases initialized successfully');
-    
+
     // Start HTTP server
     server = app.listen(PORT, () => {
       const startTime = DateTime.now().setZone(CONFIG?.tz?.IANA || 'Asia/Jerusalem');
-      
+
       console.log('\n🚀 Alert Management API Server Started');
       console.log('==========================================');
       console.log(`Port: ${PORT}`);
@@ -237,15 +241,15 @@ async function shutdown(signal = 'SIGINT') {
     console.log('Already shutting down...');
     return;
   }
-  
+
   isShuttingDown = true;
   console.log(`\n🔄 Shutting down server gracefully (${signal})...`);
-  
+
   const shutdownTimeout = setTimeout(() => {
     console.log('❌ Shutdown timeout - forcing exit');
     process.exit(1);
   }, 10000); // 10 second timeout
-  
+
   try {
     // Stop accepting new requests
     if (server) {
@@ -253,16 +257,16 @@ async function shutdown(signal = 'SIGINT') {
       await new Promise((resolve) => server.close(resolve));
       console.log('├── ✓ HTTP server closed');
     }
-    
+
     // Close database connections
     console.log('├── Closing database connections...');
     await closeConnections();
     console.log('├── ✓ Database connections closed');
-    
+
     clearTimeout(shutdownTimeout);
     console.log('└── ✅ Server shutdown complete');
     process.exit(0);
-    
+
   } catch (error) {
     clearTimeout(shutdownTimeout);
     console.error('❌ Error during shutdown:', error);
@@ -294,7 +298,7 @@ if (process.platform === 'win32') {
     input: process.stdin,
     output: process.stdout
   });
-  
+
   rl.on('SIGINT', () => {
     process.emit('SIGINT');
   });

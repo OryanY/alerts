@@ -51,7 +51,6 @@ class CacheManager {
 
     if (value !== undefined) {
       this.hits++;
-      console.log("cache hit for key:", key);
       return value;
     }
 

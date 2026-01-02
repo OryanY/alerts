@@ -8,7 +8,7 @@ const {
   timeseriesSchema,
   panelResearchSchema
 } = require('../schemas/alertSchemas');
-const AlertService = require('../services/AlertService');
+const AlertService = require('../services/alert/AlertService');
 
 const router = express.Router();
 const alertService = new AlertService();

@@ -188,8 +188,9 @@ class TimeUtils {
     const start = startDate ? this.parseILToUTC(startDate, false) : null;
     const end = endDate ? this.parseILToUTC(endDate, true) : null;
 
-    if (start && end && start >= end) {
-      throw new Error('DATE_RANGE_INVALID: Start date must be before end date');
+    // Allow same date for single-day queries (start will be 00:00, end will be 23:59:59)
+    if (start && end && start > end) {
+      throw new Error('DATE_RANGE_INVALID: Start date must be before or equal to end date');
     }
 
     // Validate max range

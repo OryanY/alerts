@@ -32,7 +32,7 @@ import {
   X,
 } from '../icons';
 import { useTheme } from '../contexts/ThemeContext';
-import { formatDateForApi } from "../utils/helpers";
+
 import { createChartConfig } from '../utils/chartConfig';
 
 const NocDashboard = () => {
@@ -47,20 +47,13 @@ const NocDashboard = () => {
     setSelectedPanel,
   } = useClientConfig();
 
-  const { Legend,getDurationColorFromBands } = useDurationBands(config);
+  const { Legend, getDurationColorFromBands } = useDurationBands(config);
   const { colors, styles: S } = useTheme(); // ✅ Get pre-computed styles
   const chartConfig = useMemo(() => createChartConfig(colors), [colors]);
 
 
-  const adjustedDateRange = useMemo(() => {
-    if (dateRange.start_date && dateRange.end_date) {
-      return {
-        start_date: formatDateForApi(dateRange.start_date),
-        end_date: formatDateForApi(dateRange.end_date, true),
-      };
-    }
-    return {};
-  }, [dateRange]);
+  // No need to format dates - backend handles Israeli timezone conversion
+  const adjustedDateRange = dateRange;
 
   const apiParams = useMemo(() => {
     const params = {
@@ -278,7 +271,7 @@ const NocDashboard = () => {
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
-          
+
           <ChartCard
             title="התפלגות משכי התראות"
             icon={Clock}
@@ -298,8 +291,8 @@ const NocDashboard = () => {
                   name="Count"
                 >
                   {(duration.data || []).map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
+                    <Cell
+                      key={`cell-${index}`}
                       fill={getDurationColorFromBands(entry, config.bands)}
                     />
                   ))}
