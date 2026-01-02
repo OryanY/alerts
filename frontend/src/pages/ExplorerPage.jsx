@@ -6,7 +6,7 @@ import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
-import { formatHourAndDay, formatDateForApi } from "../utils/helpers";
+import { formatHourAndDay } from "../utils/helpers";
 import { formatIncidentId, escapeCsv } from '../utils/helpers';
 
 import { DateRangePicker } from '../components/ui/DateRangePicker';
@@ -27,19 +27,8 @@ const ExplorerPage = () => {
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { colorByDuration } = useDurationBands(config);
 
-  const adjustedDateRange = useMemo(() => {
-    if (
-      dateRange.start_date &&
-      dateRange.end_date &&
-      dateRange.start_date === dateRange.end_date
-    ) {
-      return {
-        start_date: dateRange.start_date,
-        end_date: formatDateForApi(dateRange.end_date, true),
-      };
-    }
-    return dateRange;
-  }, [dateRange]);
+  // No need to format dates - backend handles Israeli timezone conversion
+  const adjustedDateRange = dateRange;
 
   const rawPage = Number(filters.page) || 1;
   const { page: _omitPage, ...filtersNoPage } = filters;

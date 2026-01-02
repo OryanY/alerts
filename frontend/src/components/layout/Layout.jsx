@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Eye, Settings, FileText } from 'lucide-react';
+import { AlertTriangle, BarChart3, Eye, Settings, FileText, BookOpen } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
 import { ThemeToggle } from './ThemeToggle';
@@ -9,6 +9,7 @@ const navigationItems = [
   { path: '/explorer', label: 'Explorer', icon: Eye },
   { path: '/research', label: 'Panel Research', icon: FileText },
   { path: '/incident', label: 'Incident Managment', icon: AlertTriangle },
+  { path: '/how-to-use', label: 'How to Use', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

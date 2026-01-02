@@ -3,8 +3,8 @@ const Joi = require('joi');
 
 // Base schema for common parameters
 const baseSchema = {
-start_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
-end_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
+  start_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
+  end_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
   // Configuration parameters with defaults
   day_start: Joi.number().integer().min(0).max(23).default(8),
   day_end: Joi.number().integer().min(0).max(23).default(22),
@@ -14,7 +14,7 @@ end_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})
   dur_short_max: Joi.number().integer().min(1).default(30),
   dur_medium_max: Joi.number().integer().min(1).default(300),
   false_wakeup_threshold: Joi.number().integer().min(1).default(120),
-  
+
   // Limit parameter
   limit: Joi.number().integer().min(1).max(100000).default(10000)
 };
@@ -22,13 +22,13 @@ end_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})
 // Schema for main alerts endpoint with filtering and pagination
 const alertsSchema = Joi.object({
   ...baseSchema,
-  
+
   // Pagination
   page: Joi.number().integer().min(1).optional(),
-  
+
   // Sorting
   sort_by: Joi.string().valid(
-    'time_fired', 'time_resolved', 'duration_sec', 
+    'time_fired', 'time_resolved', 'duration_sec',
     'panel_title', 'application', 'node_name', 'operator'
   ).default('time_fired'),
   sort_order: Joi.string().valid('ASC', 'DESC').default('DESC'),
@@ -39,38 +39,32 @@ const alertsSchema = Joi.object({
   network: Joi.string().trim().max(100).optional(),
   object: Joi.string().trim().max(100).optional(),
   operator: Joi.string().trim().max(50).optional(),
-  
+
   // Duration filters
   min_duration: Joi.number().integer().min(0).optional(),
   max_duration: Joi.number().integer().min(0).optional()
 }).custom((value, helpers) => {
-  // Validate date range
-  if (value.start_date && value.end_date) {
-    const start = new Date(value.start_date);
-    const end = new Date(value.end_date);
-    if (start >= end) {
-      return helpers.error('any.invalid', { message: 'start_date must be before end_date' });
-    }
-  }
-  
+  // Note: Date range validation is handled by TimeUtils.validateDateRange() with timezone awareness
+
   // Validate duration range
   if (value.min_duration !== undefined && value.max_duration !== undefined) {
     if (value.min_duration >= value.max_duration) {
       return helpers.error('any.invalid', { message: 'min_duration must be less than max_duration' });
     }
   }
-  
+
   // Validate shift hours
   if (value.day_start >= value.day_end) {
     return helpers.error('any.invalid', { message: 'day_start must be less than day_end' });
   }
-  
+
   return value;
 });
 
+
 const panelResearchSchema = Joi.object({
-  start_date: Joi.string().isoDate().optional(),
-  end_date: Joi.string().isoDate().optional(),
+  start_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
+  end_date: Joi.string().pattern(/^(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/).optional(),
   panel_title: Joi.string().optional().allow(''),
   false_wakeup_threshold: Joi.number().integer().min(1).max(3600).optional(),
   day_start: Joi.number().integer().min(0).max(23).optional(),
@@ -88,20 +82,13 @@ const statsSchema = Joi.object({
   panel_title: Joi.string().trim().max(100).optional()
 
 }).custom((value, helpers) => {
-  // Validate date range
-  if (value.start_date && value.end_date) {
-    const start = new Date(value.start_date);
-    const end = new Date(value.end_date);
-    if (start >= end) {
-      return helpers.error('any.invalid', { message: 'start_date must be before end_date' });
-    }
-  }
-  
+  // Note: Date range validation is handled by TimeUtils.validateDateRange() with timezone awareness
+
   // Validate shift hours
   if (value.day_start >= value.day_end) {
     return helpers.error('any.invalid', { message: 'day_start must be less than day_end' });
   }
-  
+
   return value;
 });
 
@@ -121,23 +108,19 @@ const timeseriesSchema = Joi.object({
 }).custom((value, helpers) => {
   // Validate date range is required for time series
   if (!value.start_date || !value.end_date) {
-    return helpers.error('any.invalid', { 
-      message: 'Both start_date and end_date are required for time series data' 
+    return helpers.error('any.invalid', {
+      message: 'Both start_date and end_date are required for time series data'
     });
   }
-  
-  const start = new Date(value.start_date);
-  const end = new Date(value.end_date);
-  if (start >= end) {
-    return helpers.error('any.invalid', { message: 'start_date must be before end_date' });
-  }  
+
+  // Note: Date range validation is handled by TimeUtils.validateDateRange() with timezone awareness
   return value;
 });
 
 // Schema for pattern analysis
 const patternSchema = Joi.object({
   ...baseSchema,
-  
+
   // Pattern specific parameters
   storm_window_minutes: Joi.number().integer().min(1).max(60).default(10),
   storm_threshold: Joi.number().integer().min(2).max(50).default(5),
