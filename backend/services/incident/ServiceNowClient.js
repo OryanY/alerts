@@ -11,11 +11,6 @@ class ServiceNowClient {
         this.username = config.username || process.env.SERVICENOW_USERNAME;
         this.password = config.password || process.env.SERVICENOW_PASSWORD;
         this.enabled = Boolean(this.url);
-
-        // Assignment groups cache
-        this.assignmentGroupsCache = null;
-        this.assignmentGroupsCacheTime = null;
-        this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes
     }
 
     /**
@@ -25,11 +20,6 @@ class ServiceNowClient {
         return this.enabled && this.url;
     }
 
-    /**
-     * Create an incident in ServiceNow
-     * @param {Object} incidentData - Incident data to send
-     * @returns {Promise<Object>} Result with success status and incident details
-     */
     async createIncident(incidentData) {
         if (!this.isEnabled()) {
             console.log('❌ ServiceNow integration disabled or not configured');
@@ -79,20 +69,12 @@ class ServiceNowClient {
             return [];
         }
 
-        // Check cache
-        const now = Date.now();
-        if (this.assignmentGroupsCache &&
-            this.assignmentGroupsCacheTime &&
-            (now - this.assignmentGroupsCacheTime) < this.CACHE_TTL) {
-            return this.assignmentGroupsCache;
-        }
-
         try {
             const response = await axios({
                 method: 'GET',
                 url: `${this.url}/api/now/table/sys_user_group`,
                 params: {
-                    sysparm_query: 'active=true^u_unit=7180',
+                    sysparm_query: 'active=true',
                     sysparm_fields: 'sys_id,name',
                     sysparm_limit: 1000
                 },
@@ -109,22 +91,12 @@ class ServiceNowClient {
                 label: group.name
             }));
 
-            // Update cache
-            this.assignmentGroupsCache = groups;
-            this.assignmentGroupsCacheTime = Date.now();
 
-            console.log(`✅ Cached ${groups.length} assignment groups`);
+            console.log(`✅ fetched ${groups.length} assignment groups`);
             return groups;
 
         } catch (error) {
             console.error('❌ Error fetching assignment groups:', error.message);
-
-            // Return stale cache if available
-            if (this.assignmentGroupsCache) {
-                console.warn('⚠️  Using stale cache due to API error');
-                return this.assignmentGroupsCache;
-            }
-
             return [];
         }
     }

@@ -116,7 +116,6 @@ const incidentRuleSchema = Joi.object({
 });
 
 // ================== ASSIGNMENT GROUPS ==================
-
 router.get('/assignment-groups', async (req, res) => {
   try {
     const groups = await incidentService.getAssignmentGroups();
@@ -130,6 +129,19 @@ router.get('/assignment-groups', async (req, res) => {
   }
 });
 
+router.post('/assignment-groups/sync', async (req, res) => {
+  try {
+    const groups = await incidentService.syncAssignmentGroups();
+    res.json({
+      success: true,
+      message: 'Assignment groups synced successfully',
+      data: groups,
+      count: groups.length
+    });
+  } catch (error) {
+    handleError(res, error, 'Failed to sync assignment groups');
+  }
+});
 // ================== INCIDENT CREATION ONLY ==================
 
 

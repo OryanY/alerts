@@ -26,6 +26,41 @@ class IncidentQueryService {
         }
     }
 
+
+    async getAssignmentGroups() {
+        try {
+            // We use a fixed ID for the cache document
+            const doc = await this.assignmentGroupsCollection.findOne({ _id: 'assignment_groups_store' });
+            return doc ? doc.groups : [];
+        } catch (error) {
+            console.error('❌ Error fetching assignment groups from DB:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Save assignment groups (Upsert)
+     */
+    async saveAssignmentGroups(groups) {
+        try {
+            const result = await this.assignmentGroupsCollection.updateOne(
+                { _id: 'assignment_groups_store' },
+                { 
+                    $set: { 
+                        groups: groups,
+                        lastSynced: new Date(),
+                        count: groups.length
+                    } 
+                },
+                { upsert: true }
+            );
+            return result;
+        } catch (error) {
+            console.error('❌ Error saving assignment groups to DB:', error);
+            throw error;
+        }
+    }
+    
     // ================== SYSTEM MAPPINGS ==================
 
     /**

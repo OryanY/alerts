@@ -82,6 +82,7 @@ const mongoConfig = {
   collections: {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',
+    assignmentGroups: 'assignment_groups'
   }
 };
 

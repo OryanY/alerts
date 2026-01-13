@@ -60,6 +60,7 @@ class SqlTemplates {
       duration_sec,
       message,
       key_field,
+      incident_number,
       history_id
     FROM dbo.historicalAlerts
     {WHERE_CLAUSE}

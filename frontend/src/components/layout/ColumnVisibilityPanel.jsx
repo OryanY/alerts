@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Columns, ChevronDown, Eye, EyeOff } from 'lucide-react';
 
 const ALL_COLUMNS = [
-  { key: 'history_id', label: 'INC #', width: '100px', sortable: true, defaultVisible: true },
+  { key: 'incident_number', label: 'INC #', width: '100px', sortable: true, defaultVisible: true },
   { key: 'panel_title', label: 'Panel', width: '180px', sortable: true, defaultVisible: true },
   { key: 'application', label: 'Application', width: '140px', sortable: true, defaultVisible: true },
   { key: 'message', label: 'Message', width: '250px', sortable: false, defaultVisible: true },

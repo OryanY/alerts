@@ -1,11 +1,6 @@
 
 import { JERUSALEM_TZ } from './constants';
 
-export const formatIncidentId = (historyId) => {
-  if (historyId === null || historyId === undefined) return null;
-  return String(historyId).trim() || null;
-};
-
 export const escapeCsv = (val) => {
   const s = String(val ?? '');
   return `"${s.replace(/"/g, '""')}"`;

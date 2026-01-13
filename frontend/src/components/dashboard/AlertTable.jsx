@@ -1,4 +1,4 @@
-import { formatHourAndDay, formatIncidentId } from "../../utils/helpers";
+import { formatHourAndDay } from "../../utils/helpers";
 
 export const AlertTable = ({
   alerts,
@@ -14,8 +14,8 @@ export const AlertTable = ({
     const value = alert[key];
 
     switch (key) {
-      case 'history_id': {
-        const formatted = formatIncidentId(alert.history_id);
+      case 'incident_number': {
+        const formatted = alert.incident_number;
         return (
           <td
             key={key}

@@ -31,7 +31,8 @@ class IncidentService {
         // Initialize query service
         this.queryService = new IncidentQueryService(db, {
             systemMappings: db.collection(mongoConfig.collections.systemMappings),
-            incidentRules: db.collection('incident_rules')
+            incidentRules: db.collection(mongoConfig.collections.incidentRules),
+            assignmentGroups: db.collection(mongoConfig.collections.assignmentGroups)
         });
 
         // Initialize other services
@@ -330,8 +331,27 @@ class IncidentService {
     // ================== SERVICENOW INTEGRATION ==================
 
     async getAssignmentGroups() {
+            if (!this.queryService) await this.initialize();
+            return this.queryService.getAssignmentGroups();
+        }
+
+    async syncAssignmentGroups() {
         if (!this.serviceNowClient) await this.initialize();
-        return this.serviceNowClient.getAssignmentGroups();
+        if (!this.queryService) await this.initialize();
+
+        try {
+            // 1. Fetch from SN
+            const groups = await this.serviceNowClient.getAssignmentGroups();
+
+            // 2. Save to DB via QueryService
+            await this.queryService.saveAssignmentGroups(groups);
+
+            console.log(`✅ Synced ${groups.length} assignment groups to MongoDB`);
+            return groups;
+        } catch (error) {
+            console.error('❌ Sync failed:', error);
+            throw error;
+        }
     }
 
     async testServiceNowConnection() {

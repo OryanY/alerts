@@ -7,7 +7,7 @@ import { useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { formatHourAndDay } from "../utils/helpers";
-import { formatIncidentId, escapeCsv } from '../utils/helpers';
+import { escapeCsv } from '../utils/helpers';
 
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
@@ -35,10 +35,20 @@ const ExplorerPage = () => {
 
   const [debouncedFilters, setDebouncedFilters] = useState(filtersNoPage);
   const debounceIdRef = useRef(null);
+  const previousFiltersRef = useRef(filtersNoPage);
 
   const filtersKey = useMemo(() => JSON.stringify(filtersNoPage), [filtersNoPage]);
 
   useEffect(() => {
+    // Check if filters actually changed (not just a re-render)
+    const filtersChanged = JSON.stringify(previousFiltersRef.current) !== JSON.stringify(filtersNoPage);
+    
+    if (!filtersChanged) {
+      return; // Don't debounce if filters didn't actually change
+    }
+
+    previousFiltersRef.current = filtersNoPage;
+
     if (debounceIdRef.current) {
       clearTimeout(debounceIdRef.current);
     }
@@ -204,17 +214,32 @@ const ExplorerPage = () => {
     return getDefaultVisibleColumns();
   });
 
+  // Separate effect for localStorage to prevent re-renders
+  const saveTimeoutRef = useRef(null);
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(
-          'alertExplorer.visibleColumns',
-          JSON.stringify(visibleColumns)
-        );
-      } catch {
-        // ignore
+      // Debounce localStorage saves to prevent excessive writes
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
+      
+      saveTimeoutRef.current = setTimeout(() => {
+        try {
+          window.localStorage.setItem(
+            'alertExplorer.visibleColumns',
+            JSON.stringify(visibleColumns)
+          );
+        } catch {
+          // ignore
+        }
+      }, 100);
     }
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [visibleColumns]);
 
   const handleToggleColumn = (key) => {
@@ -294,9 +319,8 @@ const ExplorerPage = () => {
       const cols = visibleOrderedColumns.map((col) => {
         const key = col.key;
         switch (key) {
-          case 'history_id': {
-            const formatted = formatIncidentId(alert.history_id);
-            return escapeCsv(formatted || '');
+          case 'incident_number': {
+            return escapeCsv(alert.incident_number || '');
           }
           case 'panel_title':
             return escapeCsv(alert.panel_title || '');
@@ -882,5 +906,3 @@ const ExplorerPage = () => {
 };
 
 export default ExplorerPage;
-
-
