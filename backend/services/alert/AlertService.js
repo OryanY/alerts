@@ -101,8 +101,14 @@ class AlertService {
         }
 
         // 3. Transform data
-        const transformed = this.transformService.transformAlertRecords(records, thresholds);
+        // CLUSTER: Apply smart clustering to the list view for noise reduction
+        const clusteredRecords = this.analysisService.clusterAlerts(records);
 
+        const transformed = this.transformService.transformAlertRecords(clusteredRecords, thresholds);
+
+        // Note: Pagination meta might reflect raw counts, but data is clustered.
+        // We update pagination total to reflect "Incidents" vs "Raw Alerts" if possible, 
+        // but here we just return the clustered list.
         return ResponseFormatter.success(transformed, pagination);
     }
 
@@ -112,13 +118,84 @@ class AlertService {
     async getExecutiveKPIs(params) {
         const thresholds = this._getThresholds(params);
 
-        // 1. Fetch data
-        const records = await this.queryService.fetchBasicRecords(params);
+        // 1. Fetch current data
+        const rawRecords = await this.queryService.fetchBasicRecords(
+            params,
+            'time_fired, duration_sec, application, panel_title'
+        );
 
-        // 2. Compute analytics
+        // 1b. Cluster Alerts (Smart Incidents)
+        const records = this.analysisService.clusterAlerts(rawRecords);
+
+        // 2. Compute analytics for current data (using Clustered records)
         const kpis = this.analysisService.computeKPIs(records, thresholds);
 
-        return ResponseFormatter.success(kpis);
+        try {
+            // 3. Calculate previous period
+            const startDate = params.start_date ? new Date(params.start_date) : new Date();
+            const endDate = params.end_date ? new Date(params.end_date) : new Date();
+
+            // Calculate duration in milliseconds
+            const duration = endDate.getTime() - startDate.getTime();
+
+            // Previous period is shift back by duration
+            const prevEndDate = new Date(startDate.getTime());
+            const prevStartDate = new Date(startDate.getTime() - duration);
+
+            const prevParams = {
+                ...params,
+                start_date: prevStartDate.toISOString(),
+                end_date: prevEndDate.toISOString()
+            };
+
+            // 4. Fetch previous period data
+            const prevRawRecords = await this.queryService.fetchBasicRecords(
+                prevParams,
+                'time_fired, duration_sec, application, panel_title'
+            );
+            const prevRecords = this.analysisService.clusterAlerts(prevRawRecords);
+            const prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
+
+            // 5. Calculate trends
+            // Noise Trend
+            const currentNoise = kpis.noise_alerts || 0;
+            const prevNoise = prevKpis.noise_alerts || 0;
+
+            // Avoid division by zero
+            let noiseTrendPct = 0;
+            if (prevNoise > 0) {
+                noiseTrendPct = ((currentNoise - prevNoise) / prevNoise) * 100;
+            } else if (currentNoise > 0) {
+                noiseTrendPct = 100; // 0 to something is 100% increase
+            }
+
+            // Total Trend
+            const currentTotal = kpis.total_alerts || 0;
+            const prevTotal = prevKpis.total_alerts || 0;
+
+            let totalTrendPct = 0;
+            if (prevTotal > 0) {
+                totalTrendPct = ((currentTotal - prevTotal) / prevTotal) * 100;
+            } else if (currentTotal > 0) {
+                totalTrendPct = 100;
+            }
+
+            // Return with trends (rounded to 1 decimal)
+            return ResponseFormatter.success({
+                ...kpis,
+                noise_trend_pct: parseFloat(noiseTrendPct.toFixed(1)),
+                total_trend_pct: parseFloat(totalTrendPct.toFixed(1))
+            });
+
+        } catch (error) {
+            console.error('Error calculating trends:', error);
+            // Fallback to no trend if error
+            return ResponseFormatter.success({
+                ...kpis,
+                noise_trend_pct: 0,
+                total_trend_pct: 0
+            });
+        }
     }
 
     /**
@@ -283,10 +360,13 @@ class AlertService {
         const thresholds = this._getThresholds(params);
 
         // 1. Fetch data (requires more fields for deep analysis)
-        const records = await this.queryService.fetchBasicRecords(
+        const rawRecords = await this.queryService.fetchBasicRecords(
             params,
-            'time_fired, time_resolved, duration_sec, operator, message, application'
+            'time_fired, time_resolved, duration_sec, operator, message, application, panel_title'
         );
+
+        // 1b. Cluster Alerts (Consistency with Dashboard)
+        const records = this.analysisService.clusterAlerts(rawRecords);
 
         // 2. Compute analytics
         const analysis = this.analysisService.computePanelAnalysis(records, thresholds);

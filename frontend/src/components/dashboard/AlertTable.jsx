@@ -1,4 +1,6 @@
 import { formatHourAndDay } from "../../utils/helpers";
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 
 export const AlertTable = ({
   alerts,
@@ -9,6 +11,19 @@ export const AlertTable = ({
   colors,
   renderShiftBadge
 }) => {
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  const toggleRow = (id) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
   const renderCell = (alert, col) => {
     const key = col.key;
     const value = alert[key];
@@ -16,22 +31,62 @@ export const AlertTable = ({
     switch (key) {
       case 'incident_number': {
         const formatted = alert.incident_number;
+        const isCluster = alert.is_cluster;
+        const isExpanded = expandedRows.has(alert.history_id || alert.incident_number);
+
         return (
           <td
             key={key}
+            onClick={(e) => {
+              if (isCluster) {
+                e.stopPropagation();
+                toggleRow(alert.history_id || alert.incident_number);
+              }
+            }}
             style={{
               padding: '16px',
               fontFamily: 'monospace',
               fontSize: 13,
               fontWeight: 600,
               color: colors.text.primary,
+              cursor: isCluster ? 'pointer' : 'inherit'
             }}
           >
-            {formatted ? (
-              formatted
-            ) : (
-              <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {isCluster && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 20,
+                    height: 20,
+                    borderRadius: 4,
+                    background: colors.bg.secondary,
+                    color: colors.text.secondary
+                  }}
+                >
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </div>
+              )}
+              {formatted ? formatted : <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>}
+              {isCluster && (
+                <span style={{
+                  fontSize: 10,
+                  padding: '2px 6px',
+                  background: colors.brand.primary + '20',
+                  color: colors.brand.primary,
+                  borderRadius: 99,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}>
+                  <Layers size={10} />
+                  {alert.cluster_count}
+                </span>
+              )}
+            </div>
           </td>
         );
       }
@@ -256,23 +311,83 @@ export const AlertTable = ({
           </tr>
         </thead>
         <tbody>
-          {alerts.map((alert, i) => (
-            <tr
-              key={alert.history_id || i}
-              style={{
-                borderBottom: `1px solid ${colors.border.primary}`,
-                transition: 'background 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = colors.bg.tertiary;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              {visibleColumns.map((col) => renderCell(alert, col))}
-            </tr>
-          ))}
+          {alerts.map((alert, i) => {
+            const rowId = alert.history_id || alert.incident_number || i;
+            const isExpanded = expandedRows.has(rowId);
+
+            return (
+              <>
+                <tr
+                  key={rowId}
+                  style={{
+                    borderBottom: isExpanded ? 'none' : `1px solid ${colors.border.primary}`,
+                    transition: 'background 0.15s ease',
+                    background: isExpanded ? colors.bg.secondary : 'transparent'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isExpanded) e.currentTarget.style.background = colors.bg.tertiary;
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isExpanded) e.currentTarget.style.background = 'transparent';
+                  }}
+                  onClick={() => alert.is_cluster && toggleRow(rowId)}
+                >
+                  {visibleColumns.map((col) => renderCell(alert, col))}
+                </tr>
+                {isExpanded && alert.is_cluster && alert.raw_alerts && (
+                  <tr key={`${rowId}-expanded`}>
+                    <td colSpan={visibleColumns.length} style={{ padding: 0, borderBottom: `1px solid ${colors.border.primary}` }}>
+                      <div style={{
+                        background: colors.bg.secondary,
+                        padding: '12px 24px',
+                        borderLeft: `4px solid ${colors.brand.primary}`
+                      }}>
+                        <div style={{
+                          marginBottom: 8,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: colors.text.secondary,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          CLustered Incident Details ({alert.cluster_count} alerts)
+                        </div>
+                        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Time</th>
+                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Duration</th>
+                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Message</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {alert.raw_alerts.map((sub, idx) => (
+                              <tr key={idx} style={{ borderTop: `1px solid ${colors.border.secondary}40` }}>
+                                <td style={{ padding: '8px 0', color: colors.text.primary, fontFamily: 'monospace' }}>
+                                  {formatHourAndDay(sub.time_fired)}
+                                </td>
+                                <td style={{ padding: '8px 0' }}>
+                                  <span style={{
+                                    color: colorByDuration(sub.duration_sec),
+                                    fontWeight: 600
+                                  }}>
+                                    {sub.duration_sec}s
+                                  </span>
+                                </td>
+                                <td style={{ padding: '8px 0', color: colors.text.secondary }}>
+                                  {sub.message}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            );
+          })}
         </tbody>
       </table>
     </div>
