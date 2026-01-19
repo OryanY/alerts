@@ -206,13 +206,13 @@ class IncidentTransformService {
 
         // 4. Add default descriptions if not provided
         if (!incidentData.short_description) {
-            incidentData.short_description = `קפצה התראה על: ${alertData.object_name} - ${alertData.application}`;
+            incidentData.short_description = `קפצה התראה על: ${alertData.object_name} בניטור של - ${alertData.application}`;
         }
 
         if (!incidentData.description) {
             const descParts = [
                 `ההתראה:`,
-                `Message: ${alertData.message}`,
+                `${alertData.message}`,
             ];
 
             incidentData.description = descParts.join('\n        ');

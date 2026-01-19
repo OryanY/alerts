@@ -64,12 +64,14 @@ class ServiceNowClient {
         }
     }
 
-    async getAssignmentGroups() {
+       async fetchAssignmentGroups() {
         if (!this.isEnabled()) {
-            return [];
+            throw new Error('ServiceNow integration is not enabled');
         }
 
         try {
+            console.log('🔍 Fetching assignment groups from ServiceNow...');
+
             const response = await axios({
                 method: 'GET',
                 url: `${this.url}/api/now/table/sys_user_group`,
@@ -91,59 +93,13 @@ class ServiceNowClient {
                 label: group.name
             }));
 
-
-            console.log(`✅ fetched ${groups.length} assignment groups`);
+            console.log(`✅ Fetched ${groups.length} assignment groups from ServiceNow`);
             return groups;
 
         } catch (error) {
-            console.error('❌ Error fetching assignment groups:', error.message);
-            return [];
+            console.error('❌ Error fetching assignment groups from ServiceNow:', error.message);
+            throw new Error(`Failed to fetch assignment groups from ServiceNow: ${error.message}`);
         }
-    }
-
-    /**
-     * Test ServiceNow connection
-     * @returns {Promise<Object>} Connection test result
-     */
-    async testConnection() {
-        if (!this.isEnabled()) {
-            return { success: false, message: 'ServiceNow not configured' };
-        }
-
-        try {
-            const response = await axios({
-                method: 'GET',
-                url: `${this.url}/api/now/table/incident`,
-                params: { sysparm_limit: 1 },
-                headers: { 'Accept': 'application/json' },
-                auth: {
-                    username: this.username,
-                    password: this.password
-                },
-                timeout: 5000
-            });
-
-            return {
-                success: true,
-                message: 'ServiceNow connection successful',
-                status: response.status
-            };
-
-        } catch (error) {
-            return {
-                success: false,
-                message: error.message,
-                status: error.response?.status
-            };
-        }
-    }
-
-    /**
-     * Clear assignment groups cache
-     */
-    clearCache() {
-        this.assignmentGroupsCache = null;
-        this.assignmentGroupsCacheTime = null;
     }
 }
 

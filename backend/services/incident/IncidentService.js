@@ -7,13 +7,10 @@ const { ServiceNowClient } = require('./ServiceNowClient');
 const { IncidentTransformService } = require('./IncidentTransformService');
 
 /**
- * IncidentService - Orchestration layer
- * Single Responsibility: Coordinate between services, no business logic
- * 
- * This service delegates to:
+ * This service uses the following sub-services:
  * - IncidentQueryService: MongoDB operations
  * - IncidentRuleEngine: Rule matching logic
- * - ServiceNowClient: External API calls
+ * - ServiceNowClient: Api calls to ServiceNow
  * - IncidentTransformService: Data transformation
  */
 class IncidentService {
@@ -39,9 +36,7 @@ class IncidentService {
         this.ruleEngine = new IncidentRuleEngine();
         this.serviceNowClient = new ServiceNowClient();
         this.transformService = new IncidentTransformService();
-
-        // Create database indexes
-        await this.queryService.createIndexes();
+        console.log('✅ IncidentService initialized with all sub-services.');
     }
 
     // ================== INCIDENT CREATION ==================
@@ -340,12 +335,8 @@ class IncidentService {
         if (!this.queryService) await this.initialize();
 
         try {
-            // 1. Fetch from SN
-            const groups = await this.serviceNowClient.getAssignmentGroups();
-
-            // 2. Save to DB via QueryService
+            const groups = await this.serviceNowClient.fetchAssignmentGroups();
             await this.queryService.saveAssignmentGroups(groups);
-
             console.log(`✅ Synced ${groups.length} assignment groups to MongoDB`);
             return groups;
         } catch (error) {
@@ -353,14 +344,6 @@ class IncidentService {
             throw error;
         }
     }
-
-    async testServiceNowConnection() {
-        if (!this.serviceNowClient) await this.initialize();
-        return this.serviceNowClient.testConnection();
-    }
-
-    // ================== ADDITIONAL METHODS ==================
-
     // Create ServiceNow alert only (simpler than full incident)
     async createServiceNowAlert(alertData) {
         if (!this.queryService) await this.initialize();
@@ -444,19 +427,6 @@ class IncidentService {
         }
     }
 
-    // Get distinct values for a field from mappings
-    async getDistinctValues(fieldName) {
-        if (!this.queryService) await this.initialize();
-
-        try {
-            const db = this.queryService.db;
-            const values = await this.queryService.systemMappingsCollection.distinct(fieldName);
-            return values.filter(v => v != null && v !== '');
-        } catch (error) {
-            console.error(`❌ Error fetching distinct values for ${fieldName}:`, error);
-            throw error;
-        }
-    }
 }
 
 module.exports = IncidentService;

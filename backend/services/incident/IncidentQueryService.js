@@ -10,22 +10,8 @@ class IncidentQueryService {
         this.db = db;
         this.systemMappingsCollection = collections.systemMappings;
         this.incidentRulesCollection = collections.incidentRules;
+        this.assignmentGroupsCollection = collections.assignmentGroups;
     }
-
-    /**
-     * Create database indexes
-     */
-    async createIndexes() {
-        try {
-            await this.systemMappingsCollection.createIndex({ grafana_names: 1 });
-            await this.incidentRulesCollection.createIndex({ grafana_names: 1 });
-            await this.incidentRulesCollection.createIndex({ enabled: 1 });
-            console.log('✅ Incident database indexes created successfully');
-        } catch (error) {
-            console.warn('⚠️  Index creation warning:', error.message);
-        }
-    }
-
 
     async getAssignmentGroups() {
         try {
@@ -60,7 +46,17 @@ class IncidentQueryService {
             throw error;
         }
     }
-    
+     async getLastSyncTime() {
+        try {
+            const doc = await this.assignmentGroupsCollection.findOne({ 
+                _id: 'assignment_groups_store' 
+            });
+            return doc?.lastSynced || null;
+        } catch (error) {
+            console.error('❌ Error getting last sync time:', error);
+            return null;
+        }
+    }
     // ================== SYSTEM MAPPINGS ==================
 
     /**
