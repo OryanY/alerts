@@ -13,7 +13,7 @@ class AlertTransformService {
    */
   transformAlertRecord(record, thresholds) {
     const ilHour = TimeUtils.getILHour(record.time_fired);
-    
+
     return {
       id: record.incident_id,
       panel_title: record.panel_title,
@@ -46,7 +46,7 @@ class AlertTransformService {
     const uniqueTimestamps = [
       ...new Set(records.map(r => r.time_fired.getTime()))
     ];
-    
+
     const hourMap = TimeUtils.batchGetILHours(
       uniqueTimestamps.map(ts => new Date(ts))
     );
@@ -73,7 +73,11 @@ class AlertTransformService {
         message: record.message,
         key_field: record.key_field,
         history_id: record.history_id,
-        incident_number: record.incident_number
+        incident_number: record.incident_number,
+        // Pass through clustering metadata if present
+        is_cluster: !!record.is_cluster,
+        cluster_count: record.cluster_count || 1,
+        raw_alerts: record.raw_alerts || null
       };
     });
   }
@@ -95,7 +99,7 @@ class AlertTransformService {
    */
   formatPaginationMeta(records, page, limit) {
     const hasNext = records.length > limit;
-    
+
     if (hasNext) {
       records = records.slice(0, limit);
     }
@@ -120,10 +124,10 @@ class AlertTransformService {
       ...data,
       date_range: (params.start_date && params.end_date)
         ? {
-            start: params.start_date,
-            end: params.end_date,
-            days: this._calculateDaysDiff(params.start_date, params.end_date)
-          }
+          start: params.start_date,
+          end: params.end_date,
+          days: this._calculateDaysDiff(params.start_date, params.end_date)
+        }
         : null
     };
   }
@@ -184,7 +188,7 @@ class AlertTransformService {
    * PRIVATE: Calculate health score (0-100)
    */
   _calculateHealthScore(panel) {
-    const falsePositiveRate = panel.false_positive_count 
+    const falsePositiveRate = panel.false_positive_count
       ? (panel.false_positive_count / panel.alert_count) * 100
       : 0;
 
@@ -231,7 +235,7 @@ class AlertTransformService {
     if (!message) return null;
 
     let sanitized = String(message).trim();
-    
+
     if (sanitized.length > maxLength) {
       sanitized = sanitized.substring(0, maxLength) + '...';
     }

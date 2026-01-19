@@ -9,6 +9,98 @@ const { TimeUtils } = require('../../utils/TimeUtils');
  */
 class AlertAnalysisService {
   /**
+   * Cluster alerts into incidents based on sliding window
+   */
+  clusterAlerts(records, gapThresholdMinutes = 15) {
+    if (!records || records.length === 0) return [];
+
+    // Sort: Application -> Panel -> Time
+    const sorted = [...records].sort((a, b) => {
+      if (a.application !== b.application) return a.application.localeCompare(b.application);
+      if (a.panel_title !== b.panel_title) return (a.panel_title || '').localeCompare(b.panel_title || '');
+      return a.time_fired - b.time_fired;
+    });
+
+    const clusters = [];
+    let currentCluster = null;
+    const gapMs = gapThresholdMinutes * 60 * 1000;
+
+    for (const record of sorted) {
+      // Initialize first cluster
+      if (!currentCluster) {
+        currentCluster = this._startNewCluster(record);
+        continue;
+      }
+
+      // Check if matches current cluster (Same App & Panel)
+      const isSameGroup =
+        record.application === currentCluster.application &&
+        record.panel_title === currentCluster.panel_title;
+
+      // Check time gap (Sliding Window: start within gap of previous END)
+      // Note: record.time_fired is Date object, currentCluster.endTime is Date object
+      const timeDiff = record.time_fired.getTime() - currentCluster.endTime.getTime();
+      const isWithinGap = timeDiff <= gapMs;
+
+      if (isSameGroup && isWithinGap) {
+        // MERGE into current cluster
+        this._addToCluster(currentCluster, record);
+      } else {
+        // FINALIZE current and start NEW
+        this._finalizeCluster(currentCluster);
+        clusters.push(currentCluster);
+        currentCluster = this._startNewCluster(record);
+      }
+    }
+
+    // Push last cluster
+    if (currentCluster) {
+      this._finalizeCluster(currentCluster);
+      clusters.push(currentCluster);
+    }
+
+    return clusters;
+  }
+
+  _startNewCluster(record) {
+    return {
+      ...record, // Keep all original props (msg, operator, etc) from first alert
+      is_cluster: false, // Will be updated to true in finalize if count > 1
+      cluster_count: 1,
+      startTime: record.time_fired,
+      endTime: new Date(record.time_fired.getTime() + (record.duration_sec * 1000)),
+      raw_alerts: [record] // Keep track for debugging/verification
+    };
+  }
+
+  _addToCluster(cluster, record) {
+    cluster.cluster_count++;
+    cluster.raw_alerts.push(record);
+
+    // Update end time if this alert extends the incident
+    const recordEndTime = new Date(record.time_fired.getTime() + (record.duration_sec * 1000));
+    if (recordEndTime > cluster.endTime) {
+      cluster.endTime = recordEndTime;
+    }
+  }
+
+  _finalizeCluster(cluster) {
+    // Final duration is full span
+    const durationMs = cluster.endTime.getTime() - cluster.startTime.getTime();
+    cluster.duration_sec = Math.floor(durationMs / 1000);
+
+    // Only mark as cluster if it actually contains multiple alerts
+    if (cluster.cluster_count > 1) {
+      cluster.is_cluster = true;
+    }
+
+    // Ensure we don't have unrealistic 0s duration for single instant alerts
+    if (cluster.duration_sec < 1) cluster.duration_sec = 1;
+
+    // cleanup temporary objects if needed, but keeping for now
+  }
+
+  /**
    * Compute executive KPIs from raw records
    */
   computeKPIs(records, thresholds) {
@@ -43,7 +135,7 @@ class AlertAnalysisService {
 
       if (isNight) {
         stats.night++;
-        
+
         if (record.duration_sec <= thresholds.false_wakeup_threshold) {
           stats.falseWakeups++;
         } else {
@@ -63,7 +155,8 @@ class AlertAnalysisService {
         stats.falseWakeups,
         stats.trueWakeups + stats.falseWakeups
       ),
-      avg_duration: this._calculateAverage(stats.sumDuration, stats.total),
+      // CHANGE: Use Median for "Average Duration" display to avoid outliers
+      avg_duration: this._calculateMedian(stats.durations),
       median_duration: this._calculateMedian(stats.durations)
     };
   }
@@ -91,7 +184,7 @@ class AlertAnalysisService {
       const timestamp = record.time_fired.getTime();
       const ilDate = dateMap.get(timestamp);
       const hour = hourMap.get(timestamp);
-      
+
       if (!ilDate) continue;
 
       let stats = dayMap.get(ilDate);
@@ -149,7 +242,7 @@ class AlertAnalysisService {
     for (const record of records) {
       const timestamp = record.time_fired.getTime();
       const hour = hourMap.get(timestamp);
-      
+
       if (hour === null || hour < 0 || hour >= 24) continue;
 
       const bucket = buckets[hour];
@@ -215,7 +308,7 @@ class AlertAnalysisService {
       const timestamp = record.time_fired.getTime();
       const hour = hourMap.get(timestamp);
       const date = dateMap.get(timestamp);
-      
+
       agg.total++;
       agg.sum += record.duration_sec;
 
@@ -235,7 +328,7 @@ class AlertAnalysisService {
 
       // Shift analysis
       const isNight = TimeUtils.isNightHour(hour, thresholds.night_start, thresholds.night_end);
-      
+
       if (isNight) {
         agg.nightAlerts++;
         if (record.duration_sec > thresholds.false_wakeup_threshold) {
@@ -298,10 +391,10 @@ class AlertAnalysisService {
    */
   _calculateMedian(numbers) {
     if (!numbers || numbers.length === 0) return 0;
-    
+
     const sorted = [...numbers].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
-    
+
     return sorted.length % 2 === 0
       ? (sorted[mid - 1] + sorted[mid]) / 2
       : sorted[mid];

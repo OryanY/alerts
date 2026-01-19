@@ -207,6 +207,8 @@ const NocDashboard = () => {
             icon={AlertTriangle}
             logoColor="orange"
             loading={exec.loading}
+            trend={exec.data?.total_trend_pct}
+            invertTrend={true}
           />
           <MetricCard
             title="יחס התראות לפי זמנים"
@@ -231,9 +233,11 @@ const NocDashboard = () => {
             icon={Shield}
             logoColor="red"
             loading={exec.loading}
+            trend={exec.data?.noise_trend_pct}
+            invertTrend={true}
           />
           <MetricCard
-            title=" זמן התראה ממוצע"
+            title=" חציון זמן התראה"
             value={`${exec.data?.avg_duration ?? '—'} ש'`}
             icon={Clock}
             logoColor="green"
@@ -339,8 +343,7 @@ const NocDashboard = () => {
                   dataKey="avg_duration"
                   stroke={colors.chart.quaternary}
                   strokeWidth={2}
-                  dot={{ fill: colors.chart.quaternary, r: 3 }}
-                  name="Avg Duration"
+                  name="Median Duration"
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -442,8 +445,7 @@ const NocDashboard = () => {
                   dataKey="avg_duration"
                   stroke={colors.chart.tertiary}
                   strokeWidth={2}
-                  dot={{ r: 3, fill: colors.chart.tertiary }}
-                  name="Avg Duration"
+                  name="Median Duration"
                 />
               </ComposedChart>
             </ResponsiveContainer>

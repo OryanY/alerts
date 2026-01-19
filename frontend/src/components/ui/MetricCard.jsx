@@ -13,6 +13,7 @@ export const MetricCard = memo(function MetricCard({
   logoColor = 'blue',
   loading = false,
   error,
+  invertTrend = false,
 }) {
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
@@ -96,7 +97,7 @@ export const MetricCard = memo(function MetricCard({
             display: 'flex',
             alignItems: 'center',
             gap: 4,
-            color: trend > 0
+            color: (trend > 0 && !invertTrend) || (trend < 0 && invertTrend)
               ? colors.semantic.success
               : colors.semantic.error
           }}>
