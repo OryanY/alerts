@@ -218,6 +218,11 @@ class IncidentTransformService {
             incidentData.description = descParts.join('\n        ');
         }
 
+        // 5. Add default operational impact if not present
+        if (!incidentData.u_operational_impact) {
+            incidentData.u_operational_impact = "בבדיקה";
+        }
+
         return incidentData;
     }
 

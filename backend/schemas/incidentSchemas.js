@@ -62,7 +62,8 @@ const systemMappingSchema = Joi.object({
 }).unknown(true);
 
 const incidentRuleSchema = Joi.object({
-  system_mapping_id: Joi.string().required(),
+  system_mapping_id: Joi.string().optional().allow(null),
+  is_global: Joi.boolean().default(false),
   rule_name: Joi.string().required().trim(),
   description: Joi.string().optional().trim(),
   conditions: Joi.object({
@@ -95,7 +96,7 @@ const incidentRuleSchema = Joi.object({
 module.exports = {
   alertQuerySchema,
   serviceNowAlertSchema,
-    combinedCreateSchema,
-    systemMappingSchema,
-    incidentRuleSchema
+  combinedCreateSchema,
+  systemMappingSchema,
+  incidentRuleSchema
 };

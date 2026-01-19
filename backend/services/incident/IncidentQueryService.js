@@ -31,12 +31,12 @@ class IncidentQueryService {
         try {
             const result = await this.assignmentGroupsCollection.updateOne(
                 { _id: 'assignment_groups_store' },
-                { 
-                    $set: { 
+                {
+                    $set: {
                         groups: groups,
                         lastSynced: new Date(),
                         count: groups.length
-                    } 
+                    }
                 },
                 { upsert: true }
             );
@@ -46,10 +46,10 @@ class IncidentQueryService {
             throw error;
         }
     }
-     async getLastSyncTime() {
+    async getLastSyncTime() {
         try {
-            const doc = await this.assignmentGroupsCollection.findOne({ 
-                _id: 'assignment_groups_store' 
+            const doc = await this.assignmentGroupsCollection.findOne({
+                _id: 'assignment_groups_store'
             });
             return doc?.lastSynced || null;
         } catch (error) {
@@ -247,8 +247,10 @@ class IncidentQueryService {
                 return allRules;
             }
 
-            // Filter rules where grafanaName matches any pattern
+            // Filter rules where grafanaName matches any pattern OR rule is global
             const matchingRules = allRules.filter(rule => {
+                if (rule.is_global) return true;
+
                 if (!rule.grafana_names || !Array.isArray(rule.grafana_names)) return false;
 
                 return rule.grafana_names.some(pattern => {

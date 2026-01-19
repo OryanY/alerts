@@ -1,6 +1,6 @@
 import { useTheme } from '../../contexts/ThemeContext';
 
-const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMapping }) => {
+const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMapping, assignmentGroups }) => {
     const { colors, gradients } = useTheme();
 
     return (
@@ -198,7 +198,7 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
                     >
                         Assignment Group
                     </label>
-                    <input
+                    <select
                         style={{
                             width: '100%',
                             padding: '12px 16px',
@@ -218,8 +218,12 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
                                 },
                             }))
                         }
-                        placeholder="Override assignment group"
-                    />
+                    >
+                        <option value="">Override assignment group...</option>
+                        {assignmentGroups && assignmentGroups.map(group => (
+                            <option key={group.id} value={group.id}>{group.name}</option>
+                        ))}
+                    </select>
                     {selectedMapping && (
                         <p
                             style={{
@@ -423,6 +427,56 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
                             📋 Base:{' '}
                             <strong>
                                 {selectedMapping.u_impact_technology || '—'}
+                            </strong>
+                        </p>
+                    )}
+                </div>
+
+                <div>
+                    <label
+                        style={{
+                            display: 'block',
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: colors.semantic.successText,
+                            marginBottom: 8,
+                        }}
+                    >
+                        Operational Impact
+                    </label>
+                    <input
+                        style={{
+                            width: '100%',
+                            padding: '12px 16px',
+                            border: `2px solid ${colors.semantic.success}`,
+                            borderRadius: 8,
+                            fontSize: 14,
+                            background: colors.bg.secondary,
+                            color: colors.text.primary,
+                        }}
+                        value={form.incident_overrides.u_operational_impact || ''}
+                        onChange={(e) =>
+                            setForm((p) => ({
+                                ...p,
+                                incident_overrides: {
+                                    ...p.incident_overrides,
+                                    u_operational_impact: e.target.value,
+                                },
+                            }))
+                        }
+                        placeholder="Override operational impact (default: בבדיקה)"
+                    />
+                    {selectedMapping && (
+                        <p
+                            style={{
+                                margin: '4px 0 0 0',
+                                fontSize: 12,
+                                color: colors.semantic.successText,
+                            }}
+                        >
+                            📋 Base:{' '}
+                            <strong>
+                                {selectedMapping.u_operational_impact || '—'}
                             </strong>
                         </p>
                     )}

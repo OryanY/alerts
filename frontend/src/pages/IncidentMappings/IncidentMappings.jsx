@@ -62,7 +62,10 @@ const IncidentMappings = () => {
       const res = await fetch(`${API_BASE}/incidents/assignment-groups`);
       const data = await res.json();
       if (data.success) {
-        setAssignmentGroups(data.data || []);
+        const sortedGroups = (data.data || []).sort((a, b) =>
+          String(a.name || '').localeCompare(String(b.name || ''))
+        );
+        setAssignmentGroups(sortedGroups);
       }
     } catch (e) {
       console.warn('Could not fetch assignment groups:', e.message);
@@ -131,7 +134,7 @@ const IncidentMappings = () => {
     const lower = searchTerm.toLowerCase();
 
     // Fields to search
-    const groupLabel = assignmentGroups.find(g => g.value === m.assignment_group)?.label || '';
+    const groupLabel = assignmentGroups.find(g => g.id === m.assignment_group)?.name || '';
 
     const fieldsToCheck = [
       m.service_offering,

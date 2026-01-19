@@ -45,6 +45,11 @@ class IncidentRuleEngine {
             }
         });
 
+        // Boost specific (non-global) rules to prioritize them over global rules
+        if (!rule.is_global) {
+            score += 100;
+        }
+
         return score;
     }
 
@@ -121,21 +126,27 @@ class IncidentRuleEngine {
 
     // Find the most specific rule that matches this alert
     findBestMatch(alertData, rules) {
-        if (!rules || rules.length === 0) return null;
+        const matches = this.findAllMatches(alertData, rules);
+        return matches.length > 0 ? matches[0].rule : null;
+    }
 
-        // Filter to only matching rules
-        const matchingRules = rules.filter(rule =>
-            this.doesAlertMatchRule(alertData, rule)
-        );
+    // Find all rules that match, sorted by specificity
+    findAllMatches(alertData, rules) {
+        if (!rules || rules.length === 0) return [];
 
-        if (matchingRules.length === 0) return null;
+        // Filter to only matching rules and calculate scores
+        const matches = rules
+            .filter(rule => this.doesAlertMatchRule(alertData, rule))
+            .map(rule => ({
+                rule,
+                score: this.calculateRuleSpecificity(rule),
+                is_global: !!rule.is_global
+            }));
 
-        // Sort by specificity (most specific first)
-        matchingRules.sort((a, b) =>
-            this.calculateRuleSpecificity(b) - this.calculateRuleSpecificity(a)
-        );
+        // Sort by specificity (highest score first)
+        matches.sort((a, b) => b.score - a.score);
 
-        return matchingRules[0];
+        return matches;
     }
 
     // Validate that regex patterns in conditions are valid

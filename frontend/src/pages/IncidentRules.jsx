@@ -14,6 +14,7 @@ const IncidentRules = () => {
 
   const [rules, setRules] = useState([]);
   const [mappings, setMappings] = useState([]);
+  const [assignmentGroups, setAssignmentGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -67,6 +68,7 @@ const IncidentRules = () => {
   }, [rules, searchTerm]);
 
   const [form, setForm] = useState({
+    is_global: false,
     system_mapping_id: '',
     rule_name: '',
     description: '',
@@ -120,14 +122,35 @@ const IncidentRules = () => {
     try {
       const res = await fetch(`${API_BASE}/incidents/system-mappings`);
       const data = await res.json();
-      if (data.success) setMappings(data.data || []);
+      if (data.success) {
+        const sortedMappings = (data.data || []).sort((a, b) =>
+          String(a.service_offering || '').localeCompare(String(b.service_offering || ''))
+        );
+        setMappings(sortedMappings);
+      }
     } catch (e) {
       console.warn('Failed to fetch mappings:', e);
     }
   };
 
+  const fetchAssignmentGroups = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/incidents/assignment-groups`);
+      const data = await res.json();
+      if (data.success) {
+        const sortedGroups = (data.data || []).sort((a, b) =>
+          String(a.name || '').localeCompare(String(b.name || ''))
+        );
+        setAssignmentGroups(sortedGroups);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch assignment groups:', e);
+    }
+  };
+
   useEffect(() => {
     fetchMappings();
+    fetchAssignmentGroups();
     fetchRules();
   }, []);
 
@@ -136,6 +159,7 @@ const IncidentRules = () => {
    * ---------------------------------------------------------------- */
   const reset = () => {
     setForm({
+      is_global: false,
       system_mapping_id: '',
       rule_name: '',
       description: '',
@@ -193,7 +217,8 @@ const IncidentRules = () => {
       });
 
       const payload = {
-        system_mapping_id: form.system_mapping_id,
+        is_global: form.is_global,
+        system_mapping_id: form.is_global ? undefined : form.system_mapping_id,
         rule_name: form.rule_name,
         description: form.description || undefined,
         conditions: legacyConditions,
@@ -331,6 +356,7 @@ const IncidentRules = () => {
     }
 
     setForm({
+      is_global: !!rule.is_global,
       system_mapping_id: rule.system_mapping_id || rule.system_mapping?._id || '',
       rule_name: rule.rule_name || '',
       description: rule.description || '',
@@ -501,6 +527,10 @@ const IncidentRules = () => {
         onSearchChange={setSearchTerm}
       />
 
+
+
+
+
       {/* FORM */}
       {showForm && (
         <RuleForm
@@ -513,6 +543,7 @@ const IncidentRules = () => {
           previewMode={previewMode}
           setPreviewMode={setPreviewMode}
           mappings={mappings}
+          assignmentGroups={assignmentGroups}
           selectedMapping={selectedMapping}
           customFieldsInMapping={customFieldsInMapping}
         />
@@ -563,6 +594,8 @@ const IncidentRules = () => {
                     <RuleCard
                       key={String(rule._id)}
                       rule={rule}
+                      globalRules={rules.filter(r => r.is_global)} // Pass all global rules
+                      assignmentGroups={assignmentGroups} // Pass for processing friendly names
                       onToggle={toggle}
                       onEdit={startEdit}
                       onDelete={del}

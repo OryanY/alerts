@@ -224,11 +224,20 @@ class IncidentService {
         if (!this.queryService) await this.initialize();
 
         try {
-            // Verify system mapping exists
-            const mapping = await this.queryService.findMappingById(ruleData.system_mapping_id);
+            let mapping = null;
+            if (ruleData.is_global) {
+                // Global rules don't need a mapping
+                console.log('🌍 Creating Global Incident Rule');
+            } else {
+                // Specific rules require a mapping
+                if (!ruleData.system_mapping_id) {
+                    throw new Error('System mapping ID is required for non-global rules');
+                }
+                mapping = await this.queryService.findMappingById(ruleData.system_mapping_id);
 
-            if (!mapping) {
-                throw new Error('System mapping not found');
+                if (!mapping) {
+                    throw new Error('System mapping not found');
+                }
             }
 
             // Validate rule conditions
@@ -243,8 +252,9 @@ class IncidentService {
 
             const dataToInsert = {
                 ...ruleData,
-                system_mapping_id: mapping._id,
-                grafana_names: mapping.grafana_names,
+                system_mapping_id: mapping ? mapping._id : null,
+                grafana_names: mapping ? mapping.grafana_names : [], // Globals have no specific grafana names
+                is_global: !!ruleData.is_global,
                 logic_operator: ruleData.logic_operator || 'OR',
                 created_at: new Date(),
                 updated_at: new Date()
@@ -252,7 +262,11 @@ class IncidentService {
 
             const result = await this.queryService.createRule(dataToInsert);
 
-            console.log(`✅ Created incident rule for applications: ${mapping.grafana_names.map(p => p.value).join(', ')}`);
+            if (mapping) {
+                console.log(`✅ Created incident rule for applications: ${mapping.grafana_names.map(p => p.value).join(', ')}`);
+            } else {
+                console.log('✅ Created Global incident rule');
+            }
             return result;
         } catch (error) {
             console.error('❌ Error creating incident rule:', error);
@@ -326,9 +340,9 @@ class IncidentService {
     // ================== SERVICENOW INTEGRATION ==================
 
     async getAssignmentGroups() {
-            if (!this.queryService) await this.initialize();
-            return this.queryService.getAssignmentGroups();
-        }
+        if (!this.queryService) await this.initialize();
+        return this.queryService.getAssignmentGroups();
+    }
 
     async syncAssignmentGroups() {
         if (!this.serviceNowClient) await this.initialize();
@@ -427,6 +441,58 @@ class IncidentService {
         }
     }
 
-}
+    // ================== SIMULATION & DEBUGGING ==================
 
+    async simulateIncidentCreation(alertData) {
+        if (!this.queryService) await this.initialize();
+
+        try {
+            const { application } = alertData;
+            if (!application) throw new Error('Alert must have an application field');
+
+            // 1. Find matching system mapping
+            const systemMapping = await this.queryService.findMappingByApplication(
+                application,
+                this.ruleEngine
+            );
+
+            // 2. Find matching rules (Specific + Global)
+            const rules = await this.queryService.findEnabledRules(
+                application,
+                this.ruleEngine
+            );
+
+            // 3. Find all matches
+            const allMatches = this.ruleEngine.findAllMatches(alertData, rules);
+            const winner = allMatches.length > 0 ? allMatches[0] : null;
+
+            // 4. Build incident data (preview)
+            let incidentData = null;
+            if (systemMapping) {
+                incidentData = this.transformService.buildIncidentData(
+                    systemMapping,
+                    winner?.rule?.incident_overrides || {},
+                    alertData
+                );
+            }
+
+            return {
+                system_mapping: systemMapping || null,
+                winner: winner,
+                shadowed_rules: allMatches.slice(1), // All matches except the winner
+                total_rules_checked: rules.length,
+                generated_incident: incidentData,
+                hierarchy_explanation: [
+                    "1. Specific Rules (Highest Priority)",
+                    "2. Global Rules",
+                    "3. System Mapping Defaults (Lowest Priority)"
+                ]
+            };
+        } catch (error) {
+            console.error('❌ Error simulating incident:', error);
+            throw error;
+        }
+    }
+
+}
 module.exports = IncidentService;

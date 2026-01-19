@@ -4,13 +4,16 @@ import {
     ToggleLeft,
     ToggleRight,
     Edit,
-    Trash2
+    Trash2,
+    AlertTriangle
 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { EXCLUDED_MAPPING_FIELDS } from './constants';
 
 const RuleCard = ({
     rule,
+    globalRules,
+    assignmentGroups,
     onToggle,
     onEdit,
     onDelete,
@@ -138,6 +141,53 @@ const RuleCard = ({
                         )}
                     </div>
 
+
+
+                    {/* CONFLICT WARNING */}
+                    {!rule.is_global && (
+                        (() => {
+                            const conflicts = (globalRules || []).filter(gRule => {
+                                // Skip if self (shouldn't happen)
+                                if (gRule._id === rule._id) return false;
+
+                                // Check for intersection in conditions
+                                // If both have the same condition key/value, they collide
+                                const sCond = rule.conditions || {};
+                                const gCond = gRule.conditions || {};
+
+                                return Object.keys(gCond).some(key => {
+                                    if (!sCond[key]) return false;
+                                    // Compare values (simple JSON stringify for arrays/objects)
+                                    return JSON.stringify(sCond[key]) === JSON.stringify(gCond[key]);
+                                });
+                            });
+
+                            if (conflicts.length > 0) {
+                                return (
+                                    <div style={{
+                                        marginBottom: 12,
+                                        padding: '8px 12px',
+                                        background: `${colors.semantic.warning}15`,
+                                        border: `1px solid ${colors.semantic.warning}`,
+                                        borderRadius: 8,
+                                        fontSize: 12,
+                                        color: colors.semantic.warningText,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8
+                                    }}>
+                                        <AlertTriangle size={16} />
+                                        <span>
+                                            <strong>Overrides Global Rule{conflicts.length > 1 ? 's' : ''}:</strong>{' '}
+                                            {conflicts.map(c => c.rule_name).join(', ')}
+                                        </span>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()
+                    )}
+
                     {/* APPLICATIONS */}
                     <p
                         style={{
@@ -245,10 +295,10 @@ const RuleCard = ({
                         Delete
                     </button>
                 </div>
-            </div>
+            </div >
 
             {/* CONDITIONS DISPLAY */}
-            <div
+            < div
                 style={{
                     background: gradients.infoGradient,
                     padding: 16,
@@ -347,10 +397,11 @@ const RuleCard = ({
                         return null;
                     })}
                 </div>
-            </div>
+            </div >
 
             {/* OVERRIDES DISPLAY */}
-            {rule.incident_overrides &&
+            {
+                rule.incident_overrides &&
                 Object.keys(rule.incident_overrides).length > 0 && (
                     <div
                         style={{
@@ -434,7 +485,9 @@ const RuleCard = ({
                                                 ? v
                                                     ? 'YES'
                                                     : 'NO'
-                                                : String(v)}
+                                                : k === 'assignment_group'
+                                                    ? assignmentGroups?.find(g => g.id === v)?.name || v
+                                                    : String(v)}
                                         </div>
                                     </div>
                                 ))}
@@ -472,29 +525,32 @@ const RuleCard = ({
                             </div>
                         )}
                     </div>
-                )}
+                )
+            }
 
             {/* META INFO */}
-            {rule.created_at && (
-                <div
-                    style={{
-                        paddingTop: 16,
-                        borderTop: `1px solid ${colors.border.primary}`,
-                        fontSize: 12,
-                        color: colors.text.tertiary,
-                    }}
-                >
-                    Created: {new Date(rule.created_at).toLocaleString()}
-                    {rule.updated_at && rule.updated_at !== rule.created_at && (
-                        <span>
-                            {' '}
-                            • Updated:{' '}
-                            {new Date(rule.updated_at).toLocaleString()}
-                        </span>
-                    )}
-                </div>
-            )}
-        </div>
+            {
+                rule.created_at && (
+                    <div
+                        style={{
+                            paddingTop: 16,
+                            borderTop: `1px solid ${colors.border.primary}`,
+                            fontSize: 12,
+                            color: colors.text.tertiary,
+                        }}
+                    >
+                        Created: {new Date(rule.created_at).toLocaleString()}
+                        {rule.updated_at && rule.updated_at !== rule.created_at && (
+                            <span>
+                                {' '}
+                                • Updated:{' '}
+                                {new Date(rule.updated_at).toLocaleString()}
+                            </span>
+                        )}
+                    </div>
+                )
+            }
+        </div >
     );
 };
 

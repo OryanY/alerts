@@ -4,12 +4,12 @@ const IncidentService = require('../services/incident/IncidentService');
 const { validateQuery, validateBody } = require('../middleware/validation');
 const { handleError } = require('../middleware/errorHandler');
 const { getErrorHtml } = require('../utils/htmlTemplates');
-const { 
+const {
   alertQuerySchema,
   serviceNowAlertSchema,
   combinedCreateSchema,
   systemMappingSchema,
-  incidentRuleSchema 
+  incidentRuleSchema
 } = require('../schemas/incidentSchemas');
 
 const router = express.Router();
@@ -56,7 +56,7 @@ router.get('/assignment-groups', async (req, res) => {
 router.get('/assignment-groups/sync', async (req, res) => {
   try {
     console.log('🔄 Starting assignment groups sync from ServiceNow...');
-    
+
     const groups = await incidentService.syncAssignmentGroups();
 
     if (!Array.isArray(groups)) {
@@ -138,6 +138,28 @@ router.post('/incident', validateBody(alertQuerySchema), async (req, res) => {
         details: error.message
       });
     }
+    handleError(res, error);
+  }
+});
+
+/**
+ * SIMULATION ENDPOINT
+ * POST /incident/simulate
+ * Simulates incident creation to debug rules and collisions.
+ */
+router.post('/incident/simulate', validateBody(alertQuerySchema), async (req, res) => {
+  try {
+    const alertData = req.validatedBody;
+    console.log('🧪 Simulating incident creation:', alertData);
+
+    const simulationResult = await incidentService.simulateIncidentCreation(alertData);
+
+    res.json({
+      success: true,
+      message: 'Simulation completed',
+      data: simulationResult
+    });
+  } catch (error) {
     handleError(res, error);
   }
 });

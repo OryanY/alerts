@@ -1,4 +1,4 @@
-import { Edit, Plus, Eye } from 'lucide-react';
+import { Edit, Plus, Eye, Globe, Check } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import ConditionBuilder from './ConditionBuilder';
 import IncidentOverrides from './IncidentOverrides';
@@ -13,6 +13,7 @@ const RuleForm = ({
     previewMode,
     setPreviewMode,
     mappings,
+    assignmentGroups,
     selectedMapping,
     customFieldsInMapping
 }) => {
@@ -20,7 +21,7 @@ const RuleForm = ({
 
     const validateForm = () => {
         const errors = [];
-        if (!form.system_mapping_id) errors.push('Base System Mapping is required');
+        if (!form.is_global && !form.system_mapping_id) errors.push('Base System Mapping is required');
         if (!form.rule_name?.trim()) errors.push('Rule Name is required');
         if (!form.conditions || form.conditions.length === 0) errors.push('At least one condition is required');
 
@@ -146,16 +147,38 @@ const RuleForm = ({
                             border: `2px solid ${colors.border.secondary}`,
                         }}
                     >
-                        <h4
-                            style={{
-                                margin: '0 0 20px 0',
-                                fontSize: 18,
-                                fontWeight: 600,
-                                color: colors.text.primary,
-                            }}
-                        >
-                            Rule Setup
-                        </h4>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h4
+                                style={{
+                                    margin: 0,
+                                    fontSize: 18,
+                                    fontWeight: 600,
+                                    color: colors.text.primary,
+                                }}
+                            >
+                                Rule Setup
+                            </h4>
+
+                            <label
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    cursor: 'pointer',
+                                    userSelect: 'none'
+                                }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={form.is_global}
+                                    onChange={() => setForm(p => ({ ...p, is_global: !p.is_global, system_mapping_id: !p.is_global ? '' : p.system_mapping_id }))}
+                                    style={{ width: 16, height: 16, accentColor: colors.brand.primary }}
+                                />
+                                <span style={{ fontSize: 13, fontWeight: 500, color: colors.text.primary }}>
+                                    Global Rule <span style={{ color: colors.text.secondary, fontWeight: 400 }}>(Applies to all apps)</span>
+                                </span>
+                            </label>
+                        </div>
 
                         <div
                             style={{
@@ -164,69 +187,71 @@ const RuleForm = ({
                                 gap: 20,
                             }}
                         >
-                            {/* SYSTEM MAPPING */}
-                            <div>
-                                <label
-                                    style={{
-                                        display: 'block',
-                                        fontSize: 14,
-                                        fontWeight: 600,
-                                        color: colors.text.primary,
-                                        marginBottom: 8,
-                                    }}
-                                >
-                                    Base System Mapping *
-                                </label>
-                                <select
-                                    style={{
-                                        width: '100%',
-                                        padding: '12px 16px',
-                                        border: `2px solid ${colors.border.secondary}`,
-                                        borderRadius: 8,
-                                        fontSize: 14,
-                                        background: colors.bg.secondary,
-                                        color: colors.text.primary,
-                                    }}
-                                    required
-                                    value={form.system_mapping_id}
-                                    onChange={(e) =>
-                                        setForm((p) => ({
-                                            ...p,
-                                            system_mapping_id: e.target.value,
-                                        }))
-                                    }
-                                >
-                                    <option value="">Choose a system mapping...</option>
-
-                                    {mappings.map((m) => (
-                                        <option key={String(m._id)} value={m._id}>
-                                            {m.grafana_names
-                                                ?.map((name) =>
-                                                    typeof name === 'object' ? name.value : name
-                                                )
-                                                .join(', ')}{' '}
-                                            ← {m.service_offering}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                {selectedMapping && (
-                                    <div
+                            {/* SYSTEM MAPPING (Only if NOT global) */}
+                            {!form.is_global && (
+                                <div>
+                                    <label
                                         style={{
-                                            marginTop: 8,
-                                            fontSize: 12,
-                                            color: colors.text.secondary,
+                                            display: 'block',
+                                            fontSize: 14,
+                                            fontWeight: 600,
+                                            color: colors.text.primary,
+                                            marginBottom: 8,
                                         }}
                                     >
-                                        Applies to:{' '}
-                                        <strong>
-                                            {(selectedMapping.grafana_names || []).map((g) =>
-                                                typeof g === 'string' ? g : g.value
-                                            ).join(', ')}
-                                        </strong>
-                                    </div>
-                                )}
-                            </div>
+                                        Base System Mapping *
+                                    </label>
+                                    <select
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 16px',
+                                            border: `2px solid ${colors.border.secondary}`,
+                                            borderRadius: 8,
+                                            fontSize: 14,
+                                            background: colors.bg.secondary,
+                                            color: colors.text.primary,
+                                        }}
+                                        required
+                                        value={form.system_mapping_id}
+                                        onChange={(e) =>
+                                            setForm((p) => ({
+                                                ...p,
+                                                system_mapping_id: e.target.value,
+                                            }))
+                                        }
+                                    >
+                                        <option value="">Choose a system mapping...</option>
+
+                                        {mappings.map((m) => (
+                                            <option key={String(m._id)} value={m._id}>
+                                                {m.grafana_names
+                                                    ?.map((name) =>
+                                                        typeof name === 'object' ? name.value : name
+                                                    )
+                                                    .join(', ')}{' '}
+                                                ← {m.service_offering}
+                                            </option>
+                                        ))}
+                                    </select>
+
+                                    {selectedMapping && (
+                                        <div
+                                            style={{
+                                                marginTop: 8,
+                                                fontSize: 12,
+                                                color: colors.text.secondary,
+                                            }}
+                                        >
+                                            Applies to:{' '}
+                                            <strong>
+                                                {(selectedMapping.grafana_names || []).map((g) =>
+                                                    typeof g === 'string' ? g : g.value
+                                                ).join(', ')}
+                                            </strong>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* RULE NAME */}
                             <div>
@@ -306,6 +331,7 @@ const RuleForm = ({
                         setForm={setForm}
                         selectedMapping={selectedMapping}
                         customFieldsInMapping={customFieldsInMapping}
+                        assignmentGroups={assignmentGroups}
                     />
 
                     {/* ACTION BUTTONS */}
