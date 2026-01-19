@@ -1,5 +1,5 @@
 import { formatHourAndDay } from "../../utils/helpers";
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 
 export const AlertTable = ({
@@ -312,13 +312,13 @@ export const AlertTable = ({
         </thead>
         <tbody>
           {alerts.map((alert, i) => {
-            const rowId = alert.history_id || alert.incident_number || i;
-            const isExpanded = expandedRows.has(rowId);
+            const rawId = alert.history_id || alert.incident_number || i;
+            const uniqueKey = `${rawId}_${i}`;
+            const isExpanded = expandedRows.has(rawId);
 
             return (
-              <>
+              <Fragment key={uniqueKey}>
                 <tr
-                  key={rowId}
                   style={{
                     borderBottom: isExpanded ? 'none' : `1px solid ${colors.border.primary}`,
                     transition: 'background 0.15s ease',
@@ -330,12 +330,12 @@ export const AlertTable = ({
                   onMouseLeave={(e) => {
                     if (!isExpanded) e.currentTarget.style.background = 'transparent';
                   }}
-                  onClick={() => alert.is_cluster && toggleRow(rowId)}
+                  onClick={() => alert.is_cluster && toggleRow(rawId)}
                 >
                   {visibleColumns.map((col) => renderCell(alert, col))}
                 </tr>
                 {isExpanded && alert.is_cluster && alert.raw_alerts && (
-                  <tr key={`${rowId}-expanded`}>
+                  <tr key={`${uniqueKey}-expanded`}>
                     <td colSpan={visibleColumns.length} style={{ padding: 0, borderBottom: `1px solid ${colors.border.primary}` }}>
                       <div style={{
                         background: colors.bg.secondary,
@@ -385,7 +385,7 @@ export const AlertTable = ({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>

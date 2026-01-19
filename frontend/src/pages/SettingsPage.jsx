@@ -267,7 +267,7 @@ const SettingsPage = () => {
                   htmlFor="clusteringEnabled"
                   style={{ cursor: 'pointer', fontWeight: 500, userSelect: 'none' }}
                 >
-                  הפעל איחוד התראות חכמים
+                  איחוד התראות חכמים
                 </label>
               </div>
 
@@ -277,7 +277,7 @@ const SettingsPage = () => {
                   value={localConfig.clusteringThreshold ?? 15}
                   onChange={(v) => updateLocalConfig('clusteringThreshold', v)}
                   type="number"
-                  description="התראות עוקבות מאותו פאנל בהפרש זמן זה יאוחדו לאירוע בודד"
+                  description="התראות עוקבות מאותו פאנל רועש יאוחדו להתראה אחת"
                 />
               )}
             </div>
@@ -313,7 +313,7 @@ const SettingsPage = () => {
               margin: '0 0 16px 0',
             }}
           >
-            קטגוריות משך זמן (Duration Thresholds)
+            קטגוריות משך זמן
           </h3>
 
           <div style={{ display: 'grid', gap: 24 }}>
@@ -392,16 +392,7 @@ const SettingsPage = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <label style={{ fontSize: 14, fontWeight: 600 }}>חישוב משך זמן מייצג:</label>
             <div style={{ display: 'flex', gap: 20 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name="durationMetric"
-                  value="median"
-                  checked={localConfig.durationMetric !== 'average'} // Default to median
-                  onChange={() => updateLocalConfig('durationMetric', 'median')}
-                />
-                חציון (מומלץ - מסנן חריגים)
-              </label>
+
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input
                   type="radio"
@@ -410,7 +401,17 @@ const SettingsPage = () => {
                   checked={localConfig.durationMetric === 'average'}
                   onChange={() => updateLocalConfig('durationMetric', 'average')}
                 />
-                ממוצע רגיל (רגיש לחריגים)
+                ממוצע (יותר רגיש להתראות חריגות)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="durationMetric"
+                  value="median"
+                  checked={localConfig.durationMetric !== 'average'} // Default to median
+                  onChange={() => updateLocalConfig('durationMetric', 'median')}
+                />
+                חציון (פחות רגיש)
               </label>
             </div>
           </div>
