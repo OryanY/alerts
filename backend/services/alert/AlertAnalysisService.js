@@ -11,7 +11,8 @@ class AlertAnalysisService {
   /**
    * Cluster alerts into incidents based on sliding window
    */
-  clusterAlerts(records, gapThresholdMinutes = 15) {
+  clusterAlerts(records, enabled = true, gapThresholdMinutes = 15) {
+    if (!enabled) return records;
     if (!records || records.length === 0) return [];
 
     // Sort: Application -> Panel -> Time
@@ -155,8 +156,8 @@ class AlertAnalysisService {
         stats.falseWakeups,
         stats.trueWakeups + stats.falseWakeups
       ),
-      // CHANGE: Use Median for "Average Duration" display to avoid outliers
-      avg_duration: this._calculateMedian(stats.durations),
+      // CHANGE: Use Median for "Average Duration" display to avoid outliers (RESTORED TO MEAN)
+      avg_duration: this._calculateAverage(stats.sumDuration, stats.total),
       median_duration: this._calculateMedian(stats.durations)
     };
   }

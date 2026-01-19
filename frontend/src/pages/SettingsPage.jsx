@@ -11,6 +11,11 @@ const SettingsPage = () => {
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
 
+  const toMinutes = (seconds) => {
+    if (!seconds) return 0;
+    return Math.round((seconds / 60) * 10) / 10;
+  };
+
   const { config, updateConfig, resetConfig } = useClientConfig();
 
   const [localConfig, setLocalConfig] = useState(config);
@@ -51,69 +56,88 @@ const SettingsPage = () => {
     });
   };
 
-  const ColorInput = ({ label, value, onChange }) => (
-    <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-      <label
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: colors.text.primary,
-        }}
-      >
-        {label}
-      </label>
+  const handleBandUpdate = (idx, field, value) => {
+    setLocalConfig(prev => {
+      const newBands = structuredClone(prev.bands);
+      const val = parseInt(value, 10);
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          minWidth: 0,
-        }}
-      >
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 6,
-            borderWidth: 1,
-            borderStyle: 'solid',
-            borderColor: colors.border.primary,
-            background: colors.bg.secondary,
-            cursor: 'pointer',
-          }}
-        />
+      if (isNaN(val)) return prev;
 
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="#000000"
-          style={{
-            ...S.input,
-            flex: 1,
-            minWidth: 0,
-          }}
-        />
-      </div>
-    </div>
-  );
+      if (field === 'max') {
+        newBands[idx].max = val;
+        // Auto-update next band's min if exists
+        if (idx < newBands.length - 1) {
+          newBands[idx + 1].min = val + 1;
+        }
+      }
+
+      return { ...prev, bands: newBands };
+    });
+  };
+
+
 
   return (
     <div style={{ direction: 'rtl', color: colors.text.secondary }}>
-      <div style={{ marginBottom: 24 }}>
-        <h2
-          style={{
-            fontSize: 24,
-            fontWeight: 700,
-            margin: '0 0 8px 0',
-          }}
-        >
-          הגדרות ספים ומשמרות
-        </h2>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 4px 0' }}>הגדרות ספים ומשמרות</h2>
+          <p style={{ margin: 0, fontSize: 13, color: colors.text.tertiary, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {hasUnsavedChanges ? (
+              <>
+                <Info size={14} style={{ color: colors.semantic.warning }} />
+                <span style={{ color: colors.semantic.warning, fontWeight: 600 }}>יש שינויים שלא נשמרו</span>
+              </>
+            ) : ''}
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button
+            onClick={handleReset}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              border: `1px solid ${colors.border.primary}`,
+              background: colors.bg.secondary,
+              color: colors.text.secondary,
+              fontSize: 13,
+              fontWeight: 500,
+              transition: 'all 0.2s',
+            }}
+          >
+            <RotateCcw size={14} />
+            אפס
+          </button>
+
+          <button
+            onClick={handleSave}
+            disabled={!hasUnsavedChanges}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 20px',
+              borderRadius: 8,
+              cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed',
+              border: 'none',
+              background: hasUnsavedChanges ? colors.brand.primary : colors.bg.tertiary,
+              color: hasUnsavedChanges ? '#fff' : colors.text.tertiary,
+              fontSize: 13,
+              fontWeight: 600,
+              boxShadow: hasUnsavedChanges ? `0 2px 8px ${colors.brand.primary}40` : 'none',
+              transition: 'all 0.2s',
+              opacity: hasUnsavedChanges ? 1 : 0.7,
+            }}
+          >
+            <Save size={16} />
+            {hasUnsavedChanges ? 'שמור' : 'אין שינויים'}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gap: 24 }}>
@@ -205,7 +229,7 @@ const SettingsPage = () => {
           </div>
         </div>
 
-        {/* ---------------- ALERT THRESHOLD ---------------- */}
+        {/* ---------------- CLUSTERING SETTINGS ---------------- */}
         <div style={S.card()}>
           <h3
             style={{
@@ -217,21 +241,65 @@ const SettingsPage = () => {
               margin: '0 0 16px 0',
             }}
           >
-            ספי התראות
+            הגדרות מתקדמות (איחוד וספים)
           </h3>
 
-          <div style={{ maxWidth: 500 }}>
-            <LabeledInput
-              label="סף התראות שווא בשניות"
-              value={localConfig.falseWakeupThreshold}
-              onChange={(v) =>
-                updateLocalConfig('falseWakeupThreshold', v)
-              }
-              type="number"
-              description="התראות לילה הקטנות/שוות למשך זה נחשבות שווא"
-            />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 48,
+              alignItems: 'start'
+            }}
+          >
+            {/* Clustering Section */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <h4 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>איחוד התראות</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <input
+                  type="checkbox"
+                  id="clusteringEnabled"
+                  checked={localConfig.clusteringEnabled ?? true}
+                  onChange={(e) => updateLocalConfig('clusteringEnabled', e.target.checked)}
+                  style={{ width: 18, height: 18, cursor: 'pointer' }}
+                />
+                <label
+                  htmlFor="clusteringEnabled"
+                  style={{ cursor: 'pointer', fontWeight: 500, userSelect: 'none' }}
+                >
+                  הפעל איחוד התראות חכמים
+                </label>
+              </div>
+
+              {(localConfig.clusteringEnabled ?? true) && (
+                <LabeledInput
+                  label="סף איחוד (דקות)"
+                  value={localConfig.clusteringThreshold ?? 15}
+                  onChange={(v) => updateLocalConfig('clusteringThreshold', v)}
+                  type="number"
+                  description="התראות עוקבות מאותו פאנל בהפרש זמן זה יאוחדו לאירוע בודד"
+                />
+              )}
+            </div>
+
+            {/* Threshold Section */}
+            <div style={{ paddingRight: 48, borderRight: `1px solid ${colors.border.primary}` }}>
+              <h4 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 16px 0' }}>ספי התראות</h4>
+              <LabeledInput
+                label="סף התראות שווא (דקות)"
+                value={toMinutes(localConfig.falseWakeupThreshold)}
+                onChange={(v) =>
+                  updateLocalConfig('falseWakeupThreshold', Math.round(v * 60))
+                }
+                type="number"
+                description="התראות לילה הקטנות/שוות למשך זה נחשבות שווא"
+              />
+            </div>
           </div>
         </div>
+
+        {/* ---------------- ALERT THRESHOLD ---------------- */}
+
 
         {/* ---------------- DURATION BANDS ---------------- */}
         <div style={S.card()}>
@@ -245,273 +313,109 @@ const SettingsPage = () => {
               margin: '0 0 16px 0',
             }}
           >
-            קטגוריות משך זמן
+            קטגוריות משך זמן (Duration Thresholds)
           </h3>
 
-          <div
-            style={{
-              display: 'grid',
-              gap: 16,
-              gridTemplateColumns:
-                'repeat(auto-fit, minmax(320px, 1fr))',
-            }}
-          >
-            {(localConfig.bands || []).map((band, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: 16,
-                  borderRadius: 8,
-                  background: colors.bg.tertiary,
-                  borderWidth: 1,
-                  borderStyle: 'solid',
-                  borderColor: colors.border.primary,
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginBottom: 12,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: '50%',
-                      background: band.color,
-                    }}
-                  />
-
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      color: band.color,
-                      fontSize: 14,
-                    }}
-                  >
-                    {band.label || 'ללא שם'}
-                  </span>
+          <div style={{ display: 'grid', gap: 24 }}>
+            {/* Threshold Inputs */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+              <div style={{ padding: 16, background: colors.bg.secondary, borderRadius: 8, border: `1px solid ${colors.border.primary}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: localConfig.bands[0].color }} />
+                  <span style={{ fontWeight: 600, color: colors.text.primary }}>התראות קצרות עד:</span>
                 </div>
+                <LabeledInput
+                  label="סף עליון (דקות)"
+                  type="number"
+                  value={toMinutes(localConfig.bands[0].max)}
+                  onChange={(v) => handleBandUpdate(0, 'max', Math.round(v * 60))}
+                  description="כל מה שמתחת לערך זה ייחשב קצר (Short)"
+                />
+              </div>
 
-                <div style={{ display: 'grid', gap: 12 }}>
-                  <LabeledInput
-                    label="תווית"
-                    type="text"
-                    value={band.label}
-                    onChange={(v) =>
-                      updateLocalConfig(`bands.${idx}.label`, v)
-                    }
-                  />
+              <div style={{ padding: 16, background: colors.bg.secondary, borderRadius: 8, border: `1px solid ${colors.border.primary}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: localConfig.bands[1].color }} />
+                  <span style={{ fontWeight: 600, color: colors.text.primary }}>התראות בינוניות עד:</span>
+                </div>
+                <LabeledInput
+                  label="סף עליון (דקות)"
+                  type="number"
+                  value={toMinutes(localConfig.bands[1].max)}
+                  onChange={(v) => handleBandUpdate(1, 'max', Math.round(v * 60))}
+                  description={`בין ${toMinutes(localConfig.bands[0].max)} לערך זה ייחשב בינוני (Medium)`}
+                />
+              </div>
+            </div>
 
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: 8,
-                    }}
-                  >
-                    <LabeledInput
-                      label="מינימום (ש')"
-                      type="number"
-                      value={band.min}
-                      onChange={(v) =>
-                        updateLocalConfig(`bands.${idx}.min`, v)
-                      }
-                    />
-
-                    <LabeledInput
-                      label="מקסימום (ש')"
-                      type="number"
-                      value={band.max}
-                      onChange={(v) =>
-                        updateLocalConfig(`bands.${idx}.max`, v)
-                      }
-                    />
-                  </div>
-
-                  <ColorInput
-                    label="צבע"
-                    value={band.color}
-                    onChange={(v) =>
-                      updateLocalConfig(`bands.${idx}.color`, v)
-                    }
-                  />
+            {/* Visual Timeline Bar */}
+            <div style={{ position: 'relative', marginTop: 8 }}>
+              <div style={{ display: 'flex', height: 32, borderRadius: 8, overflow: 'hidden', width: '100%' }}>
+                {/* Short Section */}
+                <div style={{ flex: 1, background: localConfig.bands[0].color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, padding: '0 4px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                  Short (0-{toMinutes(localConfig.bands[0].max)}m)
+                </div>
+                {/* Medium Section */}
+                <div style={{ flex: 2, background: localConfig.bands[1].color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, padding: '0 4px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                  Medium ({toMinutes(localConfig.bands[0].max)}-{toMinutes(localConfig.bands[1].max)}m)
+                </div>
+                {/* Long Section */}
+                <div style={{ flex: 2, background: localConfig.bands[2].color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, padding: '0 4px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                  Long ({toMinutes(localConfig.bands[1].max)}m+)
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Bands Preview */}
-          <div
-            style={{
-              marginTop: 16,
-              padding: 12,
-              borderRadius: 6,
-              background: colors.semantic.warningBg,
-              borderWidth: 1,
-              borderStyle: 'solid',
-              borderColor: colors.semantic.warning,
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 4,
-                color: colors.semantic.warningText,
-              }}
-            >
-              <Info size={16} />
-              <span style={{ fontSize: 14, fontWeight: 600 }}>
-                תצוגה מקדימה
-              </span>
             </div>
 
-            <div
-              style={{
-                display: 'flex',
-                gap: 8,
-                flexWrap: 'wrap',
-                marginTop: 8,
-              }}
-            >
-              {(localConfig.bands || []).map((band, idx) => (
-                <span
-                  key={idx}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '4px 8px',
-                    borderRadius: 12,
-                    background: `${band.color}20`,
-                    color: band.color,
-                    fontWeight: 600,
-                    fontSize: 12,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      background: band.color,
-                    }}
-                  />
-                  {band.label} ({band.min}–{band.max === 1e9 ? '∞' : band.max}ש')
-                </span>
-              ))}
-            </div>
+
+
+
           </div>
         </div>
 
-        {/* ---------------- ACTIONS ---------------- */}
+
+
+        {/* ---------------- STATISTICS SETTINGS ---------------- */}
         <div style={S.card()}>
-          <div
+          <h3
             style={{
               display: 'flex',
-              justifyContent: 'space-between',
               alignItems: 'center',
-              gap: 12,
+              gap: 8,
+              fontSize: 18,
+              fontWeight: 600,
+              margin: '0 0 16px 0',
             }}
           >
-            <div>
-              <h3
-                style={{
-                  fontSize: 18,
-                  fontWeight: 600,
-                  margin: '0 0 4px 0',
-                }}
-              >
-                פעולות
-              </h3>
+            תצוגת סטטיסטיקה
+          </h3>
 
-              <p
-                style={{
-                  fontSize: 14,
-                  color: colors.text.secondary,
-                  margin: 0,
-                }}
-              >
-                שמור שינויים או אפס לברירת המחדל
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: 12 }}>
-              {/* Reset */}
-              <button
-                onClick={handleReset}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '10px 16px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-
-                  borderWidth: 1,
-                  borderStyle: 'solid',
-                  borderColor: colors.semantic.error,
-                  background: colors.bg.secondary,
-                  color: colors.semantic.errorText,
-                }}
-              >
-                <RotateCcw size={16} />
-                אפס לברירת מחדל
-              </button>
-
-              {/* Save */}
-              <button
-                onClick={handleSave}
-                disabled={!hasUnsavedChanges}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '10px 16px',
-                  borderRadius: 6,
-                  fontWeight: 600,
-                  cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed',
-
-                  borderWidth: 1,
-                  borderStyle: 'solid',
-                  borderColor: colors.brand.primary,
-                  background: hasUnsavedChanges
-                    ? colors.brand.primary
-                    : colors.bg.tertiary,
-                  color: hasUnsavedChanges
-                    ? colors.text.inverse
-                    : colors.text.tertiary,
-                }}
-              >
-                <Save size={16} />
-                {hasUnsavedChanges ? 'שמור שינויים' : 'אין שינויים'}
-              </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ fontSize: 14, fontWeight: 600 }}>חישוב משך זמן מייצג:</label>
+            <div style={{ display: 'flex', gap: 20 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="durationMetric"
+                  value="median"
+                  checked={localConfig.durationMetric !== 'average'} // Default to median
+                  onChange={() => updateLocalConfig('durationMetric', 'median')}
+                />
+                חציון (מומלץ - מסנן חריגים)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="durationMetric"
+                  value="average"
+                  checked={localConfig.durationMetric === 'average'}
+                  onChange={() => updateLocalConfig('durationMetric', 'average')}
+                />
+                ממוצע רגיל (רגיש לחריגים)
+              </label>
             </div>
           </div>
-
-          {/* Unsaved Changes Notice */}
-          {hasUnsavedChanges && (
-            <div
-              style={{
-                marginTop: 16,
-                padding: 12,
-                borderRadius: 6,
-                background: colors.semantic.errorBg,
-                borderWidth: 1,
-                borderStyle: 'solid',
-                borderColor: colors.semantic.error,
-                color: colors.semantic.errorText,
-              }}
-            >
-              יש לך שינויים שלא נשמרו. לחץ על "שמור שינויים".
-            </div>
-          )}
         </div>
+
       </div>
     </div>
   );

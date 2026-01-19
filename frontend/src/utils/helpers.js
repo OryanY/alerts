@@ -19,6 +19,26 @@ export const formatHourAndDay = (iso) => {
   }).format(d);
 };
 
+export const formatDuration = (seconds) => {
+  if (seconds === undefined || seconds === null) return '—';
+  const s = Math.round(Number(seconds));
+  if (isNaN(s)) return '—';
+
+  if (s < 60) return `${s}s`;
+
+  // Minutes
+  if (s < 3600) {
+    const m = Math.floor(s / 60);
+    const remS = s % 60;
+    return remS > 0 ? `${m}m ${remS}s` : `${m}m`;
+  }
+
+  // Hours
+  const h = Math.floor(s / 3600);
+  const remM = Math.floor((s % 3600) / 60);
+  return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+};
+
 
 const fmtIL = new Intl.DateTimeFormat('en-CA', { timeZone: JERUSALEM_TZ });
 export const toYMD_IL = (dateOrMs) => fmtIL.format(new Date(dateOrMs));

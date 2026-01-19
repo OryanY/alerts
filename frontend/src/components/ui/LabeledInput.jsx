@@ -61,10 +61,11 @@ const LabeledInput = ({
         {description && (
           <span
             style={{
+              display: 'block',
+              marginTop: 4,
               fontSize: 12,
               fontWeight: 400,
               color: colors.text.tertiary,
-              marginLeft: 8
             }}
           >
             {description}

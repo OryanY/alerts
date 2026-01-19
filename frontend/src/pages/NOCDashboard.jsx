@@ -34,6 +34,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 
 import { createChartConfig } from '../utils/chartConfig';
+import { formatDuration } from '../utils/helpers';
 
 const NocDashboard = () => {
 
@@ -236,9 +237,10 @@ const NocDashboard = () => {
             trend={exec.data?.noise_trend_pct}
             invertTrend={true}
           />
+
           <MetricCard
-            title=" חציון זמן התראה"
-            value={`${exec.data?.avg_duration ?? '—'} ש'`}
+            title={config.durationMetric === 'average' ? 'ממוצע זמן התראה' : 'חציון זמן התראה'}
+            value={formatDuration(config.durationMetric === 'average' ? exec.data?.avg_duration : exec.data?.median_duration)}
             icon={Clock}
             logoColor="green"
             loading={exec.loading}
@@ -340,10 +342,9 @@ const NocDashboard = () => {
                 <Line
                   yAxisId="right"
                   type="monotone"
-                  dataKey="avg_duration"
                   stroke={colors.chart.quaternary}
                   strokeWidth={2}
-                  name="Median Duration"
+                  name={config.durationMetric === 'average' ? 'Average Duration' : 'Median Duration'}
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -384,7 +385,7 @@ const NocDashboard = () => {
                           {p.alert_count}
                         </div>
                         <div style={{ fontSize: 10, color: colors.text.secondary }}>
-                          {p.avg_duration}s avg
+                          {formatDuration(p.avg_duration)} avg
                         </div>
                       </div>
                     </div>
@@ -445,7 +446,7 @@ const NocDashboard = () => {
                   dataKey="avg_duration"
                   stroke={colors.chart.tertiary}
                   strokeWidth={2}
-                  name="Median Duration"
+                  name={config.durationMetric === 'average' ? 'Average Duration' : 'Median Duration'}
                 />
               </ComposedChart>
             </ResponsiveContainer>

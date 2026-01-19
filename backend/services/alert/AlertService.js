@@ -75,6 +75,13 @@ class AlertService {
         };
     }
 
+    _getClusteringConfig(params = {}) {
+        return {
+            enabled: params.clustering_enabled !== 'false' && params.clustering_enabled !== false,
+            threshold: params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : 15
+        };
+    }
+
     // ================== PUBLIC API ==================
 
     /**
@@ -102,7 +109,8 @@ class AlertService {
 
         // 3. Transform data
         // CLUSTER: Apply smart clustering to the list view for noise reduction
-        const clusteredRecords = this.analysisService.clusterAlerts(records);
+        const { enabled, threshold } = this._getClusteringConfig(params);
+        const clusteredRecords = this.analysisService.clusterAlerts(records, enabled, threshold);
 
         const transformed = this.transformService.transformAlertRecords(clusteredRecords, thresholds);
 
@@ -125,7 +133,8 @@ class AlertService {
         );
 
         // 1b. Cluster Alerts (Smart Incidents)
-        const records = this.analysisService.clusterAlerts(rawRecords);
+        const { enabled, threshold } = this._getClusteringConfig(params);
+        const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
 
         // 2. Compute analytics for current data (using Clustered records)
         const kpis = this.analysisService.computeKPIs(records, thresholds);
@@ -153,7 +162,7 @@ class AlertService {
                 prevParams,
                 'time_fired, duration_sec, application, panel_title'
             );
-            const prevRecords = this.analysisService.clusterAlerts(prevRawRecords);
+            const prevRecords = this.analysisService.clusterAlerts(prevRawRecords, enabled, threshold);
             const prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
 
             // 5. Calculate trends
@@ -366,7 +375,8 @@ class AlertService {
         );
 
         // 1b. Cluster Alerts (Consistency with Dashboard)
-        const records = this.analysisService.clusterAlerts(rawRecords);
+        const { enabled, threshold } = this._getClusteringConfig(params);
+        const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
 
         // 2. Compute analytics
         const analysis = this.analysisService.computePanelAnalysis(records, thresholds);

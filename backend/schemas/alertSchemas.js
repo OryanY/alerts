@@ -16,7 +16,12 @@ const baseSchema = {
   false_wakeup_threshold: Joi.number().integer().min(1).default(120),
 
   // Limit parameter
-  limit: Joi.number().integer().min(1).max(100000).default(10000)
+  limit: Joi.number().integer().min(1).max(100000).default(10000),
+
+  // Clustering Configuration
+  clustering_enabled: Joi.boolean().optional(),
+  clustering_threshold: Joi.number().integer().min(1).max(1440).optional(),
+  duration_metric: Joi.string().valid('average', 'median').default('average').optional()
 };
 
 // Schema for main alerts endpoint with filtering and pagination
@@ -73,7 +78,9 @@ const panelResearchSchema = Joi.object({
   night_end: Joi.number().integer().min(0).max(23).optional(),
   dur_short_max: Joi.number().integer().min(1).max(3600).optional(),
   dur_medium_max: Joi.number().integer().min(1).max(3600).optional(),
-  limit: Joi.number().integer().min(1).max(100000).optional()
+  limit: Joi.number().integer().min(1).max(100000).optional(),
+  clustering_enabled: Joi.boolean().optional(),
+  clustering_threshold: Joi.number().integer().min(1).max(1440).optional()
 });
 
 // Schema for statistics endpoints

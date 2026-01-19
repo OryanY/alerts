@@ -1,29 +1,29 @@
-  import { createContext, useContext, useState, useEffect } from 'react';
-  import { DEFAULT_CLIENT_CFG } from '../utils/constants';
-  const ClientConfigContext = createContext();
+import { createContext, useContext, useState, useEffect } from 'react';
+import { DEFAULT_CLIENT_CFG } from '../utils/constants';
+const ClientConfigContext = createContext();
 
-  export const useClientConfig = () => {
+export const useClientConfig = () => {
   const context = useContext(ClientConfigContext);
   if (!context) {
     throw new Error('useClientConfig must be used within ClientConfigProvider');
   }
   return context;
+};
+
+// Helper to get default date range (last 7 days)
+const getDefaultDateRange = () => {
+  const now = Date.now();
+  const end = new Date(now);
+  const start = new Date(now - 6 * 864e5); // 6 days ago
+
+
+  return {
+    start_date: start.toISOString().split('T')[0],
+    end_date: end.toISOString().split('T')[0]
   };
+};
 
-  // Helper to get default date range (last 7 days)
-  const getDefaultDateRange = () => {
-    const now = Date.now();
-    const end = new Date(now);
-    const start = new Date(now - 6 * 864e5); // 6 days ago
-    
-
-    return {
-      start_date: start.toISOString().split('T')[0],
-      end_date: end.toISOString().split('T')[0]
-    };
-  };
-
-  export const ClientConfigProvider = ({ children }) => {
+export const ClientConfigProvider = ({ children }) => {
   // Load both config and date range from localStorage
   const [clientCfg, setClientCfg] = useState(() => {
     try {
@@ -103,6 +103,11 @@
       nightStart: toInt(newConfig.nightStart, DEFAULT_CLIENT_CFG.nightStart),
       nightEnd: toInt(newConfig.nightEnd, DEFAULT_CLIENT_CFG.nightEnd),
       falseWakeupThreshold: toInt(newConfig.falseWakeupThreshold, DEFAULT_CLIENT_CFG.falseWakeupThreshold),
+      clusteringEnabled: typeof newConfig.clusteringEnabled === 'boolean'
+        ? newConfig.clusteringEnabled
+        : DEFAULT_CLIENT_CFG.clusteringEnabled,
+      clusteringThreshold: toInt(newConfig.clusteringThreshold, DEFAULT_CLIENT_CFG.clusteringThreshold),
+      durationMetric: ['median', 'average'].includes(newConfig.durationMetric) ? newConfig.durationMetric : DEFAULT_CLIENT_CFG.durationMetric,
       bands: newConfig.bands?.map(b => ({
         ...b,
         min: toInt(b.min, 0),
@@ -153,6 +158,8 @@
       night_start: clientCfg.nightStart || DEFAULT_CLIENT_CFG.nightStart,
       night_end: clientCfg.nightEnd || DEFAULT_CLIENT_CFG.nightEnd,
       false_wakeup_threshold: clientCfg.falseWakeupThreshold || DEFAULT_CLIENT_CFG.falseWakeupThreshold,
+      clustering_enabled: clientCfg.clusteringEnabled ?? DEFAULT_CLIENT_CFG.clusteringEnabled,
+      clustering_threshold: clientCfg.clusteringThreshold || DEFAULT_CLIENT_CFG.clusteringThreshold,
       dur_short_max: bands.find(b => b.key === 'short')?.max ?? 59,
       dur_medium_max: bands.find(b => b.key === 'medium')?.max ?? 299
     };
@@ -177,6 +184,6 @@
       {children}
     </ClientConfigContext.Provider>
   );
-  };
+};
 
-  export default ClientConfigContext;
+export default ClientConfigContext;
