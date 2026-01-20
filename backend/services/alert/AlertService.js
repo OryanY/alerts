@@ -422,8 +422,39 @@ class AlertService {
     /**
      * Get top applications per panel
      */
+    /**
+     * Get top applications per panel
+     */
     async getTopApplications(params) {
-        const apps = await this.queryService.fetchTopApplicationsPerPanel(params);
+        // Check for clustering
+        const { enabled, threshold } = this._getClusteringConfig(params);
+
+        if (!enabled) {
+            // Use optimized SQL if clustering is disabled
+            const apps = await this.queryService.fetchTopApplicationsPerPanel(params);
+            return ResponseFormatter.success(apps);
+        }
+
+        // Clustering Enabled: Fetch records -> Cluster -> Aggregate
+        const rawRecords = await this.queryService.fetchBasicRecords(
+            params,
+            'application'
+        ); // Application + default time/duration fields
+
+        const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
+
+        // Aggregate in memory
+        const appMap = new Map();
+        for (const record of records) {
+            const app = record.application || 'Unknown Application';
+            appMap.set(app, (appMap.get(app) || 0) + 1);
+        }
+
+        const apps = Array.from(appMap.entries())
+            .map(([application, alert_count]) => ({ application, alert_count }))
+            .sort((a, b) => b.alert_count - a.alert_count)
+            .slice(0, params.limit || 10);
+
         return ResponseFormatter.success(apps);
     }
 
@@ -431,7 +462,34 @@ class AlertService {
      * Get top nodes per application
      */
     async getTopNodesByApp(params) {
-        const nodes = await this.queryService.fetchTopNodesPerApplication(params);
+        // Check for clustering
+        const { enabled, threshold } = this._getClusteringConfig(params);
+
+        if (!enabled) {
+            const nodes = await this.queryService.fetchTopNodesPerApplication(params);
+            return ResponseFormatter.success(nodes);
+        }
+
+        // Clustering Enabled
+        const rawRecords = await this.queryService.fetchBasicRecords(
+            params,
+            'node_name, application'
+        );
+
+        const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
+
+        // Aggregate
+        const nodeMap = new Map();
+        for (const record of records) {
+            const node = record.node_name || 'Unknown Node';
+            nodeMap.set(node, (nodeMap.get(node) || 0) + 1);
+        }
+
+        const nodes = Array.from(nodeMap.entries())
+            .map(([node_name, alert_count]) => ({ node_name, alert_count }))
+            .sort((a, b) => b.alert_count - a.alert_count)
+            .slice(0, params.limit || 10);
+
         return ResponseFormatter.success(nodes);
     }
 
