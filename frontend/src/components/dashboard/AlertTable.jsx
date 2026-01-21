@@ -24,56 +24,73 @@ export const AlertTable = ({
       return next;
     });
   };
-  const renderCell = (alert, col) => {
+  const renderCell = (alert, col, isFirstColumn) => {
     const key = col.key;
     const value = alert[key];
+
+    // Helper to render clustering UI if this is the first visible column
+    const renderClusteringUI = () => {
+      if (!isFirstColumn) return null;
+
+      const isCluster = alert.is_cluster;
+      const isExpanded = expandedRows.has(alert.history_id || alert.incident_number);
+
+      if (!isCluster) return null;
+
+      return (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleRow(alert.history_id || alert.incident_number);
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 24,
+            height: 24,
+            marginRight: 8,
+            borderRadius: 4,
+            background: colors.bg.secondary,
+            color: colors.text.secondary,
+            cursor: 'pointer',
+            border: `1px solid ${colors.border.secondary}`
+          }}
+        >
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </div>
+      );
+    };
+
+    const wrapperStyle = { display: 'flex', alignItems: 'center' };
 
     switch (key) {
       case 'incident_number': {
         const formatted = alert.incident_number;
-        const isCluster = alert.is_cluster;
-        const isExpanded = expandedRows.has(alert.history_id || alert.incident_number);
+
+        // If incident_number is visible but NOT first, it's just text
+        // If it IS first, renderClusteringUI handles the chevron
 
         return (
           <td
             key={key}
-            onClick={(e) => {
-              if (isCluster) {
-                e.stopPropagation();
-                toggleRow(alert.history_id || alert.incident_number);
-              }
-            }}
             style={{
               padding: '16px',
               fontFamily: 'monospace',
               fontSize: 13,
               fontWeight: 600,
               color: colors.text.primary,
-              cursor: isCluster ? 'pointer' : 'inherit'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {isCluster && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 20,
-                    height: 20,
-                    borderRadius: 4,
-                    background: colors.bg.secondary,
-                    color: colors.text.secondary
-                  }}
-                >
-                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </div>
-              )}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
               {formatted ? formatted : <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>}
-              {isCluster && (
+              {/* Only show cluster badge if this is the expansion point column */}
+              {isFirstColumn && alert.is_cluster && (
                 <span style={{
                   fontSize: 10,
                   padding: '2px 6px',
+                  marginLeft: 8,
                   background: colors.brand.primary + '20',
                   color: colors.brand.primary,
                   borderRadius: 99,
@@ -98,32 +115,42 @@ export const AlertTable = ({
             style={{ padding: '16px', color: colors.text.primary }}
             title={value || ''}
           >
-            {value ? (
-              <div
-                style={{
-                  maxWidth: 180,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  fontWeight: 500,
-                }}
-              >
-                {value}
-              </div>
-            ) : (
-              <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>No panel</span>
-            )}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {value ? (
+                <div
+                  style={{
+                    maxWidth: 180,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontWeight: 500,
+                  }}
+                >
+                  {value}
+                </div>
+              ) : (
+                <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>No panel</span>
+              )}
+              {/* Fallback cluster badge if panel is first col */}
+              {isFirstColumn && alert.is_cluster && key !== 'incident_number' && (
+                <span style={{ marginLeft: 6, color: colors.brand.primary }}><Layers size={12} /> {alert.cluster_count}</span>
+              )}
+            </div>
           </td>
         );
 
       case 'application':
         return (
           <td key={key} style={{ padding: '16px', color: colors.text.secondary }}>
-            {value ? (
-              value
-            ) : (
-              <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>No application</span>
-            )}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {value ? (
+                value
+              ) : (
+                <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>No application</span>
+              )}
+            </div>
           </td>
         );
 
@@ -139,20 +166,23 @@ export const AlertTable = ({
             }}
             title={hasMessage ? value : 'No message'}
           >
-            {hasMessage ? (
-              <div
-                style={{
-                  maxWidth: 350,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {value}
-              </div>
-            ) : (
-              <span style={{ fontStyle: 'italic' }}>No message</span>
-            )}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {hasMessage ? (
+                <div
+                  style={{
+                    maxWidth: 350,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {value}
+                </div>
+              ) : (
+                <span style={{ fontStyle: 'italic' }}>No message</span>
+              )}
+            </div>
           </td>
         );
       }
@@ -170,36 +200,46 @@ export const AlertTable = ({
               color: colors.text.primary,
             }}
           >
-            {formatted || <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {formatted || <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>}
+            </div>
           </td>
         );
       }
 
       case 'duration_sec': {
         const d = value;
+        // Duration is a bit small for the chevron, but we support it just in case
         if (d === null || d === undefined || d === '') {
           return (
             <td key={key} style={{ padding: '16px' }}>
-              <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
+              <div style={wrapperStyle}>
+                {renderClusteringUI()}
+                <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
+              </div>
             </td>
           );
         }
         const color = colorByDuration(d);
         return (
           <td key={key} style={{ padding: '16px' }}>
-            <span
-              style={{
-                background: color + '20',
-                color,
-                padding: '6px 12px',
-                borderRadius: 16,
-                fontSize: 12,
-                fontWeight: 700,
-                display: 'inline-block',
-              }}
-            >
-              {d}s
-            </span>
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              <span
+                style={{
+                  background: color + '20',
+                  color,
+                  padding: '6px 12px',
+                  borderRadius: 16,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: 'inline-block',
+                }}
+              >
+                {d}s
+              </span>
+            </div>
           </td>
         );
       }
@@ -207,14 +247,20 @@ export const AlertTable = ({
       case 'operator':
         return (
           <td key={key} style={{ padding: '16px', color: colors.text.secondary }}>
-            {value || 'System'}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {value || 'System'}
+            </div>
           </td>
         );
 
       case 'shift':
         return (
           <td key={key} style={{ padding: '16px' }}>
-            {renderShiftBadge(value)}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {renderShiftBadge(value)}
+            </div>
           </td>
         );
 
@@ -227,20 +273,23 @@ export const AlertTable = ({
             style={{ padding: '16px', color: colors.text.secondary }}
             title={value || ''}
           >
-            {value ? (
-              <div
-                style={{
-                  maxWidth: 180,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {value}
-              </div>
-            ) : (
-              <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
-            )}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {value ? (
+                <div
+                  style={{
+                    maxWidth: 180,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {value}
+                </div>
+              ) : (
+                <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
+              )}
+            </div>
           </td>
         );
       }
@@ -248,7 +297,10 @@ export const AlertTable = ({
       default:
         return (
           <td key={key} style={{ padding: '16px', color: colors.text.secondary }}>
-            {value ?? <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>}
+            <div style={wrapperStyle}>
+              {renderClusteringUI()}
+              {value ?? <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>}
+            </div>
           </td>
         );
     }
@@ -332,7 +384,7 @@ export const AlertTable = ({
                   }}
                   onClick={() => alert.is_cluster && toggleRow(rawId)}
                 >
-                  {visibleColumns.map((col) => renderCell(alert, col))}
+                  {visibleColumns.map((col, idx) => renderCell(alert, col, idx === 0))}
                 </tr>
                 {isExpanded && alert.is_cluster && alert.raw_alerts && (
                   <tr key={`${uniqueKey}-expanded`}>

@@ -34,7 +34,8 @@ const alertsSchema = Joi.object({
   // Sorting
   sort_by: Joi.string().valid(
     'time_fired', 'time_resolved', 'duration_sec',
-    'panel_title', 'application', 'node_name', 'operator'
+    'panel_title', 'application', 'node_name', 'operator',
+    'message', 'object', 'network'
   ).default('time_fired'),
   sort_order: Joi.string().valid('ASC', 'DESC').default('DESC'),
   // Field filters

@@ -17,7 +17,10 @@ const statsRoutes = require('./routes/statsRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
 
 // Import middleware
-const { globalErrorHandler } = require('./middleware/errorHandler');
+const { errorMiddleware, setupGlobalErrorHandlers } = require('./middleware/errorHandler');
+
+// Setup global handlers
+setupGlobalErrorHandlers();
 
 // App setup
 const app = express();
@@ -150,23 +153,7 @@ app.use((req, res) => {
 });
 
 // Global error handler
-app.use(globalErrorHandler || ((error, req, res, next) => {
-  console.error('Unhandled error:', error);
-
-  // Don't expose internal errors in production
-  const isDev = process.env.NODE_ENV === 'development';
-
-  res.status(error.status || 500).json({
-    success: false,
-    error: {
-      code: error.code || 'INTERNAL_ERROR',
-      message: isDev ? error.message : 'Internal server error',
-      status: error.status || 500,
-      timestamp: new Date().toISOString(),
-      ...(isDev && { stack: error.stack, details: error.details })
-    }
-  });
-}));
+app.use(errorMiddleware);
 
 // ================== SERVER LIFECYCLE ==================
 

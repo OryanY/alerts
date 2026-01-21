@@ -30,7 +30,7 @@ const getErrorAction = (error) => {
 };
 
 // ================== ASSIGNMENT GROUPS ==================
-router.get('/assignment-groups', async (req, res) => {
+router.get('/assignment-groups', async (req, res, next) => {
   try {
     const groups = await incidentService.getAssignmentGroups();
 
@@ -48,12 +48,12 @@ router.get('/assignment-groups', async (req, res) => {
       count: groups.length,
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
 // Sync assignment groups from ServiceNow to MongoDB
-router.get('/assignment-groups/sync', async (req, res) => {
+router.get('/assignment-groups/sync', async (req, res, next) => {
   try {
     console.log('🔄 Starting assignment groups sync from ServiceNow...');
 
@@ -79,7 +79,7 @@ router.get('/assignment-groups/sync', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error syncing assignment groups:', error);
-    handleError(res, error);
+    next(error);
   }
 });
 
@@ -87,7 +87,7 @@ router.get('/assignment-groups/sync', async (req, res) => {
 
 
 // GET for Grafana webhook compatibility
-router.get('/incident', validateQuery(alertQuerySchema), async (req, res) => {
+router.get('/incident', validateQuery(alertQuerySchema), async (req, res, next) => {
   try {
     const alertData = req.validatedQuery;
     console.log('Creating incident only (GET):', alertData);
@@ -120,7 +120,7 @@ router.get('/incident', validateQuery(alertQuerySchema), async (req, res) => {
 });
 
 // POST for programmatic use
-router.post('/incident', validateBody(alertQuerySchema), async (req, res) => {
+router.post('/incident', validateBody(alertQuerySchema), async (req, res, next) => {
   try {
     const alertData = req.validatedBody;
     console.log('Creating incident only (POST):', alertData);
@@ -138,7 +138,7 @@ router.post('/incident', validateBody(alertQuerySchema), async (req, res) => {
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
@@ -147,7 +147,7 @@ router.post('/incident', validateBody(alertQuerySchema), async (req, res) => {
  * POST /incident/simulate
  * Simulates incident creation to debug rules and collisions.
  */
-router.post('/incident/simulate', validateBody(alertQuerySchema), async (req, res) => {
+router.post('/incident/simulate', validateBody(alertQuerySchema), async (req, res, next) => {
   try {
     const alertData = req.validatedBody;
     console.log('🧪 Simulating incident creation:', alertData);
@@ -160,14 +160,14 @@ router.post('/incident/simulate', validateBody(alertQuerySchema), async (req, re
       data: simulationResult
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
 // ================== ALERT CREATION ONLY ==================
 
 // GET for webhook compatibility
-router.get('/alert', validateQuery(serviceNowAlertSchema), async (req, res) => {
+router.get('/alert', validateQuery(serviceNowAlertSchema), async (req, res, next) => {
   try {
     const alertData = req.validatedQuery;
     console.log('Creating ServiceNow alert only (GET):', alertData);
@@ -199,7 +199,7 @@ router.get('/alert', validateQuery(serviceNowAlertSchema), async (req, res) => {
 });
 
 // POST for programmatic use
-router.post('/alert', validateBody(serviceNowAlertSchema), async (req, res) => {
+router.post('/alert', validateBody(serviceNowAlertSchema), async (req, res, next) => {
   try {
     const alertData = req.validatedBody;
     console.log('Creating ServiceNow alert only (POST):', alertData);
@@ -210,7 +210,7 @@ router.post('/alert', validateBody(serviceNowAlertSchema), async (req, res) => {
       data: result
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
@@ -218,7 +218,7 @@ router.post('/alert', validateBody(serviceNowAlertSchema), async (req, res) => {
 // ================== INCIDENT + ALERT CREATION (COMBINED) ==================
 
 // GET for webhook compatibility
-router.get('/incident-with-alert', validateQuery(combinedCreateSchema), async (req, res) => {
+router.get('/incident-with-alert', validateQuery(combinedCreateSchema), async (req, res, next) => {
   try {
     const params = req.validatedQuery;
     const createAlert = params.create_servicenow_alert === 'true' || params.create_servicenow_alert === '1';
@@ -270,7 +270,7 @@ router.get('/incident-with-alert', validateQuery(combinedCreateSchema), async (r
 });
 
 // POST for programmatic use
-router.post('/incident-with-alert', async (req, res) => {
+router.post('/incident-with-alert', async (req, res, next) => {
   try {
     const { alert, create_servicenow_alert = true, link_to_incident = true } = req.body;
 
@@ -295,13 +295,13 @@ router.post('/incident-with-alert', async (req, res) => {
       data: result
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
 // ================== SYSTEM MAPPINGS ==================
 
-router.get('/system-mappings', async (req, res) => {
+router.get('/system-mappings', async (req, res, next) => {
   try {
     const mappings = await incidentService.getSystemMappings();
     res.json({
@@ -310,11 +310,11 @@ router.get('/system-mappings', async (req, res) => {
       count: mappings.length
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-router.post('/system-mappings', validateBody(systemMappingSchema), async (req, res) => {
+router.post('/system-mappings', validateBody(systemMappingSchema), async (req, res, next) => {
   try {
     const mappingData = req.validatedBody;
     const newMapping = await incidentService.createSystemMapping(mappingData);
@@ -331,11 +331,11 @@ router.post('/system-mappings', validateBody(systemMappingSchema), async (req, r
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
-router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafana_names'], (schema) => schema.optional())), async (req, res) => {
+router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafana_names'], (schema) => schema.optional())), async (req, res, next) => {
   try {
     const { id } = req.params;
     const mappingData = req.validatedBody;
@@ -353,11 +353,11 @@ router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafa
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
-router.delete('/system-mappings/:id', async (req, res) => {
+router.delete('/system-mappings/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await incidentService.deleteSystemMapping(id);
@@ -373,13 +373,13 @@ router.delete('/system-mappings/:id', async (req, res) => {
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
 // ================== INCIDENT RULES ==================
 
-router.get('/incident-rules', async (req, res) => {
+router.get('/incident-rules', async (req, res, next) => {
   try {
     const { application } = req.query;
     const rules = await incidentService.getIncidentRules(application);
@@ -389,11 +389,11 @@ router.get('/incident-rules', async (req, res) => {
       count: rules.length
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-router.post('/incident-rules', validateBody(incidentRuleSchema), async (req, res) => {
+router.post('/incident-rules', validateBody(incidentRuleSchema), async (req, res, next) => {
   try {
     const ruleData = req.validatedBody;
     const newRule = await incidentService.createIncidentRule(ruleData);
@@ -410,11 +410,11 @@ router.post('/incident-rules', validateBody(incidentRuleSchema), async (req, res
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
-router.put('/incident-rules/:id', validateBody(incidentRuleSchema.fork(['system_mapping_id'], (schema) => schema.optional())), async (req, res) => {
+router.put('/incident-rules/:id', validateBody(incidentRuleSchema.fork(['system_mapping_id'], (schema) => schema.optional())), async (req, res, next) => {
   try {
     const { id } = req.params;
     const ruleData = req.validatedBody;
@@ -432,11 +432,11 @@ router.put('/incident-rules/:id', validateBody(incidentRuleSchema.fork(['system_
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
-router.delete('/incident-rules/:id', async (req, res) => {
+router.delete('/incident-rules/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await incidentService.deleteIncidentRule(id);
@@ -452,11 +452,11 @@ router.delete('/incident-rules/:id', async (req, res) => {
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
-router.patch('/incident-rules/:id/toggle', async (req, res) => {
+router.patch('/incident-rules/:id/toggle', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { enabled } = req.body;
@@ -483,13 +483,13 @@ router.patch('/incident-rules/:id/toggle', async (req, res) => {
         details: error.message
       });
     }
-    handleError(res, error);
+    next(error);
   }
 });
 
 // ================== UTILITY ROUTES ==================
 
-router.get('/distinct/:field', async (req, res) => {
+router.get('/distinct/:field', async (req, res, next) => {
   try {
     const { field } = req.params;
     const validFields = [
@@ -516,7 +516,7 @@ router.get('/distinct/:field', async (req, res) => {
       data: values
     });
   } catch (error) {
-    handleError(res, error, 'Error fetching distinct values');
+    next(error);
   }
 });
 

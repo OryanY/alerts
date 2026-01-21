@@ -321,7 +321,10 @@ class AlertQueryService {
       'panel_title',
       'application',
       'node_name',
-      'operator'
+      'operator',
+      'message',
+      'object',
+      'network'
     ];
 
     if (!allowedFields.includes(field)) {

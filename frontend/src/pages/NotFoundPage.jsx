@@ -18,9 +18,9 @@ const NotFoundPage = () => {
           color: '#E5E7EB',
           marginBottom: 16
         }}>
-          404
+          404s
         </div>
-        
+
         <h1 style={{
           fontSize: 32,
           fontWeight: 700,
@@ -29,7 +29,7 @@ const NotFoundPage = () => {
         }}>
           Page Not Found
         </h1>
-        
+
         <p style={{
           fontSize: 16,
           color: '#6B7280',
@@ -65,7 +65,7 @@ const NotFoundPage = () => {
           <Home size={18} />
           Go to Dashboard
         </button>
-        
+
         <button
           onClick={() => navigate(-1)}
           style={{
@@ -105,7 +105,7 @@ const NotFoundPage = () => {
             Available Pages
           </span>
         </div>
-        
+
         <div style={{
           display: 'grid',
           gap: 8,
@@ -125,7 +125,7 @@ const NotFoundPage = () => {
           >
             📊 /dashboard - Main dashboard with charts and KPIs
           </button>
-          
+
           <button
             onClick={() => navigate('/explorer')}
             style={{
@@ -140,7 +140,7 @@ const NotFoundPage = () => {
           >
             🔍 /explorer - Search and filter alerts
           </button>
-          
+
           <button
             onClick={() => navigate('/settings')}
             style={{

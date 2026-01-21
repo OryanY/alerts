@@ -23,7 +23,10 @@ import TopNoisyAlertsList from '../components/PanelResearch/TopNoisyAlertsList';
 import TopApplicationsChart from '../components/PanelResearch/TopApplicationsChart';
 import ConsecutiveDaysTable from '../components/PanelResearch/ConsecutiveDaysTable';
 import TopNoisyNodesTable from '../components/PanelResearch/TopNoisyNodesTable';
-import RecentAlertsTable from '../components/PanelResearch/RecentAlertsTable';
+// Replaced RecentAlertsTable with shared AlertTable
+import { AlertTable } from '../components/dashboard/AlertTable';
+import { useDurationBands } from '../hooks/useDurationBands';
+import { Table } from 'lucide-react';
 
 const PanelResearchPage = () => {
   const {
@@ -37,9 +40,64 @@ const PanelResearchPage = () => {
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
 
+  // Destructure colorByDuration correctly
+  const { colorByDuration } = useDurationBands(config);
+
   const [selectedPanel, setSelectedPanel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
+
+  // Sorting state for AlertTable
+  const [sortConfig, setSortConfig] = useState({
+    sort_by: 'time_fired',
+    sort_order: 'desc'
+  });
+
+  const handleSort = (key) => {
+    setSortConfig(current => ({
+      sort_by: key,
+      sort_order: current.sort_by === key && current.sort_order === 'desc' ? 'asc' : 'desc'
+    }));
+  };
+
+  const renderShiftBadge = (shiftValue) => {
+    if (!shiftValue) {
+      return (
+        <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>
+          —
+        </span>
+      );
+    }
+
+    const normalized = String(shiftValue).toLowerCase();
+    let bg = colors.bg.tertiary;
+    let fg = colors.text.secondary;
+
+    if (normalized.includes('day')) {
+      bg = (colors.semantic?.success || colors.brand.primary) + '20';
+      fg = colors.semantic?.success || colors.brand.primary;
+    } else if (normalized.includes('night')) {
+      bg = (colors.semantic?.warning || colors.brand.secondary) + '20';
+      fg = colors.semantic?.warning || colors.brand.secondary;
+    }
+
+    return (
+      <span
+        style={{
+          padding: '4px 10px',
+          borderRadius: 999,
+          fontSize: 12,
+          fontWeight: 600,
+          background: bg,
+          color: fg,
+          textTransform: 'uppercase',
+          letterSpacing: '0.03em',
+        }}
+      >
+        {shiftValue}
+      </span>
+    );
+  };
 
   // No need to adjust date range - backend handles Israeli timezone conversion
   const adjustedDateRange = dateRange;
@@ -80,16 +138,36 @@ const PanelResearchPage = () => {
       ...getApiParams(),
       panel_title: selectedPanel,
       limit: 100,
-      sort_by: 'time_fired',
-      sort_order: 'DESC',
+      sort_by: sortConfig.sort_by,
+      sort_order: sortConfig.sort_order.toUpperCase(), // Backend expects UPPERCASE
       ...(selectedNode ? { node_name: selectedNode } : {}),
     };
-  }, [adjustedDateRange, getApiParams, selectedPanel, selectedNode]);
+  }, [adjustedDateRange, getApiParams, selectedPanel, selectedNode, sortConfig]);
 
   const {
     data: recentAlerts,
     loading: alertsLoading,
+    error: alertsError
   } = useApiData('/alerts', alertsParams, { skip: !selectedPanel });
+
+  // Parsing error debugging
+  useMemo(() => {
+    if (alertsError) console.error("Alerts API Error:", alertsError);
+    if (recentAlerts) console.log("Recent Alerts Data:", recentAlerts);
+    console.log("Alerts Params:", alertsParams);
+  }, [alertsError, recentAlerts, alertsParams]);
+
+  // Columns for the AlertTable
+  const visibleColumns = [
+    { key: 'time_fired', label: 'Time Fired', sortable: true, width: 150 },
+    { key: 'node_name', label: 'Node', sortable: true, width: 140 },
+    { key: 'object', label: 'Object', sortable: true, width: 140 },
+    { key: 'message', label: 'Message', sortable: true, width: 300 },
+    { key: 'duration_sec', label: 'Duration', sortable: true, width: 100 },
+    { key: 'shift', label: 'Shift', sortable: false, width: 100 },
+    { key: 'network', label: 'Network', sortable: true, width: 100 }
+  ];
+
 
   // --- NEW STATISTICS ---
 
@@ -553,12 +631,59 @@ const PanelResearchPage = () => {
                 onSelectNode={setSelectedNode}
               />
 
-              {/* Recent Alerts */}
-              <RecentAlertsTable
-                alerts={recentAlerts}
-                loading={alertsLoading}
-                selectedNode={selectedNode}
-              />
+              {/* Recent Alerts - Reused AlertTable for Clustering Support */}
+              <div style={{ marginTop: 24 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h3
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 600,
+                      color: colors.text.primary,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10
+                    }}
+                  >
+                    <Table size={16} style={{ color: colors.brand.primary }} />
+                    Recent Alerts
+                    <span style={{ fontSize: 13, color: colors.text.tertiary, fontWeight: 400 }}>
+                      (Last 100)
+                    </span>
+                    {selectedNode && (
+                      <span style={{ fontSize: 12, fontWeight: 400, color: colors.semantic.infoText, background: colors.semantic.infoBg, padding: '2px 8px', borderRadius: 4 }}>
+                        Filtered by: {selectedNode}
+                      </span>
+                    )}
+                  </h3>
+                </div>
+
+                {alertsLoading ? (
+                  <LoadingSkeleton width="100%" height={400} />
+                ) : alertsError ? (
+                  <ErrorCallout message="Failed to load recent alerts" details={alertsError} />
+                ) : recentAlerts?.length > 0 ? (
+                  <div style={{
+                    border: `1px solid ${colors.border.primary}`,
+                    borderRadius: 8,
+                    background: colors.bg.secondary,
+                    overflowX: 'auto'
+                  }}>
+                    <AlertTable
+                      alerts={recentAlerts}
+                      visibleColumns={visibleColumns}
+                      sortConfig={sortConfig}
+                      onSort={handleSort}
+                      colorByDuration={colorByDuration}
+                      colors={colors}
+                      renderShiftBadge={renderShiftBadge}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ padding: 40, textAlign: 'center', color: colors.text.secondary }}>
+                    No alerts found for this panel
+                  </div>
+                )}
+              </div>
             </>
           ) : null}
         </div>
@@ -566,5 +691,6 @@ const PanelResearchPage = () => {
     </div>
   );
 };
+
 
 export default PanelResearchPage;
