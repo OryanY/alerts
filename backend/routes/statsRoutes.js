@@ -1,183 +1,128 @@
 // routes/statsRoutes.js - Clean statistics route definitions
 const express = require('express');
-const { validateQuery } = require('../middleware/validation');
-const { cache } = require('../utils/cache');
 const {
   statsSchema,
+  statsSchemaRequiredPanel,
   panelStatsSchema,
   timeseriesSchema,
   panelResearchSchema
 } = require('../schemas/alertSchemas');
 const AlertService = require('../services/alert/AlertService');
+const { createCachedHandler } = require('../middleware/routeHandler');
 
 const router = express.Router();
 const alertService = new AlertService();
 
-/**
- * Reusable handler for cached statistics endpoints
- */
-function createStatsHandler(schema, serviceMethod, cachePrefix) {
-  return [
-    validateQuery(schema),
-    async (req, res, next) => {
-      try {
-        const params = req.validatedQuery;
-
-        // Validate panel_title requirement for certain endpoints
-        if (requiresPanelTitle(cachePrefix) && !params.panel_title) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'panel_title query parameter is required',
-              status: 400
-            }
-          });
-        }
-
-        // Generate cache key
-        const cacheKey = generateCacheKey(cachePrefix, params);
-
-        // Check cache
-        const cached = cache.get(cacheKey);
-        if (cached) {
-          return res.json({
-            ...cached,
-            meta: { ...cached.meta, cached: true }
-          });
-        }
-
-        // Call service
-        const result = await serviceMethod.call(alertService, params);
-
-        // Cache result
-        cache.set(cacheKey, result);
-
-        res.json(result);
-      } catch (error) {
-        next(error);
-      }
-    }
-  ];
-}
-
-/**
- * Generate deterministic cache key
- */
-function generateCacheKey(prefix, params) {
-  const sortedParams = Object.keys(params)
-    .sort()
-    .reduce((acc, key) => {
-      acc[key] = params[key];
-      return acc;
-    }, {});
-
-  return `${prefix}:${JSON.stringify(sortedParams)}`;
-}
-
-/**
- * Check if endpoint requires panel_title
- */
-function requiresPanelTitle(cachePrefix) {
-  const requiresPanel = ['panel-messages'];
-  return requiresPanel.includes(cachePrefix);
-}
-
 // ================== EXECUTIVE/SUMMARY STATS ==================
 
-router.get('/executive-kpis', ...createStatsHandler(
+router.get('/executive-kpis', ...createCachedHandler(
   statsSchema,
   alertService.getExecutiveKPIs,
+  alertService,
   'kpis'
 ));
 
-router.get('/overview', ...createStatsHandler(
+router.get('/overview', ...createCachedHandler(
   statsSchema,
   alertService.getOverviewStats,
+  alertService,
   'overview'
 ));
 
 // ================== TEMPORAL ANALYSIS ==================
 
-router.get('/hourly-heatmap', ...createStatsHandler(
+router.get('/hourly-heatmap', ...createCachedHandler(
   statsSchema,
   alertService.getHourlyHeatmap,
+  alertService,
   'hourly-heatmap'
 ));
 
-router.get('/hourly', ...createStatsHandler(
+router.get('/hourly', ...createCachedHandler(
   statsSchema,
   alertService.getHourlyStats,
+  alertService,
   'hourly'
 ));
 
-router.get('/timeseries', ...createStatsHandler(
+router.get('/timeseries', ...createCachedHandler(
   timeseriesSchema,
   alertService.getTimeseriesStats,
+  alertService,
   'timeseries'
 ));
 
 // ================== CATEGORICAL ANALYSIS ==================
 
-router.get('/duration-histogram', ...createStatsHandler(
+router.get('/duration-histogram', ...createCachedHandler(
   statsSchema,
   alertService.getDurationHistogram,
+  alertService,
   'duration-hist'
 ));
 
-router.get('/shift-analysis', ...createStatsHandler(
+router.get('/shift-analysis', ...createCachedHandler(
   statsSchema,
   alertService.getShiftAnalysis,
+  alertService,
   'shift-analysis'
 ));
 
 // ================== ENTITY-BASED ANALYSIS ==================
 
-router.get('/by-panel', ...createStatsHandler(
+router.get('/by-panel', ...createCachedHandler(
   panelStatsSchema,
   alertService.getPanelStats,
+  alertService,
   'by-panel'
 ));
 
-router.get('/panels', ...createStatsHandler(
+router.get('/panels', ...createCachedHandler(
   panelResearchSchema,
   alertService.getPanelList,
+  alertService,
   'panels'
 ));
 
-router.get('/panel-analysis', ...createStatsHandler(
+router.get('/panel-analysis', ...createCachedHandler(
   panelResearchSchema,
   alertService.getPanelAnalysis,
+  alertService,
   'panel-analysis'
 ));
 
-router.get('/panel-messages', ...createStatsHandler(
-  statsSchema,
+router.get('/panel-messages', ...createCachedHandler(
+  statsSchemaRequiredPanel,
   alertService.getAlertMessageBreakdown,
+  alertService,
   'panel-messages'
 ));
 
-router.get('/top-nodes', ...createStatsHandler(
+router.get('/top-nodes', ...createCachedHandler(
   statsSchema,
   alertService.getTopNoisyNodes,
+  alertService,
   'top-nodes'
 ));
 
-router.get('/top-applications', ...createStatsHandler(
+router.get('/top-applications', ...createCachedHandler(
   statsSchema,
   alertService.getTopApplications,
+  alertService,
   'top-apps'
 ));
 
-router.get('/top-nodes-by-app', ...createStatsHandler(
+router.get('/top-nodes-by-app', ...createCachedHandler(
   statsSchema,
   alertService.getTopNodesByApp,
+  alertService,
   'top-nodes-app'
 ));
 
-router.get('/consecutive-days', ...createStatsHandler(
+router.get('/consecutive-days', ...createCachedHandler(
   statsSchema,
   alertService.getConsecutiveDaysNodes,
+  alertService,
   'consecutive-days'
 ));
 

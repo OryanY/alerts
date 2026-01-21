@@ -8,31 +8,7 @@ const { TimeUtils } = require('../../utils/TimeUtils');
  * Single Responsibility: Shape and enrich data for API responses
  */
 class AlertTransformService {
-  /**
-   * Transform single alert record
-   */
-  transformAlertRecord(record, thresholds) {
-    const ilHour = TimeUtils.getILHour(record.time_fired);
 
-    return {
-      id: record.incident_id,
-      panel_title: record.panel_title,
-      application: record.application,
-      node_name: record.node_name,
-      network: record.network,
-      object: record.object,
-      operator: record.operator,
-      time_fired: TimeUtils.utcToIL(record.time_fired),
-      time_resolved: TimeUtils.utcToIL(record.time_resolved),
-      duration_sec: record.duration_sec,
-      duration_category: this._categorizeDuration(record.duration_sec, thresholds),
-      shift: this._determineShift(ilHour, thresholds),
-      il_hour: ilHour,
-      message: record.message,
-      key_field: record.key_field,
-      history_id: record.history_id
-    };
-  }
 
   /**
    * Transform multiple alert records (optimized with batching)
@@ -228,37 +204,7 @@ class AlertTransformService {
     }
   }
 
-  /**
-   * Sanitize and truncate message fields
-   */
-  sanitizeMessage(message, maxLength = 500) {
-    if (!message) return null;
 
-    let sanitized = String(message).trim();
-
-    if (sanitized.length > maxLength) {
-      sanitized = sanitized.substring(0, maxLength) + '...';
-    }
-
-    return sanitized;
-  }
-
-  /**
-   * Format alert for external system (e.g., webhook)
-   */
-  formatForWebhook(alert) {
-    return {
-      alert_id: alert.id,
-      panel: alert.panel_title,
-      application: alert.application,
-      node: alert.node_name,
-      severity: alert.duration_category,
-      timestamp: alert.time_fired,
-      duration_seconds: alert.duration_sec,
-      message: this.sanitizeMessage(alert.message, 200),
-      shift: alert.shift
-    };
-  }
 }
 
 module.exports = { AlertTransformService };

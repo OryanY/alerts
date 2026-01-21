@@ -95,9 +95,35 @@ const NocDashboard = () => {
   const handlePanelChange = useCallback((e) => setSelectedPanel(e.target.value || null), [setSelectedPanel]);
 
 
+  // Calculate threshold in minutes for display
+  const thresholdMinutes = Math.round((config.falseWakeupThreshold || 120) / 60);
+
+  // Calculate previous period for tooltips
+  const prevPeriodText = useMemo(() => {
+    if (!dateRange.start_date || !dateRange.end_date) return '';
+    try {
+      const parseLocal = (s) => {
+        const [y, m, d] = s.split('-').map(Number);
+        return new Date(y, m - 1, d);
+      };
+      const start = parseLocal(dateRange.start_date);
+      const end = parseLocal(dateRange.end_date);
+      const duration = end - start; // Time difference in ms
+
+      const prevEnd = new Date(start.getTime() - 86400000); // Start minus 1 day
+      const prevStart = new Date(prevEnd.getTime() - duration);
+
+      const fmt = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      return `(${fmt(prevStart)} - ${fmt(prevEnd)})`;
+    } catch (e) {
+      return '';
+    }
+  }, [dateRange]);
+
   return (
     <div>
       <div style={styles.headerContainer}>
+        {/* ... existing header controls ... */}
         <div style={styles.controlsWrapper}>
           <DateRangePicker
             dateRange={dateRange}
@@ -204,15 +230,18 @@ const NocDashboard = () => {
         <div style={{ ...S.grid('repeat(auto-fit, minmax(200px, 1fr))'), direction: 'rtl' }}>
           <MetricCard
             title="סך כל ההתראות"
+            tooltip="סה״כ ההתראות שקפצו בטווח הזמן שנבחר."
             value={exec.data?.total_alerts ?? '—'}
             icon={AlertTriangle}
             logoColor="orange"
             loading={exec.loading}
             trend={exec.data?.total_trend_pct}
+            trendTooltip={`אינדיקציה למגמת עליה או ירידה בכמות ההתראות בהשוואה ל ${prevPeriodText}.`}
             invertTrend={true}
           />
           <MetricCard
             title="יחס התראות לפי זמנים"
+            tooltip="יחס בין התראות ארוכות לקצרות. אחוז גבוה מצביע על פחות התראות קצרות)."
             value={`${exec.data?.signal_ratio ?? '—'}%`}
             subtitle="יחס התראות ארוכות לקצרות"
             icon={TrendingUp}
@@ -220,26 +249,34 @@ const NocDashboard = () => {
             loading={exec.loading}
           />
           <MetricCard
-            title="התראות אמיתיות"
+            title="התראות אמיתיות (לילה)"
+            tooltip={`התראות במשמרת לילה שנמשכו מעל ${thresholdMinutes} דקות.`}
             value={exec.data?.true_wakeups ?? '—'}
-            subtitle={`התראות שזמנן ≥ ${config.falseWakeupThreshold || 120} ש' בלילה`}
+            subtitle={`התראות שזמנן ≥ ${thresholdMinutes} ד' בלילה`}
             icon={Moon}
             logoColor="purple"
             loading={exec.loading}
           />
           <MetricCard
             title="אחוז התראות שווא"
-            value={`${exec.data?.false_wakeup_rate ?? '—'}%`}
-            subtitle={`התראות שזמנן ≤ ${config.falseWakeupThreshold || 120} ש' בלילה`}
+            tooltip={`אחוז ההתראות (יום + לילה) שהיו קצרות מ-${thresholdMinutes} דקות.`}
+            value={`${exec.data?.false_positive_rate_247 ?? '—'}%`}
+            subtitle={`התראות שזמנן ≤ ${thresholdMinutes} ד'`}
             icon={Shield}
             logoColor="red"
             loading={exec.loading}
             trend={exec.data?.noise_trend_pct}
+            trendTooltip={`אינדיקציה לשינוי באחוז התראות השווא בהשוואה ל ${prevPeriodText}.`}
             invertTrend={true}
           />
 
           <MetricCard
             title={config.durationMetric === 'average' ? 'ממוצע זמן התראה' : 'חציון זמן התראה'}
+            tooltip={
+              config.durationMetric === 'average'
+                ? "משך זמן ממוצע להתראה."
+                : "משך זמן בחציון (כדי למנוע השפעה של התראות חריגות)."
+            }
             value={formatDuration(config.durationMetric === 'average' ? exec.data?.avg_duration : exec.data?.median_duration)}
             icon={Clock}
             logoColor="green"
@@ -262,17 +299,17 @@ const NocDashboard = () => {
                 <YAxis {...chartConfig.axis} />
                 <Tooltip {...chartConfig.tooltip} />
                 <Bar
-                  dataKey="alert_count"
+                  dataKey="true_alerts"
                   fill={colors.brand.primary}
                   radius={[4, 4, 0, 0]}
-                  name="Alert Count"
+                  name="התראות אמת"
                 />
 
                 <Bar
                   dataKey="false_wakeups"
-                  fill={colors.chart.quinary}
+                  fill={colors.semantic.error}
                   radius={[4, 4, 0, 0]}
-                  name="False Wakeups"
+                  name="התראות שווא"
                 />
               </BarChart>
             </ResponsiveContainer>

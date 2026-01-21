@@ -135,9 +135,15 @@ const patternSchema = Joi.object({
   min_correlation_count: Joi.number().integer().min(2).max(100).default(3)
 });
 
+// Schema for statistics endpoints that REQUIRE panel_title (e.g. message breakdown)
+const statsSchemaRequiredPanel = statsSchema.keys({
+  panel_title: Joi.string().trim().max(100).required()
+});
+
 module.exports = {
   alertsSchema,
   statsSchema,
+  statsSchemaRequiredPanel,
   panelStatsSchema,
   timeseriesSchema,
   panelResearchSchema,

@@ -15,36 +15,52 @@ const { IncidentTransformService } = require('./IncidentTransformService');
  */
 class IncidentService {
     constructor() {
-        this.queryService = null;
-        this.ruleEngine = null;
-        this.serviceNowClient = null;
-        this.transformService = null;
+        // Lazy-loaded services
+        this._queryService = null;
+        this._ruleEngine = null;
+        this._serviceNowClient = null;
+        this._transformService = null;
     }
 
-    // Initialize all sub-services
-    async initialize() {
-        const db = getMongoDb();
+    // ================== INFRASTRUCTURE ==================
 
-        // Initialize query service
-        this.queryService = new IncidentQueryService(db, {
-            systemMappings: db.collection(mongoConfig.collections.systemMappings),
-            incidentRules: db.collection(mongoConfig.collections.incidentRules),
-            assignmentGroups: db.collection(mongoConfig.collections.assignmentGroups)
-        });
+    get queryService() {
+        if (!this._queryService) {
+            const db = getMongoDb();
+            this._queryService = new IncidentQueryService(db, {
+                systemMappings: db.collection(mongoConfig.collections.systemMappings),
+                incidentRules: db.collection(mongoConfig.collections.incidentRules),
+                assignmentGroups: db.collection(mongoConfig.collections.assignmentGroups)
+            });
+        }
+        return this._queryService;
+    }
 
-        // Initialize other services
-        this.ruleEngine = new IncidentRuleEngine();
-        this.serviceNowClient = new ServiceNowClient();
-        this.transformService = new IncidentTransformService();
-        console.log('✅ IncidentService initialized with all sub-services.');
+    get ruleEngine() {
+        if (!this._ruleEngine) {
+            this._ruleEngine = new IncidentRuleEngine();
+        }
+        return this._ruleEngine;
+    }
+
+    get serviceNowClient() {
+        if (!this._serviceNowClient) {
+            this._serviceNowClient = new ServiceNowClient();
+        }
+        return this._serviceNowClient;
+    }
+
+    get transformService() {
+        if (!this._transformService) {
+            this._transformService = new IncidentTransformService();
+        }
+        return this._transformService;
     }
 
     // ================== INCIDENT CREATION ==================
 
     // Create an incident from alert data (main orchestration method)
     async createIncidentFromAlert(alertData) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const { application } = alertData;
 
@@ -117,18 +133,14 @@ class IncidentService {
     // ================== SYSTEM MAPPINGS ==================
 
     async getSystemMappings() {
-        if (!this.queryService) await this.initialize();
         return this.queryService.findAllMappings();
     }
 
     async getMappingByApplication(grafanaName) {
-        if (!this.queryService) await this.initialize();
         return this.queryService.findMappingByApplication(grafanaName, this.ruleEngine);
     }
 
     async createSystemMapping(mappingData) {
-        if (!this.queryService) await this.initialize();
-
         try {
             // Handle legacy grafana_name field
             let namesToUse = mappingData.grafana_names || mappingData.grafana_name;
@@ -169,8 +181,6 @@ class IncidentService {
     }
 
     async updateSystemMapping(id, mappingData) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const { _id, created_at, ...updateData } = mappingData;
 
@@ -201,8 +211,6 @@ class IncidentService {
     }
 
     async deleteSystemMapping(id) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const result = await this.queryService.deleteMapping(id);
             console.log(`✅ Deleted system mapping: ${id}`);
@@ -216,13 +224,10 @@ class IncidentService {
     // ================== INCIDENT RULES ==================
 
     async getIncidentRules(grafanaName = null) {
-        if (!this.queryService) await this.initialize();
         return this.queryService.findAllRules(grafanaName, this.ruleEngine);
     }
 
     async createIncidentRule(ruleData) {
-        if (!this.queryService) await this.initialize();
-
         try {
             let mapping = null;
             if (ruleData.is_global) {
@@ -275,8 +280,6 @@ class IncidentService {
     }
 
     async updateIncidentRule(id, ruleData) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const { _id, created_at, system_mapping_id, ...updateData } = ruleData;
 
@@ -312,8 +315,6 @@ class IncidentService {
     }
 
     async deleteIncidentRule(id) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const result = await this.queryService.deleteRule(id);
             console.log(`✅ Deleted incident rule: ${id}`);
@@ -325,8 +326,6 @@ class IncidentService {
     }
 
     async toggleIncidentRule(id, enabled) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const result = await this.queryService.toggleRule(id, enabled);
             console.log(`✅ Toggled incident rule ${id}: ${enabled ? 'enabled' : 'disabled'}`);
@@ -340,14 +339,10 @@ class IncidentService {
     // ================== SERVICENOW INTEGRATION ==================
 
     async getAssignmentGroups() {
-        if (!this.queryService) await this.initialize();
         return this.queryService.getAssignmentGroups();
     }
 
     async syncAssignmentGroups() {
-        if (!this.serviceNowClient) await this.initialize();
-        if (!this.queryService) await this.initialize();
-
         try {
             const groups = await this.serviceNowClient.fetchAssignmentGroups();
             await this.queryService.saveAssignmentGroups(groups);
@@ -360,8 +355,6 @@ class IncidentService {
     }
     // Create ServiceNow alert only (simpler than full incident)
     async createServiceNowAlert(alertData) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const { application, incident_number } = alertData;
             if (!application) throw new Error('Alert must have an application field');
@@ -414,8 +407,6 @@ class IncidentService {
 
     // Create incident + optional alert
     async createIncidentWithAlert(alertData, createAlert = true, linkToIncident = true) {
-        if (!this.queryService) await this.initialize();
-
         try {
             // First create the incident
             const incidentResult = await this.createIncidentFromAlert(alertData);
@@ -444,8 +435,6 @@ class IncidentService {
     // ================== SIMULATION & DEBUGGING ==================
 
     async simulateIncidentCreation(alertData) {
-        if (!this.queryService) await this.initialize();
-
         try {
             const { application } = alertData;
             if (!application) throw new Error('Alert must have an application field');

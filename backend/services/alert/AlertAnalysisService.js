@@ -116,6 +116,7 @@ class AlertAnalysisService {
       night: 0,
       trueWakeups: 0,
       falseWakeups: 0,
+      falsePositives247: 0,
       durations: []
     };
 
@@ -128,6 +129,11 @@ class AlertAnalysisService {
       // Noise detection
       if (record.duration_sec <= thresholds.dur_short_max) {
         stats.noise++;
+      }
+
+      // 24/7 False Positive detection (Any alert < threshold)
+      if (record.duration_sec <= thresholds.false_wakeup_threshold) {
+        stats.falsePositives247++;
       }
 
       // Night shift analysis
@@ -152,10 +158,14 @@ class AlertAnalysisService {
       true_wakeups: stats.trueWakeups,
       false_wakeups: stats.falseWakeups,
       signal_ratio: this._calculatePercentage(stats.total - stats.noise, stats.total),
+      // Night Only Rate
       false_wakeup_rate: this._calculatePercentage(
         stats.falseWakeups,
         stats.trueWakeups + stats.falseWakeups
       ),
+      // 24/7 False Positive Rate (Requested by User)
+      false_positive_rate_247: this._calculatePercentage(stats.falsePositives247, stats.total),
+
       // CHANGE: Use Median for "Average Duration" display to avoid outliers (RESTORED TO MEAN)
       avg_duration: this._calculateAverage(stats.sumDuration, stats.total),
       median_duration: this._calculateMedian(stats.durations)
@@ -312,6 +322,8 @@ class AlertAnalysisService {
 
       agg.total++;
       agg.sum += record.duration_sec;
+      if (!agg.durations) agg.durations = [];
+      agg.durations.push(record.duration_sec); // Collect for global median
 
       // Duration buckets
       if (record.duration_sec <= thresholds.dur_short_max) {
@@ -345,6 +357,8 @@ class AlertAnalysisService {
       if (hour !== null && hour >= 0 && hour < 24) {
         agg.hourly[hour].count++;
         agg.hourly[hour].sum += record.duration_sec;
+        // Optimization: Don't store full hourly arrays unless needed to avoid explosive memory
+        // For now, hourly heatmap only shows AVG, so we skip median there to save RAM
       }
 
       // Daily trend
@@ -356,11 +370,12 @@ class AlertAnalysisService {
       if (record.message) {
         let msgStats = agg.messages.get(record.message);
         if (!msgStats) {
-          msgStats = { count: 0, sum: 0, falsePos: 0 };
+          msgStats = { count: 0, sum: 0, falsePos: 0, durations: [] };
           agg.messages.set(record.message, msgStats);
         }
         msgStats.count++;
         msgStats.sum += record.duration_sec;
+        msgStats.durations.push(record.duration_sec); // Collect for message median
         if (record.duration_sec <= thresholds.false_wakeup_threshold) {
           msgStats.falsePos++;
         }
@@ -423,6 +438,7 @@ class AlertAnalysisService {
         message,
         count: stats.count,
         avg_duration: this._calculateAverage(stats.sum, stats.count),
+        median_duration: stats.durations ? this._calculateMedian(stats.durations) : 0,
         false_positive_rate: this._calculatePercentage(stats.falsePos, stats.count)
       }))
       .sort((a, b) => b.count - a.count)
@@ -434,8 +450,9 @@ class AlertAnalysisService {
       summary: {
         total_alerts: agg.total,
         avg_duration: this._calculateAverage(agg.sum, agg.total),
-        false_positive_count: agg.falsePositives,
-        false_positive_rate: this._calculatePercentage(agg.falsePositives, agg.total),
+        median_duration: agg.durations ? this._calculateMedian(agg.durations) : 0,
+        false_positive_count: agg.falsePositives, // All shifts
+        false_positive_rate: this._calculatePercentage(agg.falsePositives, agg.total), // Rate within Total Alerts
         night_alerts: agg.nightAlerts,
         night_wakeups: agg.nightWakeups,
         night_false_wakeups: agg.nightFalseWakeups,

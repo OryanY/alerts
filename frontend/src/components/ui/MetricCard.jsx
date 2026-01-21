@@ -3,12 +3,15 @@ import { TrendingUp, TrendingDown, AlertTriangle } from '../../icons';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
+import Tooltip from './Tooltip';
 
 export const MetricCard = memo(function MetricCard({
   title,
   value,
   subtitle,
   trend,
+  tooltip,
+  trendTooltip,
   icon: Icon,
   logoColor = 'blue',
   loading = false,
@@ -16,6 +19,7 @@ export const MetricCard = memo(function MetricCard({
   invertTrend = false,
 }) {
   const { colors } = useTheme();
+  // ... rest of hook usage
   const S = createThemedStyles(colors);
 
   const palette = {
@@ -79,33 +83,39 @@ export const MetricCard = memo(function MetricCard({
       }}>
 
         {/* Icon */}
-        <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: 8,
-          background: `${c}20`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <Icon size={24} style={{ color: c }} />
-        </div>
+        <Tooltip content={tooltip}>
+          <div style={{
+            width: 48,
+            height: 48,
+            borderRadius: 8,
+            background: `${c}20`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: tooltip ? 'help' : 'default'
+          }}>
+            <Icon size={24} style={{ color: c }} />
+          </div>
+        </Tooltip>
 
         {/* Trend */}
         {typeof trend === 'number' && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            color: (trend > 0 && !invertTrend) || (trend < 0 && invertTrend)
-              ? colors.semantic.success
-              : colors.semantic.error
-          }}>
-            {trend > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-            <span style={{ fontSize: 12, fontWeight: 500 }}>
-              {Math.abs(trend)}%
-            </span>
-          </div>
+          <Tooltip content={trendTooltip}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              color: (trend > 0 && !invertTrend) || (trend < 0 && invertTrend)
+                ? colors.semantic.success
+                : colors.semantic.error,
+              cursor: trendTooltip ? 'help' : 'default'
+            }}>
+              {trend > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+              <span style={{ fontSize: 12, fontWeight: 500 }}>
+                {Math.abs(trend)}%
+              </span>
+            </div>
+          </Tooltip>
         )}
 
         {/* Value */}

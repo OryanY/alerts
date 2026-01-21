@@ -4,8 +4,12 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
 import { ChartCard } from '../ui/ChartCard';
 
+import { useClientConfig } from '../../contexts/ClientConfigContext';
+
 const TopNoisyAlertsList = ({ alerts, loading }) => {
     const { colors } = useTheme();
+    const { config } = useClientConfig();
+    const durationMetric = config?.durationMetric || 'average';
     // eslint-disable-next-line
     const S = createThemedStyles(colors);
 
@@ -68,7 +72,7 @@ const TopNoisyAlertsList = ({ alerts, loading }) => {
                                     }}
                                 >
                                     <span>{alert.count} occurrences</span>
-                                    <span>{alert.avg_duration}s avg</span>
+                                    <span>{durationMetric === 'median' ? alert.median_duration : alert.avg_duration}s {durationMetric === 'median' ? 'med' : 'avg'}</span>
                                 </div>
                                 <div
                                     style={{

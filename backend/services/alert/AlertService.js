@@ -4,6 +4,7 @@ const { AlertQueryService } = require('./AlertQueryService');
 const { AlertAnalysisService } = require('./AlertAnalysisService');
 const { AlertTransformService } = require('./AlertTransformService');
 const { ResponseFormatter } = require('../../utils/ResponseFormatter');
+const { TimeUtils } = require('../../utils/TimeUtils');
 const { CONFIG } = require('../../config');
 
 
@@ -166,15 +167,15 @@ class AlertService {
             const prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
 
             // 5. Calculate trends
-            // Noise Trend
-            const currentNoise = kpis.noise_alerts || 0;
-            const prevNoise = prevKpis.noise_alerts || 0;
+            // False Alert Rate Trend (24/7)
+            const currentRate = kpis.false_positive_rate_247 || 0;
+            const prevRate = prevKpis.false_positive_rate_247 || 0;
 
             // Avoid division by zero
             let noiseTrendPct = 0;
-            if (prevNoise > 0) {
-                noiseTrendPct = ((currentNoise - prevNoise) / prevNoise) * 100;
-            } else if (currentNoise > 0) {
+            if (prevRate > 0) {
+                noiseTrendPct = ((currentRate - prevRate) / prevRate) * 100;
+            } else if (currentRate > 0) {
                 noiseTrendPct = 100; // 0 to something is 100% increase
             }
 
@@ -340,9 +341,62 @@ class AlertService {
      */
     async getPanelList(params) {
         const thresholds = this._getThresholds(params);
+        const { enabled, threshold } = this._getClusteringConfig(params);
 
-        // 1. Fetch from SQL (optimized aggregation)
-        const panels = await this.queryService.fetchPanelList(params, thresholds);
+        let panels;
+
+        if (enabled) {
+            // 1. Fetch raw records for clustering
+            // We need panel_title, application, severity for grouping, plus time/duration for clustering
+            const rawRecords = await this.queryService.fetchBasicRecords(
+                params,
+                'panel_title, application, time_fired, duration_sec'
+            );
+
+            // 2. Cluster alerts
+            const clusteredRecords = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
+
+            // 3. Aggregate manually by panel
+            const panelMap = new Map();
+
+            clusteredRecords.forEach(alert => {
+                const key = alert.panel_title || 'Unknown Panel';
+                if (!panelMap.has(key)) {
+                    panelMap.set(key, {
+                        panel_title: key,
+                        application: alert.application || 'Unknown',
+                        alert_count: 0,
+                        total_duration: 0,
+                        false_positive_count: 0
+                    });
+                }
+
+                const entry = panelMap.get(key);
+                entry.alert_count++;
+                entry.total_duration += alert.duration_sec;
+
+                // Calculate False Positives (Any shift + Short)
+                if (alert.duration_sec <= thresholds.false_wakeup_threshold) {
+                    entry.false_positive_count++;
+                }
+            });
+
+            // 4. Calculate averages and format
+            panels = Array.from(panelMap.values()).map(p => ({
+                panel_title: p.panel_title,
+                application: p.application,
+                alert_count: p.alert_count,
+                avg_duration: p.alert_count > 0 ? Math.round(p.total_duration / p.alert_count) : 0,
+                false_positive_count: p.false_positive_count
+            }));
+
+            // Sort by count desc
+            panels.sort((a, b) => b.alert_count - a.alert_count);
+
+        } else {
+            // 1. Fetch from SQL (optimized aggregation)
+            panels = await this.queryService.fetchPanelList(params, thresholds);
+        }
 
         // 2. Enrich with health scores
         const enriched = this.transformService.enrichPanelStats(panels);
@@ -419,12 +473,7 @@ class AlertService {
         return ResponseFormatter.success(filtered);
     }
 
-    /**
-     * Get top applications per panel
-     */
-    /**
-     * Get top applications per panel
-     */
+
     async getTopApplications(params) {
         // Check for clustering
         const { enabled, threshold } = this._getClusteringConfig(params);
@@ -438,8 +487,8 @@ class AlertService {
         // Clustering Enabled: Fetch records -> Cluster -> Aggregate
         const rawRecords = await this.queryService.fetchBasicRecords(
             params,
-            'application'
-        ); // Application + default time/duration fields
+            'application, time_fired, duration_sec'
+        ); // Application + required fields for clustering
 
         const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
 
@@ -473,7 +522,7 @@ class AlertService {
         // Clustering Enabled
         const rawRecords = await this.queryService.fetchBasicRecords(
             params,
-            'node_name, application'
+            'node_name, application, time_fired, duration_sec'
         );
 
         const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);

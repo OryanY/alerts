@@ -1,11 +1,17 @@
 import React from 'react';
 import { AlertTriangle, TrendingUp, Clock } from 'lucide-react';
+import { useClientConfig } from '../../contexts/ClientConfigContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
+import Tooltip from '../ui/Tooltip';
 
 const ResearchSummaryCards = ({ summary }) => {
     const { colors } = useTheme();
     const S = createThemedStyles(colors);
+    const { config } = useClientConfig();
+    const durationMetric = config.durationMetric || 'average';
+
+    const thresholdMin = Math.round((config.falseWakeupThreshold || 120) / 60);
 
     if (!summary) return null;
 
@@ -32,15 +38,19 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.semantic.warning }}
                     />
-                    <span
-                        style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: colors.text.secondary,
-                        }}
-                    >
-                        Total Alerts
-                    </span>
+                    <Tooltip content="סה״כ התראות (או אירועים מאוחדים) בתקופה שנבחרה.">
+                        <span
+                            style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: colors.text.secondary,
+                                cursor: 'help',
+                                borderBottom: `1px dotted ${colors.text.tertiary}`
+                            }}
+                        >
+                            Total Alerts
+                        </span>
+                    </Tooltip>
                 </div>
                 <div
                     style={{
@@ -62,7 +72,7 @@ const ResearchSummaryCards = ({ summary }) => {
                 </div>
             </div>
 
-            {/* Avg Duration */}
+            {/* Avg/Median Duration */}
             <div style={S.card()}>
                 <div
                     style={{
@@ -76,15 +86,23 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.chart.primary }}
                     />
-                    <span
-                        style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: colors.text.secondary,
-                        }}
-                    >
-                        Avg Duration
-                    </span>
+                    <Tooltip content={
+                        durationMetric === 'median'
+                            ? "משך זמן טיפוסי"
+                            : "משך ממוצע"
+                    }>
+                        <span
+                            style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: colors.text.secondary,
+                                cursor: 'help',
+                                borderBottom: `1px dotted ${colors.text.tertiary}`
+                            }}
+                        >
+                            {durationMetric === 'median' ? 'Median Duration' : 'Avg Duration'}
+                        </span>
+                    </Tooltip>
                 </div>
                 <div
                     style={{
@@ -93,7 +111,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         color: colors.text.primary,
                     }}
                 >
-                    {summary.avg_duration}s
+                    {durationMetric === 'median' ? summary.median_duration : summary.avg_duration}s
                 </div>
             </div>
 
@@ -111,15 +129,19 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.semantic.error }}
                     />
-                    <span
-                        style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: colors.text.secondary,
-                        }}
-                    >
-                        False Positive Rate
-                    </span>
+                    <Tooltip content={`אחוז ההתראות שנחשבות כשווא (משך קצר מ-${thresholdMin} דקות).`}>
+                        <span
+                            style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: colors.text.secondary,
+                                cursor: 'help',
+                                borderBottom: `1px dotted ${colors.text.tertiary}`
+                            }}
+                        >
+                            False Positive Rate
+                        </span>
+                    </Tooltip>
                 </div>
                 <div
                     style={{
@@ -137,7 +159,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         marginTop: 4,
                     }}
                 >
-                    &lt; {120}s threshold
+                    &lt; {thresholdMin}m threshold
                 </div>
             </div>
 
@@ -151,19 +173,23 @@ const ResearchSummaryCards = ({ summary }) => {
                         marginBottom: 8,
                     }}
                 >
-                    <Clock // Assuming Moon was replaced or reused, using Clock as generally safe or check original
+                    <Clock
                         size={20}
                         style={{ color: colors.brand.secondary }}
                     />
-                    <span
-                        style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: colors.text.secondary,
-                        }}
-                    >
-                        Night Wakeups
-                    </span>
+                    <Tooltip content="מספר התראות לילה שחצו את סף התראות השווא.">
+                        <span
+                            style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: colors.text.secondary,
+                                cursor: 'help',
+                                borderBottom: `1px dotted ${colors.text.tertiary}`
+                            }}
+                        >
+                            Night Wakeups
+                        </span>
+                    </Tooltip>
                 </div>
                 <div
                     style={{
@@ -207,15 +233,19 @@ const ResearchSummaryCards = ({ summary }) => {
                                         : colors.text.secondary,
                         }}
                     />
-                    <span
-                        style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: colors.text.secondary,
-                        }}
-                    >
-                        Trend
-                    </span>
+                    <Tooltip content="מגמת נפח ההתראות בהשוואה לחצי הראשון של התקופה שנבחרה.">
+                        <span
+                            style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: colors.text.secondary,
+                                cursor: 'help',
+                                borderBottom: `1px dotted ${colors.text.tertiary}`
+                            }}
+                        >
+                            Trend
+                        </span>
+                    </Tooltip>
                 </div>
                 <div
                     style={{
