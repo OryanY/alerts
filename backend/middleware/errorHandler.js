@@ -1,7 +1,7 @@
 // middleware/errorHandler.js
 // Centralized error handling with proper error classification and logging
 
-const { ERROR } = require('../utils/errorTypes');
+const { ERROR_CODES } = require('../utils/constants');
 const { ResponseFormatter } = require('../utils/ResponseFormatter');
 
 // Custom error class for API errors
@@ -114,7 +114,7 @@ function handleError(res, err, req = null) {
   // Database errors
   if (ErrorClassifier.isDatabaseError(err)) {
     const response = ResponseFormatter.error(
-      ERROR.DB_QUERY,
+      ERROR_CODES.DATABASE_ERROR,
       'Database operation failed',
       500,
       { errorId, sqlErrorNumber: err.number }
@@ -125,7 +125,7 @@ function handleError(res, err, req = null) {
   // Connection errors
   if (ErrorClassifier.isConnectionError(err)) {
     const response = ResponseFormatter.error(
-      ERROR.DB_CONN,
+      ERROR_CODES.SERVICE_UNAVAILABLE,
       'Service temporarily unavailable',
       503,
       { errorId }
@@ -136,7 +136,7 @@ function handleError(res, err, req = null) {
   // Date range errors
   if (ErrorClassifier.isDateRangeError(err)) {
     const response = ResponseFormatter.error(
-      ERROR.DATE_RANGE,
+      ERROR_CODES.VALIDATION_ERROR,
       err.message.replace('DATE_RANGE_INVALID: ', ''),
       400,
       { errorId }
@@ -147,7 +147,7 @@ function handleError(res, err, req = null) {
   // Duration errors
   if (ErrorClassifier.isDurationError(err)) {
     const response = ResponseFormatter.error(
-      ERROR.DURATION,
+      ERROR_CODES.VALIDATION_ERROR,
       err.message.replace('DURATION_INVALID: ', ''),
       400,
       { errorId }
@@ -158,7 +158,7 @@ function handleError(res, err, req = null) {
   // Generic internal error
   const isDevelopment = process.env.NODE_ENV === 'development';
   const response = ResponseFormatter.error(
-    ERROR.INTERNAL,
+    ERROR_CODES.INTERNAL_ERROR,
     isDevelopment ? err.message : 'An unexpected error occurred',
     500,
     {

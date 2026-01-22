@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Columns, ChevronDown, Eye, EyeOff } from 'lucide-react';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const ALL_COLUMNS = [
   { key: 'incident_number', label: 'INC #', width: '100px', sortable: true, defaultVisible: true },
@@ -26,7 +27,8 @@ export const getDefaultVisibleColumns = () => {
 
 export const getAllColumns = () => ALL_COLUMNS;
 
-export const ColumnVisibilityPanel = ({ visibleColumns, onToggle, colors }) => {
+export const ColumnVisibilityPanel = ({ visibleColumns, onToggle }) => {
+  const { colors } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef(null);
 

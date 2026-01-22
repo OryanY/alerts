@@ -20,10 +20,12 @@ const SettingsPage = () => {
 
   const [localConfig, setLocalConfig] = useState(config);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [validationError, setValidationError] = useState(null);
 
   useEffect(() => {
     setLocalConfig(config);
     setHasUnsavedChanges(false);
+    setValidationError(null);
   }, [config]);
 
   useEffect(() => {
@@ -32,10 +34,42 @@ const SettingsPage = () => {
     setHasUnsavedChanges(isDifferent);
   }, [localConfig, config]);
 
-  const handleSave = () => updateConfig(localConfig);
+  // Validate config before saving
+  const validateConfig = () => {
+    // Shift validation
+    if (localConfig.dayStart >= localConfig.dayEnd) {
+      return 'שעת תחילת משמרת יום חייבת להיות קטנה משעת סיום';
+    }
+
+    // Night shift: nightStart should be > nightEnd (wraps around midnight)
+    // e.g., 22:00 to 08:00 is valid, but 08:00 to 22:00 is wrong
+    if (localConfig.nightStart <= localConfig.nightEnd) {
+      return 'משמרת לילה חייבת לעבור את חצות - תחילה גדולה מסיום (למשל: 22 עד 8)';
+    }
+
+    // Duration bands validation
+    if (localConfig.bands && localConfig.bands.length >= 2) {
+      if (localConfig.bands[0].max >= localConfig.bands[1].max) {
+        return 'סף התראות קצרות חייב להיות קטן מסף התראות בינוניות';
+      }
+    }
+
+    return null; // No errors
+  };
+
+  const handleSave = () => {
+    const error = validateConfig();
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    setValidationError(null);
+    updateConfig(localConfig);
+  };
 
   const handleReset = () => {
     setLocalConfig(DEFAULT_CLIENT_CFG);
+    setValidationError(null);
     resetConfig();
   };
 
@@ -83,7 +117,12 @@ const SettingsPage = () => {
         <div>
           <h2 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 4px 0' }}>הגדרות ספים ומשמרות</h2>
           <p style={{ margin: 0, fontSize: 13, color: colors.text.tertiary, display: 'flex', alignItems: 'center', gap: 6 }}>
-            {hasUnsavedChanges ? (
+            {validationError ? (
+              <>
+                <Info size={14} style={{ color: colors.semantic.error }} />
+                <span style={{ color: colors.semantic.error, fontWeight: 600 }}>{validationError}</span>
+              </>
+            ) : hasUnsavedChanges ? (
               <>
                 <Info size={14} style={{ color: colors.semantic.warning }} />
                 <span style={{ color: colors.semantic.warning, fontWeight: 600 }}>יש שינויים שלא נשמרו</span>

@@ -30,7 +30,8 @@ class IncidentService {
             this._queryService = new IncidentQueryService(db, {
                 systemMappings: db.collection(mongoConfig.collections.systemMappings),
                 incidentRules: db.collection(mongoConfig.collections.incidentRules),
-                assignmentGroups: db.collection(mongoConfig.collections.assignmentGroups)
+                assignmentGroups: db.collection(mongoConfig.collections.assignmentGroups),
+                incidentLogs: db.collection(mongoConfig.collections.incidentLogs)
             });
         }
         return this._queryService;
@@ -94,11 +95,24 @@ class IncidentService {
 
             console.log(`📋 Found ${rules.length} enabled rules for application: ${application}`);
 
-            // 3. Find best matching rule
-            const matchedRule = this.ruleEngine.findBestMatch(alertData, rules);
+            // 3. Find matching rules and stack them
+            const allMatches = this.ruleEngine.findAllMatches(alertData, rules);
 
-            if (matchedRule) {
-                console.log(`🎯 Matched rule: ${matchedRule.rule_name}`);
+            // Stack overrides: Global (Low Specificity) -> Specific (High Specificity)
+            // findAllMatches returns Highest -> Lowest, so we reverse it to apply Lowest first
+            const matchingRules = allMatches.reverse().map(m => m.rule);
+
+            let finalOverrides = {};
+            matchingRules.forEach(rule => {
+                finalOverrides = {
+                    ...finalOverrides,
+                    ...rule.incident_overrides
+                };
+            });
+
+            if (matchingRules.length > 0) {
+                console.log(`🎯 Matched ${matchingRules.length} rules. Applying stack:`,
+                    matchingRules.map(r => r.rule_name).join(' -> '));
             } else {
                 console.log('ℹ️  No specific rule matched, using base system mapping');
             }
@@ -106,7 +120,7 @@ class IncidentService {
             // 4. Build incident data
             const incidentData = this.transformService.buildIncidentData(
                 systemMapping,
-                matchedRule?.incident_overrides || {},
+                finalOverrides,
                 alertData
             );
 
@@ -115,12 +129,30 @@ class IncidentService {
             // 5. Send to ServiceNow
             const result = await this.serviceNowClient.createIncident(incidentData);
 
+            // Determine the "winner" rule for logging/response (the last one applied)
+            const matchedRule = matchingRules.length > 0 ? matchingRules[matchingRules.length - 1] : null;
+
+            // 6. Log the incident (Async - do not await)
+            this.queryService.logIncident({
+                application,
+                alert_source: alertData,
+                incident_payload: incidentData,
+                servicenow_result: result,
+                process_info: {
+                    mapping_used: systemMapping._id,
+                    mapping_name: systemMapping.service_offering, // or another identifier
+                    applied_rules: matchingRules.map(r => r.rule_name),
+                    rule_stack_snapshot: matchingRules.map(r => ({ name: r.rule_name, id: r._id, overrides: r.incident_overrides }))
+                }
+            }).catch(err => console.error('Failed to log incident:', err));
+
             return {
                 incidentData,  // Include the built incident data in response
                 serviceNowResult: result,
                 mapping_used: systemMapping._id,
                 rule_used: matchedRule?._id || null,
-                rule_name: matchedRule?.rule_name || 'Base Mapping',
+                rule_name: matchingRules.length > 0 ? matchingRules.map(r => r.rule_name).join(' + ') : 'Base Mapping',
+                applied_rules: matchingRules.map(r => r.rule_name),
                 matched_applications: systemMapping.grafana_names
             };
 
@@ -451,36 +483,55 @@ class IncidentService {
                 this.ruleEngine
             );
 
-            // 3. Find all matches
+            // 3. Find all matches and stack them
             const allMatches = this.ruleEngine.findAllMatches(alertData, rules);
-            const winner = allMatches.length > 0 ? allMatches[0] : null;
+
+            // Stack: Global (Low) -> Specific (High)
+            const matchingRules = allMatches.reverse().map(m => m.rule);
+
+            let finalOverrides = {};
+            matchingRules.forEach(rule => {
+                finalOverrides = {
+                    ...finalOverrides,
+                    ...rule.incident_overrides
+                };
+            });
 
             // 4. Build incident data (preview)
             let incidentData = null;
             if (systemMapping) {
                 incidentData = this.transformService.buildIncidentData(
                     systemMapping,
-                    winner?.rule?.incident_overrides || {},
+                    finalOverrides,
                     alertData
                 );
             }
 
             return {
                 system_mapping: systemMapping || null,
-                winner: winner,
-                shadowed_rules: allMatches.slice(1), // All matches except the winner
+                applied_rules: matchingRules.map(r => ({
+                    rule_name: r.rule_name,
+                    incident_overrides: r.incident_overrides,
+                    is_global: r.is_global
+                })),
                 total_rules_checked: rules.length,
                 generated_incident: incidentData,
                 hierarchy_explanation: [
-                    "1. Specific Rules (Highest Priority)",
-                    "2. Global Rules",
-                    "3. System Mapping Defaults (Lowest Priority)"
+                    "1. Specific Rules (Applied Last / High Priority)",
+                    "2. Global Rules (Applied First / Low Priority)",
+                    "3. Base System Mapping (Defaults)"
                 ]
             };
         } catch (error) {
             console.error('❌ Error simulating incident:', error);
             throw error;
         }
+    }
+
+    // ================== HISTORY / LOGS ==================
+
+    async getIncidentHistory(limit, skip, search) {
+        return this.queryService.getIncidentLogs(limit, skip, { search });
     }
 
 }

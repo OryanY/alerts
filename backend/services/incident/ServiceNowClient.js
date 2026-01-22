@@ -64,7 +64,7 @@ class ServiceNowClient {
         }
     }
 
-       async fetchAssignmentGroups() {
+    async fetchAssignmentGroups() {
         if (!this.isEnabled()) {
             throw new Error('ServiceNow integration is not enabled');
         }

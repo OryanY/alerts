@@ -9,6 +9,7 @@ const navigationItems = [
   { path: '/explorer', label: 'Explorer', icon: Eye },
   { path: '/research', label: 'Panel Research', icon: FileText },
   { path: '/incident', label: 'Incident Managment', icon: AlertTriangle },
+  { path: '/history', label: 'History', icon: FileText },
   { path: '/how-to-use', label: 'How to Use', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];

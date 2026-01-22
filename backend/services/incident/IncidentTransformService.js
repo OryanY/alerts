@@ -136,7 +136,8 @@ class IncidentTransformService {
         let result = template;
 
         validFields.forEach(field => {
-            const regex = new RegExp(`\\{\\{${field}\\}\\}`, 'g');
+            // Match {{field}} or {{ field }}
+            const regex = new RegExp(`\\{\\{\\s*${field}\\s*\\}\\}`, 'g');
             result = result.replace(regex, alertData[field] || '');
         });
 
@@ -168,34 +169,55 @@ class IncidentTransformService {
 
         const incidentData = {};
 
-        // 1. Add base required fields
+        // 1. Add base required fields with Template Support (except assignment_group/system_failure)
         baseRequired.forEach(field => {
+            // Priority: Rule Override > System Mapping
             let value = ruleOverrides[field] !== undefined
                 ? ruleOverrides[field]
                 : systemMapping[field];
 
             if (field === 'u_system_failure') {
                 incidentData[field] = this.parseBoolean(value);
-            } else if (!value && field !== 'u_system_failure') {
-                throw new Error(`Required field '${field}' is missing`);
-            } else if (field !== 'u_system_failure') {
+            } else {
+                // Apply template substitution (skip assignment_group and service fields)
+                // They should be static CIs/Definitions
+                const skipTemplates = [
+                    'assignment_group',
+                    'service_offering',
+                    'business_service'
+                ];
+
+                if (value && typeof value === 'string' && !skipTemplates.includes(field)) {
+                    value = this.replaceTemplateVariables(value, alertData);
+                }
+
+                if (!value && field !== 'u_system_failure') {
+                    throw new Error(`Required field '${field}' is missing (or empty after template)`);
+                }
+
                 incidentData[field] = value;
             }
         });
 
-        // 2. Add all custom fields from mapping
+        // 2. Add all custom fields from mapping with Template Support
         Object.entries(systemMapping).forEach(([key, value]) => {
             if (!excludeFields.has(key) &&
                 !baseRequired.includes(key) &&
                 value != null &&
                 String(value).trim() !== '') {
-                incidentData[key] = value;
+
+                // Apply templates to strings
+                let finalValue = value;
+                if (typeof value === 'string') {
+                    finalValue = this.replaceTemplateVariables(value, alertData);
+                }
+                incidentData[key] = finalValue;
             }
         });
 
-        // 3. Apply rule overrides with template replacement
+        // 3. Apply rule overrides with template replacement (Overwrites mapping custom fields)
         Object.entries(ruleOverrides).forEach(([key, value]) => {
-            if (!excludeFields.has(key)) {
+            if (!excludeFields.has(key) && !baseRequired.includes(key)) {
                 if (key === 'u_system_failure') {
                     incidentData[key] = this.parseBoolean(value);
                 } else if (value != null && String(value).trim() !== '') {

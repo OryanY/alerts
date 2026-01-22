@@ -93,33 +93,59 @@ class AlertService {
         return ((current - previous) / previous) * 100;
     }
 
+    // Centralized helper to fetch raw records and apply clustering
+    async _fetchAndCluster(params, fields, forceClustering = null) {
+        const { enabled, threshold } = this._getClusteringConfig(params);
+
+        // Use forced state if provided, otherwise config
+        const shouldCluster = forceClustering !== null ? forceClustering : enabled;
+
+        // If clustering is enabled, we MUST fetch all records (no limit) to cluster correctly.
+        // If clustering is disabled, we can respect the limit if it exists (though usually we fetch all for analytics).
+        let fetchParams = params;
+        if (shouldCluster) {
+            const { limit, ...rest } = params;
+            fetchParams = rest;
+        }
+
+        const rawRecords = await this.queryService.fetchBasicRecords(fetchParams, fields);
+
+        const records = this.analysisService.clusterAlerts(rawRecords, shouldCluster, threshold);
+
+        return { records, clusteringEnabled: shouldCluster };
+    }
+
     // PUBLIC API METHODS
 
     async getAlerts(params) {
         const thresholds = this._getThresholds(params);
+
+        // Note: fetchAlerts is special because QueryService.fetchAlerts does huge query building.
+        // But for consistency with clustering, we should use the basic record fetch + manual clustering strategy
+        // IF clustering is enabled.
+        // However, fetchAlerts (the query) returns full objects, fetchBasicRecords returns partials.
+        // To strictly support full alert objects with clustering, we need fetchAlerts (query) but without limit if clustering is on.
+
+        // Let's defer full refactor of getAlerts for now to avoid breaking the complex query builder 
+        // unless we want to change fetchBasicRecords to fetch *all* columns.
+        // Actually, getAlerts uses `fetchAlerts`, not `fetchBasicRecords`.
+        // So for getAlerts, we keep the specific logic but adopt the pattern:
+
         const { enabled, threshold } = this._getClusteringConfig(params);
 
-        // Fetch raw data
-        const rawRecords = await this.queryService.fetchAlerts(params);
-
-        // Handle pagination if requested
-        let records = rawRecords;
-        let pagination = null;
-
-        if (params.page && params.limit) {
-            const formatted = this.transformService.formatPaginationMeta(
-                rawRecords,
-                params.page,
-                params.limit
-            );
-            records = formatted.records;
-            pagination = formatted.pagination;
+        // Fetch step
+        let fetchParams = params;
+        if (enabled) {
+            const { limit, ...rest } = params;
+            fetchParams = rest;
         }
 
-        // Apply clustering for noise reduction
-        let clusteredRecords = this.analysisService.clusterAlerts(records, enabled, threshold);
+        const rawRecords = await this.queryService.fetchAlerts(fetchParams);
 
-        // Re-apply sort if clustering was enabled (since clustering enforces its own sort)
+        // Clustering step
+        let clusteredRecords = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
+
+        // Sorting
         if (enabled && clusteredRecords.length > 0) {
             const sortBy = params.sort_by || 'time_fired';
             const sortOrder = (params.sort_order || 'DESC').toUpperCase();
@@ -129,11 +155,9 @@ class AlertService {
                 let aVal = a[sortBy];
                 let bVal = b[sortBy];
 
-                // Handle date values
                 if (aVal instanceof Date) aVal = aVal.getTime();
                 if (bVal instanceof Date) bVal = bVal.getTime();
 
-                // Handle string values (case-insensitive)
                 if (typeof aVal === 'string') aVal = aVal.toLowerCase();
                 if (typeof bVal === 'string') bVal = bVal.toLowerCase();
 
@@ -143,6 +167,31 @@ class AlertService {
             });
         }
 
+        // Pagination logic remains here as it's specific to the list view
+        let finalRecords = clusteredRecords;
+        let pagination = null;
+
+        if (params.page && params.limit) {
+            const formatted = this.transformService.formatPaginationMeta(
+                finalRecords, // pass the full list (clustered or raw) to be sliced
+                params.page,
+                params.limit
+            );
+            finalRecords = formatted.records;
+            pagination = formatted.pagination;
+        } else if (params.limit && !enabled) {
+            // If we didn't cluster, and we didn't paginate, but we had a limit, the query might have applied it.
+            // If we DID cluster, we fetched all, so now we must apply limit.
+            if (clusteredRecords.length > params.limit) {
+                finalRecords = clusteredRecords.slice(0, params.limit);
+            }
+        } else if (params.limit && enabled) {
+            if (clusteredRecords.length > params.limit) {
+                finalRecords = clusteredRecords.slice(0, params.limit);
+            }
+        }
+
+
         // Transform to API format
         const transformed = this.transformService.transformAlertRecords(clusteredRecords, thresholds);
 
@@ -151,15 +200,12 @@ class AlertService {
 
     async getExecutiveKPIs(params) {
         const thresholds = this._getThresholds(params);
-        const { enabled, threshold } = this._getClusteringConfig(params);
-
         // Fetch current period data
-        const rawRecords = await this.queryService.fetchBasicRecords(
+        const { records, clusteringEnabled } = await this._fetchAndCluster(
             params,
             'time_fired, duration_sec, application, panel_title'
         );
 
-        const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
         const kpis = this.analysisService.computeKPIs(records, thresholds);
 
         try {
@@ -176,12 +222,13 @@ class AlertService {
             };
 
             // Fetch previous period data
-            const prevRawRecords = await this.queryService.fetchBasicRecords(
+            // Note: force clustering state to match current period
+            const { records: prevRecords } = await this._fetchAndCluster(
                 prevParams,
-                'time_fired, duration_sec, application, panel_title'
+                'time_fired, duration_sec, application, panel_title',
+                clusteringEnabled
             );
 
-            const prevRecords = this.analysisService.clusterAlerts(prevRawRecords, enabled, threshold);
             const prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
 
             // Calculate trends
@@ -321,16 +368,19 @@ class AlertService {
 
     async getPanelList(params) {
         const thresholds = this._getThresholds(params);
-        const { enabled, threshold } = this._getClusteringConfig(params);
+        const { enabled } = this._getClusteringConfig(params);
 
-        let panels;
-
-        if (enabled) {
-            panels = await this._getPanelListWithClustering(params, thresholds, threshold);
-        } else {
-            panels = await this.queryService.fetchPanelList(params, thresholds);
+        if (!enabled) {
+            const panels = await this.queryService.fetchPanelList(params, thresholds);
+            return ResponseFormatter.success(this.transformService.enrichPanelStats(panels));
         }
 
+        const { records: clusteredRecords } = await this._fetchAndCluster(
+            params,
+            'panel_title, application, time_fired, duration_sec'
+        );
+
+        const panels = this._aggregatePanelStats(clusteredRecords, thresholds);
         const enriched = this.transformService.enrichPanelStats(panels);
 
         return ResponseFormatter.success(enriched);
@@ -419,14 +469,12 @@ class AlertService {
 
     async getPanelAnalysis(params) {
         const thresholds = this._getThresholds(params);
-        const { enabled, threshold } = this._getClusteringConfig(params);
 
-        const rawRecords = await this.queryService.fetchBasicRecords(
+        const { records } = await this._fetchAndCluster(
             params,
             'time_fired, time_resolved, duration_sec, operator, message, application, panel_title'
         );
 
-        const records = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
         const analysis = this.analysisService.computePanelAnalysis(records, thresholds);
 
         return ResponseFormatter.success(analysis);
@@ -454,24 +502,17 @@ class AlertService {
     }
 
     async getTopApplications(params) {
-        const { enabled, threshold } = this._getClusteringConfig(params);
+        const { enabled } = this._getClusteringConfig(params);
 
         if (!enabled) {
             const apps = await this.queryService.fetchTopApplicationsPerPanel(params);
             return ResponseFormatter.success(apps);
         }
 
-        return this._getTopApplicationsWithClustering(params, threshold);
-    }
-
-    // Helper method for top applications with clustering
-    async _getTopApplicationsWithClustering(params, clusterThreshold) {
-        const rawRecords = await this.queryService.fetchBasicRecords(
+        const { records } = await this._fetchAndCluster(
             params,
             'application, time_fired, duration_sec'
         );
-
-        const records = this.analysisService.clusterAlerts(rawRecords, true, clusterThreshold);
 
         const appMap = new Map();
         for (const record of records) {
@@ -488,24 +529,17 @@ class AlertService {
     }
 
     async getTopNodesByApp(params) {
-        const { enabled, threshold } = this._getClusteringConfig(params);
+        const { enabled } = this._getClusteringConfig(params);
 
         if (!enabled) {
             const nodes = await this.queryService.fetchTopNodesPerApplication(params);
             return ResponseFormatter.success(nodes);
         }
 
-        return this._getTopNodesByAppWithClustering(params, threshold);
-    }
-
-    // Helper method for top nodes with clustering
-    async _getTopNodesByAppWithClustering(params, clusterThreshold) {
-        const rawRecords = await this.queryService.fetchBasicRecords(
+        const { records } = await this._fetchAndCluster(
             params,
             'node_name, application, time_fired, duration_sec'
         );
-
-        const records = this.analysisService.clusterAlerts(rawRecords, true, clusterThreshold);
 
         const nodeMap = new Map();
         for (const record of records) {

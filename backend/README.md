@@ -1,69 +1,104 @@
-# Alerts Analytics Backend
+# Alert Management Backend
 
-This is the backend service for the Alerts Analytics Dashboard. It provides APIs for retrieving, filtering, and analyzing alert data from the SQL Server database.
+A production-ready Node.js/Express backend for managing Grafana alerts and creating ServiceNow incidents.
 
-## 📂 Directory Structure
+## 🚀 Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your values
+# ...
+
+# Start development server
+npm run dev
+
+# Start production server
+npm start
+```
+
+## 📁 Project Structure
 
 ```
 backend/
-├── config/             # Configuration files (DB, limits, etc.)
-├── database/           # Database connection and pool management
-├── middleware/         # Express Middleware (Auth, Error Handling, Route Factory)
-├── routes/             # API Routes (Express routers)
-├── services/           # Business Logic Layer
-│   ├── alert/          # Alert-specific services (Core Logic)
-│   └── incident/       # Incident-specific services
-├── utils/              # Shared utilities (Formatting, SQL Builders, Time)
-└── server.js           # Entry point
+├── controllers/          # HTTP request handlers
+│   ├── AlertController.js
+│   ├── IncidentController.js
+│   └── StatsController.js
+├── routes/               # Route definitions (path mapping only)
+│   ├── alertRoutes.js
+│   ├── incidentRoutes.js
+│   ├── statsRoutes.js
+│   └── healthRoutes.js
+├── services/             # Business logic
+│   ├── alert/
+│   │   └── AlertService.js
+│   └── incident/
+│       ├── IncidentService.js
+│       ├── IncidentQueryService.js
+│       ├── ServiceNowClient.js
+│       └── ...
+├── middleware/           # Express middleware
+│   ├── errorHandler.js
+│   ├── validation.js
+│   └── requestId.js
+├── utils/                # Utilities
+│   ├── constants.js      # Centralized constants
+│   ├── errors.js         # Custom error classes
+│   ├── response.js       # API response helpers
+│   └── validateEnv.js    # Environment validation
+├── config/               # Configuration
+├── database/             # Database connections
+├── schemas/              # Joi validation schemas
+└── server.js             # Application entry point
 ```
 
-## 🚀 Getting Started
+## 🔑 Environment Variables
 
-### Prerequisites
-- Node.js (v14+)
-- SQL Server Instance
-- Properly configured `.env` file (see below)
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SQL_SERVER` | ✅ | SQL Server hostname |
+| `SQL_DATABASE` | ✅ | Database name |
+| `SQL_USER` | ✅ | Database username |
+| `SQL_PASSWORD` | ✅ | Database password |
+| `MONGO_URI` | ✅ | MongoDB connection string |
+| `SERVICENOW_URL` | ⚠️ | ServiceNow instance URL |
+| `SERVICENOW_USERNAME` | ⚠️ | ServiceNow API username |
+| `SERVICENOW_PASSWORD` | ⚠️ | ServiceNow API password |
 
-### Installation
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+## 📡 API Endpoints
 
-### Running the Server
-- **Development Mode** (with Nodemon):
-  ```bash
-  npm run dev
-  ```
-- **Production Mode**:
-  ```bash
-  npm start
-  ```
-- **Port**: Defaults to `5000`
+### Health Checks
+- `GET /api/health` - Basic health check
+- `GET /api/health/ready` - Readiness check (DB connections)
+- `GET /api/health/live` - Liveness check (process info)
 
-## 🛠 Key Services
+### Alerts
+- `GET /api/alerts` - List alerts with filtering
 
-### Alert Service (`services/alert/`)
-The core logic is refactored into specialized services for better maintainability:
+### Statistics
+- `GET /api/stats/executive-kpis` - Executive KPIs
+- `GET /api/stats/overview` - Overview statistics
+- `GET /api/stats/*` - Various statistics endpoints
 
-- **`AlertService.js`**: The orchestrator. It handles client requests, parameter grouping, and coordinates between data fetching and analysis. It is the main entry point for the controller.
-- **`AlertQueryService.js`**: Pure Data Access Layer. Responsible **only** for executing SQL queries. It contains no business logic.
-- **`AlertAnalysisService.js`**: Pure Business Logic. Responsible for "Smart Clustering", KPI calculation, and trend analysis in memory.
-- **`AlertTransformService.js`**: formats data for the frontend (API response shaping).
+### Incidents
+- `GET /api/incidents/incident` - Create incident (GET for webhooks)
+- `POST /api/incidents/incident` - Create incident
+- `POST /api/incidents/incident/simulate` - Simulate without creating
+- `GET /api/incidents/incident-logs` - Incident history
 
-## 📊 API Endpoints
+### Configuration
+- `GET /api/incidents/system-mappings` - CRUD for system mappings
+- `GET /api/incidents/incident-rules` - CRUD for incident rules
 
-The API is exposed via `server.js` and defined in `routes/`.
-Key prefixes:
-- `/api/alerts` - Raw alert search and retrieval
-- `/api/stats` - Statistical analysis, KPIs, and graphs
-- `/api/incidents` - Incident management (ServiceNow integration)
+## 📝 Architecture Principles
 
-## 🗄 Database
-
-The application connects to a MSSQL database defined in `config/db.js`.
-The primary table queried is `dbo.historicalAlerts`.
+1. **Controller-Service Pattern**: Routes delegate to controllers, controllers orchestrate services
+2. **Dependency Injection**: Services receive dependencies via constructors
+3. **Custom Errors**: Use `NotFoundError`, `ValidationError`, etc. from `utils/errors.js`
+4. **Consistent Responses**: Use helpers from `utils/response.js`
+5. **No Magic Strings**: Use constants from `utils/constants.js`

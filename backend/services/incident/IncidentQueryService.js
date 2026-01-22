@@ -11,6 +11,14 @@ class IncidentQueryService {
         this.systemMappingsCollection = collections.systemMappings;
         this.incidentRulesCollection = collections.incidentRules;
         this.assignmentGroupsCollection = collections.assignmentGroups;
+        this.incidentLogsCollection = collections.incidentLogs;
+
+        // Ensure TTL index for logs (90 days = 7776000 seconds)
+        // Background creation to avoid blocking
+        this.incidentLogsCollection.createIndex(
+            { created_at: 1 },
+            { expireAfterSeconds: 7776000, background: true }
+        ).catch(err => console.warn('Failed to create TTL index:', err.message));
     }
 
     async getAssignmentGroups() {
@@ -379,6 +387,53 @@ class IncidentQueryService {
         } catch (error) {
             console.error('❌ Error counting rules:', error);
             return 0;
+        }
+    }
+
+    // ================== INCIDENT LOGS ==================
+
+    /**
+     * Create an incident log entry
+     */
+    async logIncident(logData) {
+        try {
+            const result = await this.incidentLogsCollection.insertOne({
+                ...logData,
+                created_at: new Date()
+            });
+            return result;
+        } catch (error) {
+            console.error('❌ Error logging incident:', error);
+            // Don't throw, logging failure shouldn't stop the flow
+            return null;
+        }
+    }
+
+    /**
+     * Get incident logs with pagination and filtering
+     */
+    async getIncidentLogs(limit = 50, skip = 0, filter = {}) {
+        try {
+            const query = {};
+            if (filter.search) {
+                query.$or = [
+                    { 'application': { $regex: filter.search, $options: 'i' } },
+                    { 'servicenow_result.incident_number': { $regex: filter.search, $options: 'i' } }
+                ];
+            }
+
+            const total = await this.incidentLogsCollection.countDocuments(query);
+            const logs = await this.incidentLogsCollection
+                .find(query)
+                .sort({ created_at: -1 })
+                .skip(skip)
+                .limit(limit)
+                .toArray();
+
+            return { logs, total };
+        } catch (error) {
+            console.error('❌ Error fetching incident logs:', error);
+            throw new Error('Failed to fetch incident logs');
         }
     }
 }

@@ -5,10 +5,12 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
+const swaggerUi = require('swagger-ui-express');
 const { DateTime } = require('luxon');
 
 // Import configuration and database connections
 const { CONFIG } = require('./config');
+const { swaggerSpec } = require('./config/swagger');
 const { initializeSqlDatabase, initializeMongoDatabase, closeConnections } = require('./database/connection');
 
 // Import route modules
@@ -19,8 +21,14 @@ const incidentRoutes = require('./routes/incidentRoutes');
 // Import middleware
 const { errorMiddleware, setupGlobalErrorHandlers } = require('./middleware/errorHandler');
 
+// Import utilities
+const { validateEnvironment } = require('./utils/validateEnv');
+
 // Setup global handlers
 setupGlobalErrorHandlers();
+
+// Validate environment variables
+validateEnvironment();
 
 // App setup
 const app = express();
@@ -93,39 +101,26 @@ app.get('/api/config', (req, res) => {
   }
 });
 
+// Health check endpoint (simple, inline)
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    status: 'healthy',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // API Routes
 app.use('/api/alerts', alertRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/incidents', incidentRoutes);
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      message: 'Alert Management API',
-      version: '4.0.0-modular-with-incidents',
-      endpoints: {
-        config: '/api/config',
-        alerts: '/api/alerts',
-        statistics: '/api/stats/*',
-        incidents: '/api/incidents/*'
-      },
-      documentation: {
-        alerts: 'GET /api/alerts - List alerts with filtering',
-        recent: 'GET /api/stats/recent-alerts - Recent alerts',
-        kpis: 'GET /api/stats/executive-kpis - Executive KPIs',
-        incident_creation: 'GET /api/incidents/alert - Create incident from alert',
-        system_mappings: 'GET /api/incidents/system-mappings - Manage system mappings',
-        incident_rules: 'GET /api/incidents/incident-rules - Manage incident rules'
-      }
-    },
-    meta: {
-      timezone: CONFIG?.tz?.IANA || 'Asia/Jerusalem',
-      timestamp: new Date().toISOString()
-    }
-  });
-});
+// Swagger UI at root
+app.use('/', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Alert Management API'
+}));
 
 // ================== ERROR HANDLING ==================
 

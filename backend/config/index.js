@@ -71,22 +71,14 @@ const dbConfig = {
 // MongoDB Configuration
 const mongoConfig = {
   uri: process.env.MONGO_URI || `mongodb://${encode(process.env.MONGO_USER || 'grafana2sn')}:${encode(process.env.MONGO_PASSWORD || 'YOUR_STRONG_PASSWORD')}@${process.env.MONGO_HOST || 'localhost'}:${process.env.MONGO_PORT || '27017'}/${process.env.MONGO_DB || 'grafana_snow_dev'}?authSource=${process.env.MONGO_AUTH_DB || process.env.MONGO_DB || 'grafana_snow_dev'}`,
-  database: process.env.MONGO_DB || 'grafana2sn',
+  database: process.env.MONGO_DB || 'grafana_snow_dev',
   collections: {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',
-    assignmentGroups: 'assignment_groups'
+    assignmentGroups: 'assignment_groups',
+    incidentLogs: 'incident_logs'
   }
 };
-
-// Validate shift configuration
-if (CONFIG.shifts.dayStart >= CONFIG.shifts.dayEnd) {
-  throw new Error('DAY_START must be less than DAY_END');
-}
-
-if (CONFIG.duration.short >= CONFIG.duration.medium) {
-  throw new Error('DUR_SHORT_MAX must be less than DUR_MEDIUM_MAX');
-}
 
 module.exports = {
   CONFIG,

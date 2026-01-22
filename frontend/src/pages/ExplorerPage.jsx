@@ -42,7 +42,7 @@ const ExplorerPage = () => {
   useEffect(() => {
     // Check if filters actually changed (not just a re-render)
     const filtersChanged = JSON.stringify(previousFiltersRef.current) !== JSON.stringify(filtersNoPage);
-    
+
     if (!filtersChanged) {
       return; // Don't debounce if filters didn't actually change
     }
@@ -222,7 +222,7 @@ const ExplorerPage = () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
-      
+
       saveTimeoutRef.current = setTimeout(() => {
         try {
           window.localStorage.setItem(
@@ -444,7 +444,6 @@ const ExplorerPage = () => {
             <ColumnVisibilityPanel
               visibleColumns={visibleColumns}
               onToggle={handleToggleColumn}
-              colors={colors}
             />
 
             <button
