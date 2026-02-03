@@ -52,6 +52,7 @@ const encode = encodeURIComponent;
 // SQL Server Configuration
 const dbConfig = {
   server: process.env.SQL_SERVER || 'localhost',
+  port: parseInt(process.env.SQL_PORT, 10) || 1433,
   database: process.env.SQL_DATABASE || 'your_database_name',
   user: process.env.SQL_USER || 'your_user',
   password: process.env.SQL_PASSWORD || 'your_password',

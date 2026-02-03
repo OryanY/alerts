@@ -32,6 +32,7 @@ async function initializeSqlDatabase() {
 async function initializeMongoDatabase() {
   try {
     mongoClient = new MongoClient(mongoConfig.uri);
+    console.log(mongoConfig.uri);
     await mongoClient.connect();
     mongoDb = mongoClient.db(mongoConfig.database);
 

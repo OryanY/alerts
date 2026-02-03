@@ -178,6 +178,38 @@ const NocDashboard = () => {
                     Clear
                   </button>
                 )}
+
+                {/* Clustering Status Badge */}
+                <a
+                  href="/settings"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    borderRadius: 16,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                    background: config.clusteringEnabled
+                      ? colors.semantic.successBg
+                      : colors.bg.tertiary,
+                    color: config.clusteringEnabled
+                      ? colors.semantic.success
+                      : colors.text.secondary,
+                    border: `1px solid ${config.clusteringEnabled
+                      ? colors.semantic.success
+                      : colors.border.secondary}`,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  title={config.clusteringEnabled
+                    ? "Alerts are grouped by source and time - Click to change in Settings"
+                    : "Showing all individual alerts - Click to enable grouping in Settings"}
+                >
+                  {config.clusteringEnabled ? '🔗' : '📋'}
+                  {config.clusteringEnabled ? 'Grouped' : 'All Alerts'}
+                </a>
               </div>
             }
           />

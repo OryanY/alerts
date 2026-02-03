@@ -9,17 +9,13 @@ class StatsController {
 
         // Bind all methods
         this.getExecutiveKPIs = this.getExecutiveKPIs.bind(this);
-        this.getOverviewStats = this.getOverviewStats.bind(this);
         this.getHourlyHeatmap = this.getHourlyHeatmap.bind(this);
-        this.getHourlyStats = this.getHourlyStats.bind(this);
         this.getTimeseriesStats = this.getTimeseriesStats.bind(this);
         this.getDurationHistogram = this.getDurationHistogram.bind(this);
         this.getShiftAnalysis = this.getShiftAnalysis.bind(this);
         this.getPanelStats = this.getPanelStats.bind(this);
         this.getPanelList = this.getPanelList.bind(this);
         this.getPanelAnalysis = this.getPanelAnalysis.bind(this);
-        this.getAlertMessageBreakdown = this.getAlertMessageBreakdown.bind(this);
-        this.getTopNoisyNodes = this.getTopNoisyNodes.bind(this);
         this.getTopApplications = this.getTopApplications.bind(this);
         this.getTopNodesByApp = this.getTopNodesByApp.bind(this);
         this.getConsecutiveDaysNodes = this.getConsecutiveDaysNodes.bind(this);
@@ -32,23 +28,9 @@ class StatsController {
         } catch (error) { next(error); }
     }
 
-    async getOverviewStats(req, res, next) {
-        try {
-            const result = await this.alertService.getOverviewStats(req.validatedQuery || req.query);
-            res.json({ success: true, data: result.data, meta: result.meta });
-        } catch (error) { next(error); }
-    }
-
     async getHourlyHeatmap(req, res, next) {
         try {
             const result = await this.alertService.getHourlyHeatmap(req.validatedQuery || req.query);
-            res.json({ success: true, data: result.data, meta: result.meta });
-        } catch (error) { next(error); }
-    }
-
-    async getHourlyStats(req, res, next) {
-        try {
-            const result = await this.alertService.getHourlyStats(req.validatedQuery || req.query);
             res.json({ success: true, data: result.data, meta: result.meta });
         } catch (error) { next(error); }
     }
@@ -91,20 +73,6 @@ class StatsController {
     async getPanelAnalysis(req, res, next) {
         try {
             const result = await this.alertService.getPanelAnalysis(req.validatedQuery || req.query);
-            res.json({ success: true, data: result.data, meta: result.meta });
-        } catch (error) { next(error); }
-    }
-
-    async getAlertMessageBreakdown(req, res, next) {
-        try {
-            const result = await this.alertService.getAlertMessageBreakdown(req.validatedQuery || req.query);
-            res.json({ success: true, data: result.data, meta: result.meta });
-        } catch (error) { next(error); }
-    }
-
-    async getTopNoisyNodes(req, res, next) {
-        try {
-            const result = await this.alertService.getTopNoisyNodes(req.validatedQuery || req.query);
             res.json({ success: true, data: result.data, meta: result.meta });
         } catch (error) { next(error); }
     }

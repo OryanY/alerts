@@ -368,7 +368,7 @@ const MappingForm = ({
                                 <option value="">Select Group...</option>
                                 {assignmentGroups.map((g) => (
                                     <option key={g.id} value={g.id}>
-                                        {g.name}
+                                        {g.label}
                                     </option>
                                 ))}
                             </select>

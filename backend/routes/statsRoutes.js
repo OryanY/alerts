@@ -2,7 +2,6 @@
 const express = require('express');
 const {
   statsSchema,
-  statsSchemaRequiredPanel,
   panelStatsSchema,
   timeseriesSchema,
   panelResearchSchema
@@ -19,11 +18,9 @@ const controller = new StatsController(alertService);
 
 // ================== EXECUTIVE/SUMMARY STATS ==================
 router.get('/executive-kpis', validateQuery(statsSchema), controller.getExecutiveKPIs);
-router.get('/overview', validateQuery(statsSchema), controller.getOverviewStats);
 
 // ================== TEMPORAL ANALYSIS ==================
 router.get('/hourly-heatmap', validateQuery(statsSchema), controller.getHourlyHeatmap);
-router.get('/hourly', validateQuery(statsSchema), controller.getHourlyStats);
 router.get('/timeseries', validateQuery(timeseriesSchema), controller.getTimeseriesStats);
 
 // ================== CATEGORICAL ANALYSIS ==================
@@ -34,8 +31,6 @@ router.get('/shift-analysis', validateQuery(statsSchema), controller.getShiftAna
 router.get('/by-panel', validateQuery(panelStatsSchema), controller.getPanelStats);
 router.get('/panels', validateQuery(panelResearchSchema), controller.getPanelList);
 router.get('/panel-analysis', validateQuery(panelResearchSchema), controller.getPanelAnalysis);
-router.get('/panel-messages', validateQuery(statsSchemaRequiredPanel), controller.getAlertMessageBreakdown);
-router.get('/top-nodes', validateQuery(statsSchema), controller.getTopNoisyNodes);
 router.get('/top-applications', validateQuery(statsSchema), controller.getTopApplications);
 router.get('/top-nodes-by-app', validateQuery(statsSchema), controller.getTopNodesByApp);
 router.get('/consecutive-days', validateQuery(statsSchema), controller.getConsecutiveDaysNodes);

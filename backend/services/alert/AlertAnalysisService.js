@@ -282,6 +282,105 @@ class AlertAnalysisService {
   }
 
   /**
+   * Compute hourly heatmap from clustered records
+   * Matches SQL output: returns all 24 hours with { hour, count, avg_duration }
+   */
+  computeHourlyHeatmap(records, thresholds) {
+    // Initialize all 24 hours with zero counts
+    const hourlyData = {};
+    for (let h = 0; h < 24; h++) {
+      hourlyData[h] = { count: 0, totalDuration: 0 };
+    }
+
+    // Aggregate data by hour
+    if (records && records.length > 0) {
+      for (const record of records) {
+        const date = record.time_fired instanceof Date ? record.time_fired : new Date(record.time_fired);
+        const hour = date.getHours();
+        const duration = record.duration_sec || 0;
+
+        hourlyData[hour].count++;
+        hourlyData[hour].totalDuration += duration;
+      }
+    }
+
+    // Convert to array format matching SQL output
+    return Object.entries(hourlyData)
+      .map(([hour, data]) => ({
+        hour: parseInt(hour, 10),
+        count: data.count,
+        avg_duration: data.count > 0 ? data.totalDuration / data.count : 0
+      }))
+      .sort((a, b) => a.hour - b.hour);
+  }
+
+  /**
+   * Compute shift analysis from clustered records
+   * Matches SQL output: Day (6:00-22:00) vs Night (22:00-6:00)
+   * Returns: shift, alert_count, true_alerts, false_wakeups, false_wakeup_rate
+   */
+  computeShiftAnalysis(records, thresholds) {
+    if (!records || records.length === 0) {
+      return [
+        { shift: 'Day', alert_count: 0, true_alerts: 0, false_wakeups: 0, false_wakeup_rate: 0 },
+        { shift: 'Night', alert_count: 0, true_alerts: 0, false_wakeups: 0, false_wakeup_rate: 0 }
+      ];
+    }
+
+    const shifts = {
+      Day: { count: 0, falseWakeups: 0, trueAlerts: 0, durations: [] },
+      Night: { count: 0, falseWakeups: 0, trueAlerts: 0, durations: [] }
+    };
+
+    const falseThreshold = thresholds.false_wakeup_threshold || 120;
+    // Default day hours: 6-22 (matching SQL's @day_start=6, @day_end=22)
+    const dayStart = 6;
+    const dayEnd = 22;
+
+    for (const record of records) {
+      const date = record.time_fired instanceof Date ? record.time_fired : new Date(record.time_fired);
+      const hour = date.getHours();
+
+      const shift = (hour >= dayStart && hour < dayEnd) ? 'Day' : 'Night';
+      const duration = record.duration_sec || 0;
+
+      shifts[shift].count++;
+      shifts[shift].durations.push(duration);
+
+      if (duration <= falseThreshold) {
+        shifts[shift].falseWakeups++;
+      } else {
+        shifts[shift].trueAlerts++;
+      }
+    }
+
+    return [
+      {
+        shift: 'Day',
+        alert_count: shifts.Day.count,
+        true_alerts: shifts.Day.trueAlerts,
+        false_wakeups: shifts.Day.falseWakeups,
+        avg_duration: this._calculateAverage(
+          shifts.Day.durations.reduce((a, b) => a + b, 0),
+          shifts.Day.count
+        ),
+        false_wakeup_rate: this._calculatePercentage(shifts.Day.falseWakeups, shifts.Day.count)
+      },
+      {
+        shift: 'Night',
+        alert_count: shifts.Night.count,
+        true_alerts: shifts.Night.trueAlerts,
+        false_wakeups: shifts.Night.falseWakeups,
+        avg_duration: this._calculateAverage(
+          shifts.Night.durations.reduce((a, b) => a + b, 0),
+          shifts.Night.count
+        ),
+        false_wakeup_rate: this._calculatePercentage(shifts.Night.falseWakeups, shifts.Night.count)
+      }
+    ];
+  }
+
+  /**
    * Compute detailed panel analysis
    */
   computePanelAnalysis(records, thresholds) {

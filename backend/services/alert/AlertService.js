@@ -9,17 +9,16 @@ const { ResponseFormatter } = require('../../utils/ResponseFormatter');
 const { CONFIG } = require('../../config');
 
 class AlertService {
+
+    // Core Dependencies
     constructor(sqlPool = null) {
         this.pool = sqlPool;
         this.constants = this._initializeConstants();
-
-        // Lazy-loaded services
         this._queryService = null;
         this._analysisService = null;
         this._transformService = null;
     }
 
-    // Initialize frozen constants to prevent mutation
     _initializeConstants() {
         return Object.freeze({
             DEFAULT_CAP: CONFIG.limits?.defaultCap || 100000,
@@ -35,36 +34,27 @@ class AlertService {
         });
     }
 
-    // Lazy getters for dependency injection
     getPool() {
-        if (!this.pool) {
-            this.pool = getSqlPool();
-        }
+        if (!this.pool) this.pool = getSqlPool();
         return this.pool;
     }
 
     get queryService() {
-        if (!this._queryService) {
-            this._queryService = new AlertQueryService(this.getPool(), this.constants);
-        }
+        if (!this._queryService) this._queryService = new AlertQueryService(this.getPool(), this.constants);
         return this._queryService;
     }
 
     get analysisService() {
-        if (!this._analysisService) {
-            this._analysisService = new AlertAnalysisService();
-        }
+        if (!this._analysisService) this._analysisService = new AlertAnalysisService();
         return this._analysisService;
     }
 
     get transformService() {
-        if (!this._transformService) {
-            this._transformService = new AlertTransformService();
-        }
+        if (!this._transformService) this._transformService = new AlertTransformService();
         return this._transformService;
     }
 
-    // Extract threshold configuration from params with defaults
+    // Config helpers
     _getThresholds(params = {}) {
         return {
             day_start: params.day_start ?? this.constants.DAY_START,
@@ -77,7 +67,6 @@ class AlertService {
         };
     }
 
-    // Extract clustering configuration from params
     _getClusteringConfig(params = {}) {
         return {
             enabled: params.clustering_enabled !== 'false' && params.clustering_enabled !== false,
@@ -85,23 +74,14 @@ class AlertService {
         };
     }
 
-    // Calculate percentage change between current and previous values
-    _calculateTrend(current, previous) {
-        if (!previous || previous === 0) {
-            return current > 0 ? 100 : 0;
-        }
-        return ((current - previous) / previous) * 100;
-    }
-
-    // Centralized helper to fetch raw records and apply clustering
+    /**
+     * Helper to fetch raw records and apply clustering.
+     * Handles the logic of fetching all records if clustering is enabled.
+     */
     async _fetchAndCluster(params, fields, forceClustering = null) {
         const { enabled, threshold } = this._getClusteringConfig(params);
-
-        // Use forced state if provided, otherwise config
         const shouldCluster = forceClustering !== null ? forceClustering : enabled;
 
-        // If clustering is enabled, we MUST fetch all records (no limit) to cluster correctly.
-        // If clustering is disabled, we can respect the limit if it exists (though usually we fetch all for analytics).
         let fetchParams = params;
         if (shouldCluster) {
             const { limit, ...rest } = params;
@@ -109,31 +89,138 @@ class AlertService {
         }
 
         const rawRecords = await this.queryService.fetchBasicRecords(fetchParams, fields);
-
         const records = this.analysisService.clusterAlerts(rawRecords, shouldCluster, threshold);
 
         return { records, clusteringEnabled: shouldCluster };
     }
 
-    // PUBLIC API METHODS
+    // Analytics Methods
+    async getExecutiveKPIs(params) {
+        const thresholds = this._getThresholds(params);
+        const { records, clusteringEnabled } = await this._fetchAndCluster(
+            params,
+            'time_fired, duration_sec, application, panel_title'
+        );
 
+        const kpis = this.analysisService.computeKPIs(records, thresholds);
+
+        try {
+            const { prevStartDate, prevEndDate } = this._calculatePreviousPeriod(params.start_date, params.end_date);
+            const prevParams = { ...params, start_date: prevStartDate.toISOString(), end_date: prevEndDate.toISOString() };
+
+            const { records: prevRecords } = await this._fetchAndCluster(
+                prevParams,
+                'time_fired, duration_sec, application, panel_title',
+                clusteringEnabled
+            );
+
+            const prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
+
+            return ResponseFormatter.success({
+                ...kpis,
+                noise_trend_pct: parseFloat(this._calculateTrend(kpis.false_positive_rate_247, prevKpis.false_positive_rate_247).toFixed(1)),
+                total_trend_pct: parseFloat(this._calculateTrend(kpis.total_alerts, prevKpis.total_alerts).toFixed(1))
+            });
+        } catch (error) {
+            console.error('Trend calculation failed:', error.message);
+            return ResponseFormatter.success({ ...kpis, noise_trend_pct: 0, total_trend_pct: 0 });
+        }
+    }
+
+    async getTimeseriesStats(params) {
+        const thresholds = this._getThresholds(params);
+        const { enabled } = this._getClusteringConfig(params);
+
+        if (!enabled) {
+            const records = await this.queryService.fetchBasicRecords(params, 'time_fired, duration_sec');
+            return ResponseFormatter.success(this.analysisService.computeTimeseries(records, thresholds));
+        }
+
+        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
+        return ResponseFormatter.success(this.analysisService.computeTimeseries(records, thresholds));
+    }
+
+    // Deep Analysis
+    async getDurationHistogram(params) {
+        const thresholds = this._getThresholds(params);
+        const { enabled } = this._getClusteringConfig(params);
+
+        if (!enabled) {
+            const sqlResult = await this.queryService.fetchDurationHistogram(params, thresholds);
+            const histogram = [
+                { range: `≤${thresholds.dur_short_max}s`, category: 'Short', count: sqlResult.short_count || 0 },
+                { range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`, category: 'Medium', count: sqlResult.medium_count || 0 },
+                { range: `>${thresholds.dur_medium_max}s`, category: 'Long', count: sqlResult.long_count || 0 }
+            ];
+            const total = histogram.reduce((sum, bucket) => sum + bucket.count, 0);
+            return ResponseFormatter.success(this.transformService.formatDurationHistogram(histogram, total));
+        }
+
+        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
+        let shortCount = 0, mediumCount = 0, longCount = 0;
+
+        for (const record of records) {
+            const dur = record.duration_sec || 0;
+            if (dur <= thresholds.dur_short_max) shortCount++;
+            else if (dur <= thresholds.dur_medium_max) mediumCount++;
+            else longCount++;
+        }
+
+        const histogram = [
+            { range: `≤${thresholds.dur_short_max}s`, category: 'Short', count: shortCount },
+            { range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`, category: 'Medium', count: mediumCount },
+            { range: `>${thresholds.dur_medium_max}s`, category: 'Long', count: longCount }
+        ];
+
+        const total = shortCount + mediumCount + longCount;
+        return ResponseFormatter.success(this.transformService.formatDurationHistogram(histogram, total));
+    }
+
+    async getHourlyHeatmap(params) {
+        const thresholds = this._getThresholds(params);
+        const { enabled } = this._getClusteringConfig(params);
+
+        if (!enabled) {
+            const heatmap = await this.queryService.fetchHourlyHeatmap(params);
+            return ResponseFormatter.success(this.transformService.formatHourlyHeatmap(heatmap, thresholds));
+        }
+
+        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
+        const heatmap = this.analysisService.computeHourlyHeatmap(records, thresholds);
+        return ResponseFormatter.success(this.transformService.formatHourlyHeatmap(heatmap, thresholds));
+    }
+
+    async getShiftAnalysis(params) {
+        const thresholds = this._getThresholds(params);
+        const { enabled } = this._getClusteringConfig(params);
+
+        if (!enabled) {
+            const analysis = await this.queryService.fetchShiftAnalysis(params, thresholds);
+            const enriched = analysis.map(shift => ({
+                ...shift,
+                false_wakeup_rate: shift.alert_count > 0 ? parseFloat(((shift.false_wakeups * 100) / shift.alert_count).toFixed(1)) : 0
+            }));
+            return ResponseFormatter.success(enriched);
+        }
+
+        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
+        return ResponseFormatter.success(this.analysisService.computeShiftAnalysis(records, thresholds));
+    }
+
+    async getPanelAnalysis(params) {
+        const thresholds = this._getThresholds(params);
+        const { records } = await this._fetchAndCluster(
+            params,
+            'time_fired, time_resolved, duration_sec, operator, message, application, panel_title'
+        );
+        return ResponseFormatter.success(this.analysisService.computePanelAnalysis(records, thresholds));
+    }
+
+    // List & Rankings
     async getAlerts(params) {
         const thresholds = this._getThresholds(params);
-
-        // Note: fetchAlerts is special because QueryService.fetchAlerts does huge query building.
-        // But for consistency with clustering, we should use the basic record fetch + manual clustering strategy
-        // IF clustering is enabled.
-        // However, fetchAlerts (the query) returns full objects, fetchBasicRecords returns partials.
-        // To strictly support full alert objects with clustering, we need fetchAlerts (query) but without limit if clustering is on.
-
-        // Let's defer full refactor of getAlerts for now to avoid breaking the complex query builder 
-        // unless we want to change fetchBasicRecords to fetch *all* columns.
-        // Actually, getAlerts uses `fetchAlerts`, not `fetchBasicRecords`.
-        // So for getAlerts, we keep the specific logic but adopt the pattern:
-
         const { enabled, threshold } = this._getClusteringConfig(params);
 
-        // Fetch step
         let fetchParams = params;
         if (enabled) {
             const { limit, ...rest } = params;
@@ -141,23 +228,17 @@ class AlertService {
         }
 
         const rawRecords = await this.queryService.fetchAlerts(fetchParams);
-
-        // Clustering step
         let clusteredRecords = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
 
-        // Sorting
         if (enabled && clusteredRecords.length > 0) {
             const sortBy = params.sort_by || 'time_fired';
             const sortOrder = (params.sort_order || 'DESC').toUpperCase();
             const dir = sortOrder === 'ASC' ? 1 : -1;
 
             clusteredRecords.sort((a, b) => {
-                let aVal = a[sortBy];
-                let bVal = b[sortBy];
-
+                let aVal = a[sortBy], bVal = b[sortBy];
                 if (aVal instanceof Date) aVal = aVal.getTime();
                 if (bVal instanceof Date) bVal = bVal.getTime();
-
                 if (typeof aVal === 'string') aVal = aVal.toLowerCase();
                 if (typeof bVal === 'string') bVal = bVal.toLowerCase();
 
@@ -167,203 +248,21 @@ class AlertService {
             });
         }
 
-        // Pagination logic remains here as it's specific to the list view
         let finalRecords = clusteredRecords;
         let pagination = null;
 
         if (params.page && params.limit) {
-            const formatted = this.transformService.formatPaginationMeta(
-                finalRecords, // pass the full list (clustered or raw) to be sliced
-                params.page,
-                params.limit
-            );
+            const formatted = this.transformService.formatPaginationMeta(finalRecords, params.page, params.limit);
             finalRecords = formatted.records;
             pagination = formatted.pagination;
-        } else if (params.limit && !enabled) {
-            // If we didn't cluster, and we didn't paginate, but we had a limit, the query might have applied it.
-            // If we DID cluster, we fetched all, so now we must apply limit.
-            if (clusteredRecords.length > params.limit) {
-                finalRecords = clusteredRecords.slice(0, params.limit);
-            }
-        } else if (params.limit && enabled) {
+        } else if (params.limit) {
             if (clusteredRecords.length > params.limit) {
                 finalRecords = clusteredRecords.slice(0, params.limit);
             }
         }
 
-
-        // Transform to API format
         const transformed = this.transformService.transformAlertRecords(clusteredRecords, thresholds);
-
         return ResponseFormatter.success(transformed, pagination);
-    }
-
-    async getExecutiveKPIs(params) {
-        const thresholds = this._getThresholds(params);
-        // Fetch current period data
-        const { records, clusteringEnabled } = await this._fetchAndCluster(
-            params,
-            'time_fired, duration_sec, application, panel_title'
-        );
-
-        const kpis = this.analysisService.computeKPIs(records, thresholds);
-
-        try {
-            // Calculate previous period for trend analysis
-            const { prevStartDate, prevEndDate } = this._calculatePreviousPeriod(
-                params.start_date,
-                params.end_date
-            );
-
-            const prevParams = {
-                ...params,
-                start_date: prevStartDate.toISOString(),
-                end_date: prevEndDate.toISOString()
-            };
-
-            // Fetch previous period data
-            // Note: force clustering state to match current period
-            const { records: prevRecords } = await this._fetchAndCluster(
-                prevParams,
-                'time_fired, duration_sec, application, panel_title',
-                clusteringEnabled
-            );
-
-            const prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
-
-            // Calculate trends
-            const noiseTrendPct = this._calculateTrend(
-                kpis.false_positive_rate_247,
-                prevKpis.false_positive_rate_247
-            );
-
-            const totalTrendPct = this._calculateTrend(
-                kpis.total_alerts,
-                prevKpis.total_alerts
-            );
-
-            return ResponseFormatter.success({
-                ...kpis,
-                noise_trend_pct: parseFloat(noiseTrendPct.toFixed(1)),
-                total_trend_pct: parseFloat(totalTrendPct.toFixed(1))
-            });
-
-        } catch (error) {
-            console.error('Trend calculation failed:', error.message);
-
-            // Return KPIs without trends on error
-            return ResponseFormatter.success({
-                ...kpis,
-                noise_trend_pct: 0,
-                total_trend_pct: 0
-            });
-        }
-    }
-
-    // Calculate the previous period dates based on current date range
-    _calculatePreviousPeriod(startDateStr, endDateStr) {
-        const startDate = startDateStr ? new Date(startDateStr) : new Date();
-        const endDate = endDateStr ? new Date(endDateStr) : new Date();
-
-        const duration = endDate.getTime() - startDate.getTime();
-
-        return {
-            prevEndDate: new Date(startDate.getTime()),
-            prevStartDate: new Date(startDate.getTime() - duration)
-        };
-    }
-
-    async getDurationHistogram(params) {
-        const thresholds = this._getThresholds(params);
-
-        const sqlResult = await this.queryService.fetchDurationHistogram(params, thresholds);
-
-        const histogram = [
-            {
-                range: `≤${thresholds.dur_short_max}s`,
-                category: 'Short',
-                count: sqlResult.short_count || 0
-            },
-            {
-                range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`,
-                category: 'Medium',
-                count: sqlResult.medium_count || 0
-            },
-            {
-                range: `>${thresholds.dur_medium_max}s`,
-                category: 'Long',
-                count: sqlResult.long_count || 0
-            }
-        ];
-
-        const total = histogram.reduce((sum, bucket) => sum + bucket.count, 0);
-        const formatted = this.transformService.formatDurationHistogram(histogram, total);
-
-        return ResponseFormatter.success(formatted);
-    }
-
-    async getHourlyHeatmap(params) {
-        const thresholds = this._getThresholds(params);
-        const heatmap = await this.queryService.fetchHourlyHeatmap(params);
-        const formatted = this.transformService.formatHourlyHeatmap(heatmap, thresholds);
-
-        return ResponseFormatter.success(formatted);
-    }
-
-    async getShiftAnalysis(params) {
-        const thresholds = this._getThresholds(params);
-        const analysis = await this.queryService.fetchShiftAnalysis(params, thresholds);
-
-        const enriched = analysis.map(shift => ({
-            ...shift,
-            false_wakeup_rate: shift.alert_count > 0
-                ? parseFloat(((shift.false_wakeups * 100) / shift.alert_count).toFixed(1))
-                : 0
-        }));
-
-        return ResponseFormatter.success(enriched);
-    }
-
-    async getOverviewStats(params) {
-        const thresholds = this._getThresholds(params);
-        const sqlStats = await this.queryService.fetchOverviewStats(params, thresholds);
-
-        const stats = {
-            ...sqlStats,
-            signal_to_noise_ratio: sqlStats.total_alerts > 0
-                ? parseFloat((((sqlStats.total_alerts - sqlStats.short_alerts) * 100) / sqlStats.total_alerts).toFixed(1))
-                : 0
-        };
-
-        const enriched = this.transformService.addDateRangeMeta(stats, params);
-
-        return ResponseFormatter.success(enriched);
-    }
-
-    async getHourlyStats(params) {
-        const thresholds = this._getThresholds(params);
-
-        const records = await this.queryService.fetchBasicRecords(
-            params,
-            'time_fired, duration_sec'
-        );
-
-        const hourlyStats = this.analysisService.computeHourlyStats(records, thresholds);
-
-        return ResponseFormatter.success(hourlyStats);
-    }
-
-    async getTimeseriesStats(params) {
-        const thresholds = this._getThresholds(params);
-
-        const records = await this.queryService.fetchBasicRecords(
-            params,
-            'time_fired, duration_sec'
-        );
-
-        const timeseries = this.analysisService.computeTimeseries(records, thresholds);
-
-        return ResponseFormatter.success(timeseries);
     }
 
     async getPanelList(params) {
@@ -375,130 +274,27 @@ class AlertService {
             return ResponseFormatter.success(this.transformService.enrichPanelStats(panels));
         }
 
-        const { records: clusteredRecords } = await this._fetchAndCluster(
-            params,
-            'panel_title, application, time_fired, duration_sec'
-        );
-
-        const panels = this._aggregatePanelStats(clusteredRecords, thresholds);
-        const enriched = this.transformService.enrichPanelStats(panels);
-
-        return ResponseFormatter.success(enriched);
-    }
-
-    // Helper method for panel list with clustering
-    async _getPanelListWithClustering(params, thresholds, clusterThreshold) {
-        // Fix: Do not limit raw records when clustering, otherwise aggregation is incorrect.
-        // The limit should only apply to the final number of panels returned.
-        const { limit, ...fetchParams } = params;
-
-        const rawRecords = await this.queryService.fetchBasicRecords(
-            fetchParams,
-            'panel_title, application, time_fired, duration_sec'
-        );
-
-        const clusteredRecords = this.analysisService.clusterAlerts(
-            rawRecords,
-            true,
-            clusterThreshold
-        );
-
-        return this._aggregatePanelStats(clusteredRecords, thresholds);
-    }
-
-    // Aggregate panel statistics from clustered records
-    _aggregatePanelStats(records, thresholds) {
-        const panelMap = new Map();
-
-        for (const alert of records) {
-            const key = alert.panel_title || 'Unknown Panel';
-
-            if (!panelMap.has(key)) {
-                panelMap.set(key, {
-                    panel_title: key,
-                    application: alert.application || 'Unknown',
-                    alert_count: 0,
-                    total_duration: 0,
-                    false_positive_count: 0
-                });
-            }
-
-            const entry = panelMap.get(key);
-
-            // Revert: User prefers counting Incidents (Clusters) when clustering is enabled.
-            // So a cluster of 50 alerts counts as 1 item in the list.
-            entry.alert_count++;
-
-            // Duration aggregation logic:
-            // For clusters, duration_sec is the total span of the incident.
-            // If we want "Average Duration of Alerts", we might need the sum of individual durations.
-            // But for panel stats, we usually want "Incidents" or "Impact".
-            // However, to match raw DB stats, we should probably stick to accumulating impact or count.
-            // Let's assume for panel list we want SUM of durations? 
-            // Original code: entry.total_duration += alert.duration_sec
-            // If alert is a cluster, duration_sec is the cluster duration.
-            // Let's keep it as adding the incident duration.
-            entry.total_duration += alert.duration_sec;
-
-            if (alert.duration_sec <= thresholds.false_wakeup_threshold) {
-                // If the entire cluster is short, does that count as N false positives or 1?
-                // Logic: A "False Wakeup" is usually an event. A cluster is an event.
-                // But if we are counting "Alerts", maybe we should count false positives?
-                // Existing logic: entry.false_positive_count++;
-                // Let's keep counting events (incidents) for FP to avoid skewing unless we unpack.
-                entry.false_positive_count++;
-            }
-        }
-
-        return Array.from(panelMap.values())
-            .map(panel => ({
-                ...panel,
-                avg_duration: panel.alert_count > 0
-                    ? Math.round(panel.total_duration / panel.alert_count)
-                    : 0
-            }))
-            .sort((a, b) => b.alert_count - a.alert_count);
+        const { records } = await this._fetchAndCluster(params, 'panel_title, application, time_fired, duration_sec');
+        const panels = this._aggregatePanelStats(records, thresholds);
+        return ResponseFormatter.success(this.transformService.enrichPanelStats(panels));
     }
 
     async getPanelStats(params) {
         const thresholds = this._getThresholds(params);
-        const stats = await this.queryService.fetchPanelStats(params, thresholds);
+        const { enabled } = this._getClusteringConfig(params);
 
-        return ResponseFormatter.success(stats);
-    }
-
-    async getPanelAnalysis(params) {
-        const thresholds = this._getThresholds(params);
-
-        const { records } = await this._fetchAndCluster(
-            params,
-            'time_fired, time_resolved, duration_sec, operator, message, application, panel_title'
-        );
-
-        const analysis = this.analysisService.computePanelAnalysis(records, thresholds);
-
-        return ResponseFormatter.success(analysis);
-    }
-
-    async getAlertMessageBreakdown(params) {
-        const thresholds = this._getThresholds(params);
-        const breakdown = await this.queryService.fetchMessageBreakdown(params, thresholds);
-
-        return ResponseFormatter.success(breakdown);
-    }
-
-    async getTopNoisyNodes(params) {
-        const nodes = await this.queryService.fetchTopNoisyNodes(params);
-
-        let filtered = nodes;
-        if (params.min_percent) {
-            const minPercent = parseFloat(params.min_percent);
-            if (!isNaN(minPercent)) {
-                filtered = nodes.filter(node => node.alert_percent >= minPercent);
-            }
+        if (!enabled) {
+            const stats = await this.queryService.fetchPanelStats(params, thresholds);
+            return ResponseFormatter.success(stats);
         }
 
-        return ResponseFormatter.success(filtered);
+        const { records } = await this._fetchAndCluster(params, 'panel_title, application, time_fired, duration_sec');
+        const panels = this._aggregatePanelStats(records, thresholds);
+
+        const sorted = panels.sort((a, b) => b.alert_count - a.alert_count);
+        const limited = sorted.slice(0, params.limit || 20);
+
+        return ResponseFormatter.success(limited);
     }
 
     async getTopApplications(params) {
@@ -509,10 +305,7 @@ class AlertService {
             return ResponseFormatter.success(apps);
         }
 
-        const { records } = await this._fetchAndCluster(
-            params,
-            'application, time_fired, duration_sec'
-        );
+        const { records } = await this._fetchAndCluster(params, 'application, time_fired, duration_sec');
 
         const appMap = new Map();
         for (const record of records) {
@@ -536,10 +329,7 @@ class AlertService {
             return ResponseFormatter.success(nodes);
         }
 
-        const { records } = await this._fetchAndCluster(
-            params,
-            'node_name, application, time_fired, duration_sec'
-        );
+        const { records } = await this._fetchAndCluster(params, 'node_name, application, time_fired, duration_sec');
 
         const nodeMap = new Map();
         for (const record of records) {
@@ -556,8 +346,109 @@ class AlertService {
     }
 
     async getConsecutiveDaysNodes(params) {
-        const nodes = await this.queryService.fetchConsecutiveDaysNodes(params);
-        return ResponseFormatter.success(nodes);
+        const { enabled } = this._getClusteringConfig(params);
+
+        if (!enabled) {
+            const nodes = await this.queryService.fetchConsecutiveDaysNodes(params);
+            return ResponseFormatter.success(nodes);
+        }
+
+        const { records } = await this._fetchAndCluster(params, 'node_name, time_fired, duration_sec');
+        const nodeData = new Map();
+
+        for (const record of records) {
+            const node = record.node_name || 'Unknown Node';
+            const date = record.time_fired instanceof Date ? record.time_fired : new Date(record.time_fired);
+            const dateKey = date.toISOString().split('T')[0];
+
+            if (!nodeData.has(node)) nodeData.set(node, { dates: new Map(), totalAlerts: 0 });
+            const data = nodeData.get(node);
+            data.dates.set(dateKey, (data.dates.get(dateKey) || 0) + 1);
+            data.totalAlerts++;
+        }
+
+        const nodes = [];
+        for (const [node_name, data] of nodeData) {
+            const dates = Array.from(data.dates.keys()).sort();
+            let maxConsecutive = 0, currentStreak = 1;
+            let streakStart = dates[0], streakEnd = dates[0];
+            let bestStreakStart = dates[0], bestStreakEnd = dates[0];
+
+            for (let i = 1; i < dates.length; i++) {
+                const prev = new Date(dates[i - 1]), curr = new Date(dates[i]);
+                const diffDays = (curr - prev) / (1000 * 60 * 60 * 24);
+
+                if (diffDays === 1) {
+                    currentStreak++;
+                    streakEnd = dates[i];
+                } else {
+                    if (currentStreak > maxConsecutive) {
+                        maxConsecutive = currentStreak;
+                        bestStreakStart = streakStart;
+                        bestStreakEnd = streakEnd;
+                    }
+                    currentStreak = 1;
+                    streakStart = dates[i];
+                    streakEnd = dates[i];
+                }
+            }
+            if (currentStreak > maxConsecutive) {
+                maxConsecutive = currentStreak;
+                bestStreakStart = streakStart;
+                bestStreakEnd = streakEnd;
+            }
+
+            if (maxConsecutive >= 3) {
+                nodes.push({
+                    node_name,
+                    consecutive_days: maxConsecutive,
+                    total_alerts: data.totalAlerts,
+                    first_alert_date: bestStreakStart,
+                    last_alert_date: bestStreakEnd
+                });
+            }
+        }
+
+        const sorted = nodes.sort((a, b) => b.consecutive_days - a.consecutive_days)
+            .slice(0, params.limit || 10);
+        return ResponseFormatter.success(sorted);
+    }
+
+    // Internal Helpers
+    _calculateTrend(current, previous) {
+        if (!previous || previous === 0) return current > 0 ? 100 : 0;
+        return ((current - previous) / previous) * 100;
+    }
+
+    _calculatePreviousPeriod(startDateStr, endDateStr) {
+        const startDate = startDateStr ? new Date(startDateStr) : new Date();
+        const endDate = endDateStr ? new Date(endDateStr) : new Date();
+        const duration = endDate.getTime() - startDate.getTime();
+        return { prevEndDate: new Date(startDate.getTime()), prevStartDate: new Date(startDate.getTime() - duration) };
+    }
+
+    _aggregatePanelStats(records, thresholds) {
+        const panelMap = new Map();
+        for (const alert of records) {
+            const key = alert.panel_title || 'Unknown Panel';
+            if (!panelMap.has(key)) {
+                panelMap.set(key, {
+                    panel_title: key, application: alert.application || 'Unknown',
+                    alert_count: 0, total_duration: 0, false_positive_count: 0
+                });
+            }
+            const entry = panelMap.get(key);
+            entry.alert_count++;
+            entry.total_duration += alert.duration_sec;
+            if (alert.duration_sec <= thresholds.false_wakeup_threshold) entry.false_positive_count++;
+        }
+
+        return Array.from(panelMap.values())
+            .map(panel => ({
+                ...panel,
+                avg_duration: panel.alert_count > 0 ? Math.round(panel.total_duration / panel.alert_count) : 0
+            }))
+            .sort((a, b) => b.alert_count - a.alert_count);
     }
 }
 

@@ -332,7 +332,7 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
                                     >
                                         <option value="">Select Option...</option>
                                         {fieldConfig.options?.map(opt => (
-                                            <option key={opt.id} value={opt.id}>{opt.name}</option>
+                                            <option key={opt.id} value={opt.id}>{opt.label}</option>
                                         ))}
                                     </select>
                                 ) : fieldConfig.type === 'checkbox' ? (
