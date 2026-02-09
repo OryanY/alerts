@@ -310,6 +310,108 @@ class AlertQueryService {
     return result.recordset;
   }
 
+  // ============ CLUSTERED QUERY METHODS ============
+
+  /**
+   * Fetch clustered KPI statistics (total clusters, avg duration, false wakeups)
+   */
+  async fetchClusteredKPIs(params, thresholds) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    context.addThresholdParams(thresholds);
+    context.applyToRequest(request);
+
+    // Add clustering threshold parameter
+    request.input('cluster_threshold', sql.Int, params.cluster_threshold || 15);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.CLUSTERED_KPI_STATS)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset[0];
+  }
+
+  /**
+   * Fetch clustered hourly heatmap
+   */
+  async fetchClusteredHourlyHeatmap(params) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    context.applyToRequest(request);
+
+    request.input('cluster_threshold', sql.Int, params.cluster_threshold || 15);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.CLUSTERED_HOURLY_HEATMAP)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset;
+  }
+
+  /**
+   * Fetch clustered duration histogram
+   */
+  async fetchClusteredDurationHistogram(params, thresholds) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    context.addThresholdParams(thresholds);
+    context.applyToRequest(request);
+
+    request.input('cluster_threshold', sql.Int, params.cluster_threshold || 15);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.CLUSTERED_DURATION_HISTOGRAM)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset[0];
+  }
+
+  /**
+   * Fetch clustered shift analysis (day vs night)
+   */
+  async fetchClusteredShiftAnalysis(params, thresholds) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    context.addThresholdParams(thresholds);
+    context.applyToRequest(request);
+
+    request.input('cluster_threshold', sql.Int, params.cluster_threshold || 15);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.CLUSTERED_SHIFT_ANALYSIS)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset;
+  }
+
+  /**
+   * Fetch clustered timeseries (daily cluster counts)
+   */
+  async fetchClusteredTimeseries(params, thresholds) {
+    const request = this.pool.request();
+
+    const context = QueryContextBuilder.fromParams(params, this.constants);
+    context.addThresholdParams(thresholds);
+    context.applyToRequest(request);
+
+    request.input('cluster_threshold', sql.Int, params.cluster_threshold || 15);
+
+    const sqlQuery = new SqlBuilder(SqlTemplates.CLUSTERED_TIMESERIES)
+      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .build();
+
+    const result = await request.query(sqlQuery);
+    return result.recordset;
+  }
+
   /**
    * Validate sort field against whitelist
    */

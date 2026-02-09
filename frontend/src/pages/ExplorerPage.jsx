@@ -10,6 +10,7 @@ import { formatHourAndDay } from "../utils/helpers";
 import { escapeCsv } from '../utils/helpers';
 
 import { DateRangePicker } from '../components/ui/DateRangePicker';
+import { LazyInput } from '../components/ui/LazyInput';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { CustomSelect } from '../components/ui/CustomSelect';
@@ -717,7 +718,7 @@ const ExplorerPage = () => {
                 Duration Range (seconds)
               </label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
+                <LazyInput
                   type="number"
                   placeholder="Min"
                   value={filters.min_duration || ''}
@@ -725,7 +726,7 @@ const ExplorerPage = () => {
                   style={{ ...S.input, flex: 1 }}
                 />
                 <span style={{ color: colors.text.tertiary }}>—</span>
-                <input
+                <LazyInput
                   type="number"
                   placeholder="Max"
                   value={filters.max_duration || ''}

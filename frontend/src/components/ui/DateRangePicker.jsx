@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Calendar } from '../../icons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
@@ -10,6 +11,32 @@ export const DateRangePicker = ({
 }) => {
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
+
+  const [localStart, setLocalStart] = useState(dateRange.start_date || '');
+  const [localEnd, setLocalEnd] = useState(dateRange.end_date || '');
+
+  // Sync from props
+  useEffect(() => {
+    setLocalStart(dateRange.start_date || '');
+    setLocalEnd(dateRange.end_date || '');
+  }, [dateRange.start_date, dateRange.end_date]);
+
+  const commitChanges = () => {
+    if (localStart !== dateRange.start_date || localEnd !== dateRange.end_date) {
+      onChange({ ...dateRange, start_date: localStart, end_date: localEnd });
+    }
+  };
+
+  const handleBlur = () => {
+    commitChanges();
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      commitChanges();
+      e.target.blur();
+    }
+  };
 
   const presetButtonStyle = {
     padding: '6px 12px',
@@ -48,10 +75,10 @@ export const DateRangePicker = ({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <input
           type="date"
-          value={dateRange.start_date || ''}
-          onChange={(e) =>
-            onChange({ ...dateRange, start_date: e.target.value || '' })
-          }
+          value={localStart}
+          onChange={(e) => setLocalStart(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
           style={S.input}
         />
 
@@ -59,10 +86,10 @@ export const DateRangePicker = ({
 
         <input
           type="date"
-          value={dateRange.end_date || ''}
-          onChange={(e) =>
-            onChange({ ...dateRange, end_date: e.target.value || '' })
-          }
+          value={localEnd}
+          onChange={(e) => setLocalEnd(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
           style={S.input}
         />
       </div>

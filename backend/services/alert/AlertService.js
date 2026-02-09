@@ -97,24 +97,71 @@ class AlertService {
     // Analytics Methods
     async getExecutiveKPIs(params) {
         const thresholds = this._getThresholds(params);
-        const { records, clusteringEnabled } = await this._fetchAndCluster(
-            params,
-            'time_fired, duration_sec, application, panel_title'
-        );
+        const { enabled, threshold } = this._getClusteringConfig(params);
 
-        const kpis = this.analysisService.computeKPIs(records, thresholds);
+        let kpis;
+        if (enabled) {
+            // Use optimized SQL-based clustering
+            const clusterParams = { ...params, cluster_threshold: threshold };
+            const sqlKpis = await this.queryService.fetchClusteredKPIs(clusterParams, thresholds);
+
+            // Calculate Night Rate
+            const nightTotal = (sqlKpis.night_true_wakeups || 0) + (sqlKpis.night_false_wakeups || 0);
+
+            kpis = {
+                total_alerts: sqlKpis.total_alerts || 0,
+
+                // Duration metrics
+                avg_duration: sqlKpis.avg_duration || 0,
+                median_duration: sqlKpis.median_duration || 0,
+                min_duration: sqlKpis.min_duration || 0,
+                max_duration: sqlKpis.max_duration || 0,
+
+                // 24/7 Metrics
+                average_duration_247: sqlKpis.avg_duration || 0,
+                min_duration_247: sqlKpis.min_duration || 0,
+                max_duration_247: sqlKpis.max_duration || 0,
+                false_alerts_247: sqlKpis.false_wakeups || 0,
+                true_alerts_247: sqlKpis.true_alerts || 0,
+                false_positive_rate_247: sqlKpis.total_alerts > 0
+                    ? parseFloat(((sqlKpis.false_wakeups * 100) / sqlKpis.total_alerts).toFixed(1))
+                    : 0,
+
+                // Night Metrics (Required for dashboard widgets)
+                night_alerts: sqlKpis.night_alerts || 0,
+                true_wakeups: sqlKpis.night_true_wakeups || 0,
+                false_wakeups: sqlKpis.night_false_wakeups || 0,
+                false_wakeup_rate: nightTotal > 0
+                    ? parseFloat(((sqlKpis.night_false_wakeups * 100) / nightTotal).toFixed(1))
+                    : 0,
+
+                signal_ratio: sqlKpis.total_alerts > 0
+                    ? parseFloat(((sqlKpis.true_alerts * 100) / sqlKpis.total_alerts).toFixed(1))
+                    : 0
+            };
+        } else {
+            const records = await this.queryService.fetchBasicRecords(params, 'time_fired, duration_sec, application, panel_title');
+            kpis = this.analysisService.computeKPIs(records, thresholds);
+        }
 
         try {
             const { prevStartDate, prevEndDate } = this._calculatePreviousPeriod(params.start_date, params.end_date);
             const prevParams = { ...params, start_date: prevStartDate.toISOString(), end_date: prevEndDate.toISOString() };
 
-            const { records: prevRecords } = await this._fetchAndCluster(
-                prevParams,
-                'time_fired, duration_sec, application, panel_title',
-                clusteringEnabled
-            );
-
-            const prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
+            let prevKpis;
+            if (enabled) {
+                const prevClusterParams = { ...prevParams, cluster_threshold: threshold };
+                const prevSqlKpis = await this.queryService.fetchClusteredKPIs(prevClusterParams, thresholds);
+                prevKpis = {
+                    total_alerts: prevSqlKpis.total_alerts || 0,
+                    false_positive_rate_247: prevSqlKpis.total_alerts > 0
+                        ? parseFloat(((prevSqlKpis.false_wakeups * 100) / prevSqlKpis.total_alerts).toFixed(1))
+                        : 0
+                };
+            } else {
+                const prevRecords = await this.queryService.fetchBasicRecords(prevParams, 'time_fired, duration_sec, application, panel_title');
+                prevKpis = this.analysisService.computeKPIs(prevRecords, thresholds);
+            }
 
             return ResponseFormatter.success({
                 ...kpis,
@@ -129,82 +176,81 @@ class AlertService {
 
     async getTimeseriesStats(params) {
         const thresholds = this._getThresholds(params);
-        const { enabled } = this._getClusteringConfig(params);
+        const { enabled, threshold } = this._getClusteringConfig(params);
 
         if (!enabled) {
             const records = await this.queryService.fetchBasicRecords(params, 'time_fired, duration_sec');
             return ResponseFormatter.success(this.analysisService.computeTimeseries(records, thresholds));
         }
 
-        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
-        return ResponseFormatter.success(this.analysisService.computeTimeseries(records, thresholds));
+        // Use optimized SQL-based clustering
+        const clusterParams = { ...params, cluster_threshold: threshold };
+        const timeseries = await this.queryService.fetchClusteredTimeseries(clusterParams, thresholds);
+        return ResponseFormatter.success(timeseries.map(row => ({
+            date: row.date_il,
+            count: row.alert_count,
+            avgDuration: Math.round(row.avg_duration || 0),
+            day: row.day_count || 0,
+            night: row.night_count || 0
+        })));
     }
 
     // Deep Analysis
     async getDurationHistogram(params) {
         const thresholds = this._getThresholds(params);
-        const { enabled } = this._getClusteringConfig(params);
+        const { enabled, threshold } = this._getClusteringConfig(params);
 
-        if (!enabled) {
-            const sqlResult = await this.queryService.fetchDurationHistogram(params, thresholds);
-            const histogram = [
-                { range: `≤${thresholds.dur_short_max}s`, category: 'Short', count: sqlResult.short_count || 0 },
-                { range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`, category: 'Medium', count: sqlResult.medium_count || 0 },
-                { range: `>${thresholds.dur_medium_max}s`, category: 'Long', count: sqlResult.long_count || 0 }
-            ];
-            const total = histogram.reduce((sum, bucket) => sum + bucket.count, 0);
-            return ResponseFormatter.success(this.transformService.formatDurationHistogram(histogram, total));
-        }
-
-        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
-        let shortCount = 0, mediumCount = 0, longCount = 0;
-
-        for (const record of records) {
-            const dur = record.duration_sec || 0;
-            if (dur <= thresholds.dur_short_max) shortCount++;
-            else if (dur <= thresholds.dur_medium_max) mediumCount++;
-            else longCount++;
+        let sqlResult;
+        if (enabled) {
+            // Use optimized SQL-based clustering
+            const clusterParams = { ...params, cluster_threshold: threshold };
+            sqlResult = await this.queryService.fetchClusteredDurationHistogram(clusterParams, thresholds);
+        } else {
+            sqlResult = await this.queryService.fetchDurationHistogram(params, thresholds);
         }
 
         const histogram = [
-            { range: `≤${thresholds.dur_short_max}s`, category: 'Short', count: shortCount },
-            { range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`, category: 'Medium', count: mediumCount },
-            { range: `>${thresholds.dur_medium_max}s`, category: 'Long', count: longCount }
+            { range: `≤${thresholds.dur_short_max}s`, category: 'Short', count: sqlResult.short_count || 0 },
+            { range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`, category: 'Medium', count: sqlResult.medium_count || 0 },
+            { range: `>${thresholds.dur_medium_max}s`, category: 'Long', count: sqlResult.long_count || 0 }
         ];
-
-        const total = shortCount + mediumCount + longCount;
+        const total = histogram.reduce((sum, bucket) => sum + bucket.count, 0);
         return ResponseFormatter.success(this.transformService.formatDurationHistogram(histogram, total));
     }
 
     async getHourlyHeatmap(params) {
         const thresholds = this._getThresholds(params);
-        const { enabled } = this._getClusteringConfig(params);
+        const { enabled, threshold } = this._getClusteringConfig(params);
 
-        if (!enabled) {
-            const heatmap = await this.queryService.fetchHourlyHeatmap(params);
-            return ResponseFormatter.success(this.transformService.formatHourlyHeatmap(heatmap, thresholds));
+        let heatmap;
+        if (enabled) {
+            // Use optimized SQL-based clustering
+            const clusterParams = { ...params, cluster_threshold: threshold };
+            heatmap = await this.queryService.fetchClusteredHourlyHeatmap(clusterParams);
+        } else {
+            heatmap = await this.queryService.fetchHourlyHeatmap(params);
         }
-
-        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
-        const heatmap = this.analysisService.computeHourlyHeatmap(records, thresholds);
         return ResponseFormatter.success(this.transformService.formatHourlyHeatmap(heatmap, thresholds));
     }
 
     async getShiftAnalysis(params) {
         const thresholds = this._getThresholds(params);
-        const { enabled } = this._getClusteringConfig(params);
+        const { enabled, threshold } = this._getClusteringConfig(params);
 
-        if (!enabled) {
-            const analysis = await this.queryService.fetchShiftAnalysis(params, thresholds);
-            const enriched = analysis.map(shift => ({
-                ...shift,
-                false_wakeup_rate: shift.alert_count > 0 ? parseFloat(((shift.false_wakeups * 100) / shift.alert_count).toFixed(1)) : 0
-            }));
-            return ResponseFormatter.success(enriched);
+        let analysis;
+        if (enabled) {
+            // Use optimized SQL-based clustering
+            const clusterParams = { ...params, cluster_threshold: threshold };
+            analysis = await this.queryService.fetchClusteredShiftAnalysis(clusterParams, thresholds);
+        } else {
+            analysis = await this.queryService.fetchShiftAnalysis(params, thresholds);
         }
 
-        const { records } = await this._fetchAndCluster(params, 'time_fired, duration_sec');
-        return ResponseFormatter.success(this.analysisService.computeShiftAnalysis(records, thresholds));
+        const enriched = analysis.map(shift => ({
+            ...shift,
+            false_wakeup_rate: shift.alert_count > 0 ? parseFloat(((shift.false_wakeups * 100) / shift.alert_count).toFixed(1)) : 0
+        }));
+        return ResponseFormatter.success(enriched);
     }
 
     async getPanelAnalysis(params) {

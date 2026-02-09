@@ -329,6 +329,242 @@ class SqlTemplates {
     }
     return fieldName;
   }
+
+  // ============ CLUSTERED STATISTICS QUERIES (OPTIMIZED) ============
+  // Clustering Logic: Group consecutive alerts within @cluster_threshold minutes
+  // Structured CTEs to avoid nested window function errors
+
+  static CLUSTERED_KPI_STATS = `
+    WITH Marked AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        CASE 
+          WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold 
+          THEN 1 ELSE 0 
+        END AS is_new_cluster
+      FROM dbo.historicalAlerts
+      {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id
+      FROM Marked
+    ),
+    Clusters AS (
+      SELECT 
+        cluster_id,
+        MIN(time_fired) AS cluster_start,
+        DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration
+      FROM Grouped
+      GROUP BY cluster_id
+    ),
+    MedianCTE AS (
+      SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cluster_duration) OVER () AS median_val
+      FROM Clusters
+    )
+    SELECT 
+      COUNT(*) AS total_alerts,
+      AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+      ISNULL((SELECT TOP 1 median_val FROM MedianCTE), 0) AS median_duration,
+      MIN(cluster_duration) AS min_duration,
+      MAX(cluster_duration) AS max_duration,
+      COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_wakeups,
+      COUNT(CASE WHEN cluster_duration > @false_wakeup_threshold THEN 1 END) AS true_alerts,
+      COUNT(CASE 
+        WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start 
+             OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end 
+        THEN 1 
+      END) AS night_alerts,
+      COUNT(CASE 
+        WHEN (DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start 
+             OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end)
+             AND cluster_duration > @false_wakeup_threshold 
+        THEN 1 
+      END) AS night_true_wakeups,
+      COUNT(CASE 
+        WHEN (DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start 
+             OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end)
+             AND cluster_duration <= @false_wakeup_threshold 
+        THEN 1 
+      END) AS night_false_wakeups
+    FROM Clusters
+  `;
+
+  static CLUSTERED_HOURLY_HEATMAP = `
+    WITH Marked AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        CASE 
+          WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold 
+          THEN 1 ELSE 0 
+        END AS is_new_cluster
+      FROM dbo.historicalAlerts
+      {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id
+      FROM Marked
+    ),
+    Clusters AS (
+      SELECT 
+        MIN(time_fired) AS cluster_start,
+        DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration
+      FROM Grouped
+      GROUP BY cluster_id
+    ),
+    HourBuckets AS (
+      SELECT 
+        DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour,
+        cluster_duration
+      FROM Clusters
+    ),
+    AllHours AS (
+      SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS hour FROM sys.objects
+    )
+    SELECT 
+      ah.hour,
+      ISNULL(COUNT(hb.hour), 0) AS count,
+      ISNULL(AVG(CAST(hb.cluster_duration AS FLOAT)), 0) AS avg_duration
+    FROM AllHours ah
+    LEFT JOIN HourBuckets hb ON ah.hour = hb.hour
+    GROUP BY ah.hour
+    ORDER BY ah.hour
+  `;
+
+  static CLUSTERED_DURATION_HISTOGRAM = `
+    WITH Marked AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        CASE 
+          WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold 
+          THEN 1 ELSE 0 
+        END AS is_new_cluster
+      FROM dbo.historicalAlerts
+      {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id
+      FROM Marked
+    ),
+    Clusters AS (
+      SELECT 
+        DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration
+      FROM Grouped
+      GROUP BY cluster_id
+    )
+    SELECT 
+      COUNT(CASE WHEN cluster_duration <= @dur_short_max THEN 1 END) AS short_count,
+      COUNT(CASE WHEN cluster_duration > @dur_short_max AND cluster_duration <= @dur_medium_max THEN 1 END) AS medium_count,
+      COUNT(CASE WHEN cluster_duration > @dur_medium_max THEN 1 END) AS long_count
+    FROM Clusters
+  `;
+
+  static CLUSTERED_SHIFT_ANALYSIS = `
+    WITH Marked AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        panel_title,
+        operator,
+        CASE 
+          WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold 
+          THEN 1 ELSE 0 
+        END AS is_new_cluster
+      FROM dbo.historicalAlerts
+      {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        panel_title,
+        operator,
+        SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id
+      FROM Marked
+    ),
+    Clusters AS (
+      SELECT 
+        MIN(time_fired) AS cluster_start,
+        DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration,
+        MAX(panel_title) AS panel_title,
+        MAX(operator) AS operator
+      FROM Grouped
+      GROUP BY cluster_id
+    )
+    SELECT 
+      CASE 
+        WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start 
+             AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end 
+        THEN 'Day' ELSE 'Night'
+      END AS shift,
+      COUNT(*) AS alert_count,
+      AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+      MIN(cluster_duration) AS min_duration,
+      MAX(cluster_duration) AS max_duration,
+      COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_wakeups
+    FROM Clusters
+    GROUP BY CASE 
+      WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start 
+           AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end 
+      THEN 'Day' ELSE 'Night'
+    END
+  `;
+
+  static CLUSTERED_TIMESERIES = `
+    WITH Marked AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        CASE 
+          WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold 
+          THEN 1 ELSE 0 
+        END AS is_new_cluster
+      FROM dbo.historicalAlerts
+      {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+      SELECT 
+        time_fired,
+        duration_sec,
+        SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id
+      FROM Marked
+    ),
+    Clusters AS (
+      SELECT 
+        MIN(time_fired) AS cluster_start,
+        DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration
+      FROM Grouped
+      GROUP BY cluster_id
+    )
+    SELECT 
+      CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il,
+      COUNT(*) AS alert_count,
+      AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+      COUNT(CASE 
+        WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start 
+             AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end 
+        THEN 1 
+      END) AS day_count,
+      COUNT(CASE 
+        WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start 
+             OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end 
+        THEN 1 
+      END) AS night_count
+    FROM Clusters
+    GROUP BY CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE)
+    ORDER BY date_il
+  `;
 }
 
 module.exports = { SqlTemplates, SqlBuilder };
