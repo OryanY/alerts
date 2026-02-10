@@ -326,7 +326,8 @@ class AlertQueryService {
     request.input('cluster_threshold', sql.Int, params.cluster_threshold || 15);
 
     const sqlQuery = new SqlBuilder(SqlTemplates.CLUSTERED_KPI_STATS)
-      .replace('WHERE_CLAUSE', context.getWhereClause())
+      .replace('WHERE_CLAUSE', context.getWhereClauseWithoutDuration())
+      .replace('CLUSTER_FILTER', context.getClusterDurationFilter())
       .build();
 
     const result = await request.query(sqlQuery);

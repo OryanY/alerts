@@ -24,18 +24,57 @@ router.get('/incident', validateQuery(alertQuerySchema), controller.createIncide
 router.post('/incident', validateBody(alertQuerySchema), controller.createIncidentFromAlertPOST);
 router.post('/incident/simulate', validateBody(alertQuerySchema), controller.simulateIncidentCreation);
 
+// ================== PROTECTED ROUTES (System Mappings & Incident Rules) ==================
+// Create a sub-router for protected routes that all require authentication and admin role
+const { authenticate, requireRole, auditLog } = require('../middleware/auth');
+const protectedRouter = express.Router();
+
+const { CONFIG } = require('../config');
+
+// Apply auth middleware to ALL routes in this sub-router
+protectedRouter.use(authenticate);
+protectedRouter.use(requireRole(...CONFIG.auth.adminGroups));
+
 // ================== SYSTEM MAPPINGS ==================
-router.get('/system-mappings', controller.getSystemMappings);
-router.post('/system-mappings', validateBody(systemMappingSchema), controller.createSystemMapping);
-router.put('/system-mappings/:id', validateBody(systemMappingSchema.fork(['grafana_names'], (schema) => schema.optional())), controller.updateSystemMapping);
-router.delete('/system-mappings/:id', controller.deleteSystemMapping);
+protectedRouter.get('/system-mappings', controller.getSystemMappings);
+protectedRouter.post('/system-mappings',
+  auditLog('CREATE_SYSTEM_MAPPING'),
+  validateBody(systemMappingSchema),
+  controller.createSystemMapping
+);
+protectedRouter.put('/system-mappings/:id',
+  auditLog('UPDATE_SYSTEM_MAPPING'),
+  validateBody(systemMappingSchema.fork(['grafana_names'], (schema) => schema.optional())),
+  controller.updateSystemMapping
+);
+protectedRouter.delete('/system-mappings/:id',
+  auditLog('DELETE_SYSTEM_MAPPING'),
+  controller.deleteSystemMapping
+);
 
 // ================== INCIDENT RULES ==================
-router.get('/incident-rules', controller.getIncidentRules);
-router.post('/incident-rules', validateBody(incidentRuleSchema), controller.createIncidentRule);
-router.put('/incident-rules/:id', validateBody(incidentRuleSchema.fork(['system_mapping_id'], (schema) => schema.optional())), controller.updateIncidentRule);
-router.delete('/incident-rules/:id', controller.deleteIncidentRule);
-router.patch('/incident-rules/:id/toggle', controller.toggleIncidentRule);
+protectedRouter.get('/incident-rules', controller.getIncidentRules);
+protectedRouter.post('/incident-rules',
+  auditLog('CREATE_INCIDENT_RULE'),
+  validateBody(incidentRuleSchema),
+  controller.createIncidentRule
+);
+protectedRouter.put('/incident-rules/:id',
+  auditLog('UPDATE_INCIDENT_RULE'),
+  validateBody(incidentRuleSchema.fork(['system_mapping_id'], (schema) => schema.optional())),
+  controller.updateIncidentRule
+);
+protectedRouter.delete('/incident-rules/:id',
+  auditLog('DELETE_INCIDENT_RULE'),
+  controller.deleteIncidentRule
+);
+protectedRouter.patch('/incident-rules/:id/toggle',
+  auditLog('TOGGLE_INCIDENT_RULE'),
+  controller.toggleIncidentRule
+);
+
+// Mount the protected router
+router.use(protectedRouter);
 
 // ================== HISTORY / LOGS ==================
 router.get('/incident-logs', controller.getIncidentLogs);

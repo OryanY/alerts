@@ -8,6 +8,7 @@ import IncidentRulesHeader from '../components/IncidentRules/IncidentRulesHeader
 import EmptyState from '../components/IncidentRules/EmptyState';
 import RuleCard from '../components/IncidentRules/RuleCard';
 import RuleForm from '../components/IncidentRules/RuleForm';
+import { safeJson } from '../utils/helpers';
 
 const IncidentRules = () => {
   const { colors, gradients, PATTERN_COLORS } = useTheme();
@@ -107,8 +108,9 @@ const IncidentRules = () => {
   const fetchRules = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/incidents/incident-rules`);
-      const data = await res.json();
+      setLoading(true);
+      const res = await fetch(`${API_BASE}/incidents/incident-rules`, { credentials: 'include' });
+      const data = await safeJson(res);
       if (data.success) setRules(data.data || []);
       else setError('Failed to fetch incident rules');
     } catch (e) {
@@ -120,8 +122,8 @@ const IncidentRules = () => {
 
   const fetchMappings = async () => {
     try {
-      const res = await fetch(`${API_BASE}/incidents/system-mappings`);
-      const data = await res.json();
+      const res = await fetch(`${API_BASE}/incidents/system-mappings`, { credentials: 'include' });
+      const data = await safeJson(res);
       if (data.success) {
         const sortedMappings = (data.data || []).sort((a, b) =>
           String(a.service_offering || '').localeCompare(String(b.service_offering || ''))
@@ -135,8 +137,8 @@ const IncidentRules = () => {
 
   const fetchAssignmentGroups = async () => {
     try {
-      const res = await fetch(`${API_BASE}/incidents/assignment-groups`);
-      const data = await res.json();
+      const res = await fetch(`${API_BASE}/incidents/assignment-groups`, { credentials: 'include' });
+      const data = await safeJson(res);
       if (data.success) {
         const sortedGroups = (data.data || []).sort((a, b) =>
           String(a.name || '').localeCompare(String(b.name || ''))
@@ -237,9 +239,10 @@ const IncidentRules = () => {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'include'
       });
 
-      const data = await res.json();
+      const data = await safeJson(res);
 
       if (data.success) {
         await fetchRules();
@@ -247,7 +250,8 @@ const IncidentRules = () => {
         setShowForm(false);
         setError(null);
       } else {
-        setError(data.error.message || 'Failed to save rule');
+        const errorMsg = data.error?.message || 'Failed to save rule';
+        setError(errorMsg);
       }
     } catch (e) {
       setError('Error saving rule: ' + e.message);
@@ -259,13 +263,15 @@ const IncidentRules = () => {
     try {
       const res = await fetch(`${API_BASE}/incidents/incident-rules/${id}`, {
         method: 'DELETE',
+        credentials: 'include'
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.success) {
         await fetchRules();
         setError(null);
       } else {
-        setError(data.error.message || 'Failed to delete rule');
+        const errorMsg = data.error?.message || 'Failed to delete rule';
+        setError(errorMsg);
       }
     } catch (e) {
       setError('Error deleting rule: ' + e.message);
@@ -278,13 +284,15 @@ const IncidentRules = () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
+        credentials: 'include'
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.success) {
         await fetchRules();
         setError(null);
       } else {
-        setError(data.error.message || 'Failed to toggle rule');
+        const errorMsg = data.error?.message || 'Failed to toggle rule';
+        setError(errorMsg);
       }
     } catch (e) {
       setError('Error toggling rule: ' + e.message);

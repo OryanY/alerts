@@ -4,6 +4,7 @@ import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Play, AlertTriangle, CheckCircle, Info, ChevronRight, ChevronDown } from 'lucide-react';
 import LabeledInput from '../ui/LabeledInput';
+import { safeJson } from '../../utils/helpers';
 
 const RuleSimulator = ({ onClose }) => {
     const { colors, gradients } = useTheme();
@@ -37,9 +38,10 @@ const RuleSimulator = ({ onClose }) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData),
+                credentials: 'include'
             });
 
-            const data = await res.json();
+            const data = await safeJson(res);
 
             if (data.success) {
                 setResult(data.data);

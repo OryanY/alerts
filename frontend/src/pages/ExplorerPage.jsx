@@ -73,13 +73,30 @@ const ExplorerPage = () => {
     const normalizedSortOrder = (f.sort_order || 'desc').toString().toUpperCase();
 
     const serverFilters = {};
-    const serverSideFields = ['panel_title', 'application', 'operator', 'min_duration', 'max_duration'];
+    const serverSideFields = ['panel_title', 'application', 'operator'];
 
     serverSideFields.forEach((field) => {
       if (f[field] && f[field] !== '') {
         serverFilters[field] = f[field];
       }
     });
+
+    // Validate and add duration filters
+    const minDur = f.min_duration ? parseFloat(f.min_duration) : null;
+    const maxDur = f.max_duration ? parseFloat(f.max_duration) : null;
+
+    // Only include if valid (min <= max)
+    if (minDur !== null && !isNaN(minDur)) {
+      if (maxDur === null || isNaN(maxDur) || minDur <= maxDur) {
+        serverFilters.min_duration = f.min_duration;
+      }
+    }
+
+    if (maxDur !== null && !isNaN(maxDur)) {
+      if (minDur === null || isNaN(minDur) || minDur <= maxDur) {
+        serverFilters.max_duration = f.max_duration;
+      }
+    }
 
     return {
       ...adjustedDateRange,

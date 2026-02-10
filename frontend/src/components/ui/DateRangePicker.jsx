@@ -14,14 +14,37 @@ export const DateRangePicker = ({
 
   const [localStart, setLocalStart] = useState(dateRange.start_date || '');
   const [localEnd, setLocalEnd] = useState(dateRange.end_date || '');
+  const [error, setError] = useState(null);
 
   // Sync from props
   useEffect(() => {
     setLocalStart(dateRange.start_date || '');
     setLocalEnd(dateRange.end_date || '');
+    setError(null);
   }, [dateRange.start_date, dateRange.end_date]);
 
+  const validateDateRange = (start, end) => {
+    if (start && end) {
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+
+      if (startDate > endDate) {
+        return 'Start date must be before or equal to end date';
+      }
+    }
+    return null;
+  };
+
   const commitChanges = () => {
+    const validationError = validateDateRange(localStart, localEnd);
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setError(null);
+
     if (localStart !== dateRange.start_date || localEnd !== dateRange.end_date) {
       onChange({ ...dateRange, start_date: localStart, end_date: localEnd });
     }
@@ -34,7 +57,9 @@ export const DateRangePicker = ({
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       commitChanges();
-      e.target.blur();
+      if (!error) {
+        e.target.blur();
+      }
     }
   };
 
@@ -72,26 +97,45 @@ export const DateRangePicker = ({
       <Calendar size={16} style={{ color: colors.text.secondary }} />
 
       {/* Date inputs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input
-          type="date"
-          value={localStart}
-          onChange={(e) => setLocalStart(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          style={S.input}
-        />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="date"
+            value={localStart}
+            onChange={(e) => setLocalStart(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            style={{
+              ...S.input,
+              borderColor: error ? '#EF4444' : S.input.borderColor,
+            }}
+          />
 
-        <span style={{ color: colors.text.secondary }}>עד</span>
+          <span style={{ color: colors.text.secondary }}>עד</span>
 
-        <input
-          type="date"
-          value={localEnd}
-          onChange={(e) => setLocalEnd(e.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          style={S.input}
-        />
+          <input
+            type="date"
+            value={localEnd}
+            onChange={(e) => setLocalEnd(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            style={{
+              ...S.input,
+              borderColor: error ? '#EF4444' : S.input.borderColor,
+            }}
+          />
+        </div>
+        {error && (
+          <div
+            style={{
+              fontSize: 12,
+              color: '#EF4444',
+              textAlign: 'center',
+            }}
+          >
+            {error}
+          </div>
+        )}
       </div>
 
       {/* Preset buttons */}

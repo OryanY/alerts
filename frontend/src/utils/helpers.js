@@ -67,4 +67,19 @@ export const JerusalemTime = {
   }
 };
 
+
 export const withAlpha = (hex, alpha = '20') => `${hex}${alpha}`;
+
+/**
+ * Safely parses JSON from a fetch response.
+ * Handles empty bodies (like 401 challenges) gracefully.
+ */
+export const safeJson = async (res) => {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (e) {
+    console.warn('Failed to parse JSON:', text.substring(0, 100)); // Log only start of text
+    return {};
+  }
+};

@@ -6,6 +6,7 @@ import {
     FileText, Search, Clock, CheckCircle,
     AlertTriangle, ChevronRight, Activity, Globe, Zap
 } from 'lucide-react';
+import { safeJson } from '../utils/helpers';
 
 const IncidentHistoryPage = () => {
     const { colors } = useTheme();
@@ -25,7 +26,7 @@ const IncidentHistoryPage = () => {
             setLoading(true);
             const query = search ? `?search=${encodeURIComponent(search)}` : '';
             const res = await fetch(`${API_BASE}/incidents/incident-logs${query}`);
-            const data = await res.json();
+            const data = await safeJson(res);
             if (data.success) {
                 setLogs(data.data || []);
             }

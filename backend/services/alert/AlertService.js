@@ -114,27 +114,16 @@ class AlertService {
                 // Duration metrics
                 avg_duration: sqlKpis.avg_duration || 0,
                 median_duration: sqlKpis.median_duration || 0,
-                min_duration: sqlKpis.min_duration || 0,
-                max_duration: sqlKpis.max_duration || 0,
 
-                // 24/7 Metrics
-                average_duration_247: sqlKpis.avg_duration || 0,
-                min_duration_247: sqlKpis.min_duration || 0,
-                max_duration_247: sqlKpis.max_duration || 0,
-                false_alerts_247: sqlKpis.false_wakeups || 0,
-                true_alerts_247: sqlKpis.true_alerts || 0,
+                // 24/7 Metric (Used in Dashboard)
                 false_positive_rate_247: sqlKpis.total_alerts > 0
                     ? parseFloat(((sqlKpis.false_wakeups * 100) / sqlKpis.total_alerts).toFixed(1))
                     : 0,
 
-                // Night Metrics (Required for dashboard widgets)
-                night_alerts: sqlKpis.night_alerts || 0,
+                // Night Metric (Used in Dashboard)
                 true_wakeups: sqlKpis.night_true_wakeups || 0,
-                false_wakeups: sqlKpis.night_false_wakeups || 0,
-                false_wakeup_rate: nightTotal > 0
-                    ? parseFloat(((sqlKpis.night_false_wakeups * 100) / nightTotal).toFixed(1))
-                    : 0,
 
+                // Used in Dashboard
                 signal_ratio: sqlKpis.total_alerts > 0
                     ? parseFloat(((sqlKpis.true_alerts * 100) / sqlKpis.total_alerts).toFixed(1))
                     : 0
@@ -187,11 +176,11 @@ class AlertService {
         const clusterParams = { ...params, cluster_threshold: threshold };
         const timeseries = await this.queryService.fetchClusteredTimeseries(clusterParams, thresholds);
         return ResponseFormatter.success(timeseries.map(row => ({
-            date: row.date_il,
-            count: row.alert_count,
-            avgDuration: Math.round(row.avg_duration || 0),
-            day: row.day_count || 0,
-            night: row.night_count || 0
+            date_il: row.date_il,
+            alert_count: row.alert_count,
+            avg_duration: Math.round(row.avg_duration || 0),
+            day_count: row.day_count || 0,
+            night_count: row.night_count || 0
         })));
     }
 
@@ -271,10 +260,29 @@ class AlertService {
         if (enabled) {
             const { limit, ...rest } = params;
             fetchParams = rest;
+
+            // Remove duration filters from fetch params - we'll apply them after clustering
+            const { min_duration, max_duration, ...paramsWithoutDuration } = fetchParams;
+            fetchParams = paramsWithoutDuration;
         }
 
         const rawRecords = await this.queryService.fetchAlerts(fetchParams);
         let clusteredRecords = this.analysisService.clusterAlerts(rawRecords, enabled, threshold);
+
+        // Apply duration filters AFTER clustering (if clustering is enabled)
+        if (enabled && (params.min_duration || params.max_duration)) {
+            const minDur = params.min_duration ? parseFloat(params.min_duration) : null;
+            const maxDur = params.max_duration ? parseFloat(params.max_duration) : null;
+
+            clusteredRecords = clusteredRecords.filter(cluster => {
+                const duration = cluster.cluster_duration || cluster.duration_sec || 0;
+
+                if (minDur !== null && duration < minDur) return false;
+                if (maxDur !== null && duration > maxDur) return false;
+
+                return true;
+            });
+        }
 
         if (enabled && clusteredRecords.length > 0) {
             const sortBy = params.sort_by || 'time_fired';

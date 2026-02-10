@@ -8,6 +8,7 @@ const compression = require('compression');
 const swaggerUi = require('swagger-ui-express');
 const { DateTime } = require('luxon');
 
+
 // Import configuration and database connections
 const { CONFIG } = require('./config');
 const { swaggerSpec } = require('./config/swagger');
@@ -17,6 +18,7 @@ const { initializeSqlDatabase, initializeMongoDatabase, closeConnections } = req
 const alertRoutes = require('./routes/alertRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 // Import middleware
 const { errorMiddleware, setupGlobalErrorHandlers } = require('./middleware/errorHandler');
@@ -43,27 +45,64 @@ app.use(helmet({
 }));
 
 // CORS configuration
-app.use(cors(CONFIG?.cors || {
-  origin: process.env.NODE_ENV === 'production'
-    ? process.env.ALLOWED_ORIGINS?.split(',') || false
-    : true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+const restrictedCors = cors(CONFIG.cors.restricted);
+const publicCors = cors(CONFIG.cors.public);
+
+// Apply public CORS to health check by default (or restricted? Health usually open for load balancers)
+app.use('/api/health', publicCors);
 
 // Compression and parsing
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+
+// Request Logger
+app.use((req, res, next) => {
+  const start = Date.now();
+  const { method, originalUrl } = req;
+
+  const isDev = process.env.NODE_ENV === 'development';
+
+  if (isDev) {
+    console.log(`[REQ] ${method} ${originalUrl}`);
+  }
+
+  // Hook into response finish to log duration
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const { statusCode } = res;
+
+    // Check if this is part of the NTLM handshake (401 with WWW-Authenticate)
+    const isHandshake = statusCode === 401 && res.getHeader('WWW-Authenticate');
+
+    // LOGGING STRATEGY:
+    // Dev: Log everything
+    // Prod: Log ONLY errors
+
+    const isError = statusCode >= 400;
+    const shouldLog = isDev ? !isHandshake : (isError && !isHandshake);
+
+    if (shouldLog) {
+      const statusLabel = isHandshake ? '401 (Auth Handshake)' : statusCode; // Should rarely see this label now due to logic above
+      // Use console.error for actual errors to make them stand out
+      const logFn = isError ? console.error : console.log;
+      logFn(`[RES] ${method} ${originalUrl} ${statusLabel} (${duration}ms)`);
+    }
+  });
+
+  next();
+});
+
 // ================== API ROUTES ==================
 
-// Configuration endpoint
-app.get('/api/config', (req, res) => {
+// Configuration endpoint (Restricted)
+app.get('/api/config', restrictedCors, (req, res) => {
   try {
     res.json({
       success: true,
+      // ... (lines omitted for brevity, logic remains same, just modifying the app.get line)
+
       data: {
         shifts: CONFIG?.shifts || {
           day: { start: 8, end: 22 },
@@ -75,10 +114,9 @@ app.get('/api/config', (req, res) => {
         },
         timezone: CONFIG?.tz || { IANA: 'Asia/Jerusalem' },
         cache: {
-          ttl: CONFIG?.cache?.ttl || 300,
           enabled: CONFIG?.cache?.enabled !== false
         },
-        version: '4.0.0-modular-with-incidents',
+        version: '4.0.0',
         features: ['alerts', 'statistics', 'incidents', 'system_mappings', 'incident_rules']
       },
       meta: {
@@ -112,9 +150,10 @@ app.get('/api/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/alerts', alertRoutes);
-app.use('/api/stats', statsRoutes);
-app.use('/api/incidents', incidentRoutes);
+app.use('/api/auth', restrictedCors, authRoutes);
+app.use('/api/alerts', restrictedCors, alertRoutes);
+app.use('/api/stats', restrictedCors, statsRoutes);
+app.use('/api/incidents', publicCors, incidentRoutes);
 
 // Swagger UI at root
 app.use('/', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -196,8 +235,6 @@ async function startServer() {
       console.log('Configuration:');
       console.log(`├── Shifts: ${JSON.stringify(CONFIG?.shifts || 'default')}`);
       console.log(`├── Duration thresholds: ${JSON.stringify(CONFIG?.duration || 'default')}`);
-      console.log(`├── Cache TTL: ${CONFIG?.cache?.ttl || 300}s`);
-      console.log(`└── CORS: ${process.env.NODE_ENV === 'production' ? 'Restricted' : 'Development (Allow All)'}`);
       console.log('==========================================\n');
     });
 

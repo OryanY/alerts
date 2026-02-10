@@ -18,11 +18,11 @@ class QueryContextBuilder {
    */
   addDateRange(startDate, endDate, maxDays = null) {
     const range = TimeUtils.validateDateRange(
-      startDate, 
-      endDate, 
+      startDate,
+      endDate,
       maxDays || this.constants.MAX_DATE_RANGE_DAYS
     );
-    
+
     if (range?.start) {
       this.params.set('start_date_param', {
         type: sql.DateTime2,
@@ -30,7 +30,7 @@ class QueryContextBuilder {
       });
       this.conditions.push('time_fired >= @start_date_param');
     }
-    
+
     if (range?.end) {
       this.params.set('end_date_param', {
         type: sql.DateTime2,
@@ -38,7 +38,7 @@ class QueryContextBuilder {
       });
       this.conditions.push('time_fired <= @end_date_param');
     }
-    
+
     return this;
   }
 
@@ -55,7 +55,7 @@ class QueryContextBuilder {
     } else if (required) {
       throw new Error('panel_title is required for this operation');
     }
-    
+
     return this;
   }
 
@@ -119,7 +119,7 @@ class QueryContextBuilder {
       });
       this.conditions.push(`${fieldName} = @${paramName}`);
     }
-    
+
     return this;
   }
 
@@ -151,11 +151,11 @@ class QueryContextBuilder {
    */
   addCustomCondition(condition, params = {}) {
     this.conditions.push(condition);
-    
+
     Object.entries(params).forEach(([name, config]) => {
       this.params.set(name, config);
     });
-    
+
     return this;
   }
 
@@ -200,6 +200,44 @@ class QueryContextBuilder {
     }
     return `WHERE ${this.conditions.join(' AND ')}`;
   }
+
+  /**
+   * Get WHERE clause for filtering clusters by duration
+   * This should be applied AFTER clustering, not before
+   */
+  getClusterDurationFilter() {
+    const clusterConditions = [];
+
+    if (this.params.has('min_duration_param')) {
+      clusterConditions.push('cluster_duration >= @min_duration_param');
+    }
+
+    if (this.params.has('max_duration_param')) {
+      clusterConditions.push('cluster_duration <= @max_duration_param');
+    }
+
+    if (clusterConditions.length === 0) {
+      return '';
+    }
+
+    return `WHERE ${clusterConditions.join(' AND ')}`;
+  }
+
+  /**
+   * Get WHERE clause WITHOUT duration filters (for use before clustering)
+   */
+  getWhereClauseWithoutDuration() {
+    const filteredConditions = this.conditions.filter(cond =>
+      !cond.includes('duration_sec')
+    );
+
+    if (filteredConditions.length === 0) {
+      return '';
+    }
+
+    return `WHERE ${filteredConditions.join(' AND ')}`;
+  }
+
 
   /**
    * Get limit value with cap enforcement

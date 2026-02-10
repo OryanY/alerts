@@ -5,6 +5,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import MappingForm from '../../components/IncidentMappings/MappingForm';
 import IncidentMappingsList from './IncidentMappingsList';
 import IncidentMappingsHeader from '../../components/IncidentMappings/IncidentMappingsHeader';
+import { safeJson } from '../../utils/helpers';
 
 // Pattern types are semantic only (no colors here)
 export const PATTERN_TYPES = {
@@ -31,6 +32,8 @@ export const PATTERN_TYPES = {
   },
 };
 
+
+
 const IncidentMappings = () => {
   const { colors, gradients, PATTERN_COLORS } = useTheme();
   const formRef = useRef(null);
@@ -45,10 +48,20 @@ const IncidentMappings = () => {
   const fetchMappings = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/incidents/system-mappings`);
-      const data = await res.json();
-      if (data.success) setMappings(data.data || []);
-      else setError(data.error.message || 'Failed to fetch system mappings');
+      setLoading(true);
+      const res = await fetch(`${API_BASE}/incidents/system-mappings`, { credentials: 'include' });
+      const data = await safeJson(res);
+      if (data.success) {
+        setMappings(data.data || []);
+      } else {
+        const errorMsg = data.error?.message || 'Failed to fetch system mappings';
+        if (Object.keys(data).length === 0) {
+          // Empty response (likely 401/403)
+          setError('Authentication required');
+        } else {
+          setError(errorMsg);
+        }
+      }
     } catch (e) {
       setError('Error connecting to server: ' + e.message);
     } finally {
@@ -59,8 +72,9 @@ const IncidentMappings = () => {
   const fetchAssignmentGroups = async () => {
     try {
       setLoadingGroups(true);
-      const res = await fetch(`${API_BASE}/incidents/assignment-groups`);
-      const data = await res.json();
+      setLoadingGroups(true);
+      const res = await fetch(`${API_BASE}/incidents/assignment-groups`, { credentials: 'include' });
+      const data = await safeJson(res);
       if (data.success) {
         const sortedGroups = (data.data || []).sort((a, b) =>
           String(a.name || '').localeCompare(String(b.name || ''))
@@ -97,15 +111,20 @@ const IncidentMappings = () => {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this mapping?')) return;
+    if (!window.confirm('Are you sure you want to delete this mapping?')) return;
     try {
-      const res = await fetch(`${API_BASE}/incidents/system-mappings/${id}`, { method: 'DELETE' });
-      const data = await res.json();
+      const res = await fetch(`${API_BASE}/incidents/system-mappings/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      const data = await safeJson(res);
       if (data.success) {
         await fetchMappings();
         setError(null);
       } else {
-        console.log(data.error.message);
-        setError(data.error.message || 'Failed to delete mapping');
+        const errorMsg = data.error?.message || 'Failed to delete mapping';
+        console.log(errorMsg);
+        setError(errorMsg);
       }
     } catch (e) {
       setError('Error deleting mapping: ' + e.message);

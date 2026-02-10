@@ -13,7 +13,6 @@ class IncidentQueryService {
         this.assignmentGroupsCollection = collections.assignmentGroups;
         this.incidentLogsCollection = collections.incidentLogs;
 
-        // Ensure TTL index for logs (90 days = 7776000 seconds)
         // Background creation to avoid blocking
         this.incidentLogsCollection.createIndex(
             { created_at: 1 },

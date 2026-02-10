@@ -24,6 +24,11 @@ const REQUIRED_ENV_VARS = [
  * Optional but recommended environment variables
  */
 const RECOMMENDED_ENV_VARS = [
+    'FRONTEND_URL',
+    'AUTH_DEV_BYPASS', // For local development without Windows Auth
+    'SQL_POOL_MAX',
+    'SQL_POOL_MIN',
+    'SQL_PORT'
 ];
 
 /**

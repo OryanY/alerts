@@ -1,5 +1,6 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { useTheme } from '../../contexts/ThemeContext';
+import { AlertCircle } from 'lucide-react';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -8,111 +9,128 @@ class ErrorBoundary extends React.Component {
     }
 
     static getDerivedStateFromError(error) {
-        // Update state so the next render will show the fallback UI.
-        return { hasError: true, error };
+        return { hasError: true };
     }
 
     componentDidCatch(error, errorInfo) {
-        // You can also log the error to an error reporting service
-        console.error("Uncaught error:", error, errorInfo);
-        this.setState({ errorInfo });
-    }
+        this.setState({ error, errorInfo });
 
-    handleReset = () => {
-        this.setState({ hasError: false, error: null, errorInfo: null });
-        window.location.reload();
-    };
+        // Log to console for debugging
+        console.error('Error Boundary caught an error:', error, errorInfo);
+
+        // You can also log to an error reporting service here
+        // e.g., Sentry, LogRocket, etc.
+    }
 
     render() {
         if (this.state.hasError) {
-            // Fallback UI
-            return (
-                <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '100vh',
-                    width: '100vw',
-                    backgroundColor: '#f8fafc',
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    color: '#1e293b',
-                    textAlign: 'center',
-                    padding: 20
-                }}>
-                    <div style={{
-                        background: '#fff',
-                        padding: 40,
-                        borderRadius: 16,
-                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                        maxWidth: 500,
-                        width: '100%'
-                    }}>
-                        <div style={{
-                            width: 64,
-                            height: 64,
-                            background: '#fee2e2',
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            marginBottom: 24,
-                            margin: '0 auto'
-                        }}>
-                            <AlertTriangle size={32} color="#ef4444" />
-                        </div>
-
-                        <h1 style={{ margin: '0 0 12px 0', fontSize: 24, fontWeight: 700 }}>Something went wrong</h1>
-                        <p style={{ margin: '0 0 24px 0', color: '#64748b', lineHeight: 1.5 }}>
-                            The application encountered an unexpected error. We've logged the issue and notified our team.
-                        </p>
-
-                        {this.state.error && (
-                            <div style={{
-                                background: '#f1f5f9',
-                                padding: 12,
-                                borderRadius: 8,
-                                marginBottom: 24,
-                                textAlign: 'left',
-                                overflow: 'auto',
-                                maxHeight: 200,
-                                fontSize: 12,
-                                fontFamily: 'monospace',
-                                color: '#ef4444'
-                            }}>
-                                {this.state.error.toString()}
-                            </div>
-                        )}
-
-                        <button
-                            onClick={this.handleReset}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 8,
-                                background: '#0ea5e9',
-                                color: 'white',
-                                border: 'none',
-                                padding: '12px 24px',
-                                borderRadius: 8,
-                                fontSize: 16,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'background 0.2s'
-                            }}
-                            onMouseOver={(e) => e.currentTarget.style.background = '#0284c7'}
-                            onMouseOut={(e) => e.currentTarget.style.background = '#0ea5e9'}
-                        >
-                            <RefreshCw size={18} />
-                            Reload Page
-                        </button>
-                    </div>
-                </div>
-            );
+            return <ErrorFallback error={this.state.error} errorInfo={this.state.errorInfo} />;
         }
 
         return this.props.children;
     }
 }
+
+const ErrorFallback = ({ error, errorInfo }) => {
+    const { colors } = useTheme();
+
+    return (
+        <div
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '100vh',
+                padding: 40,
+                background: colors.bg.primary,
+            }}
+        >
+            <div
+                style={{
+                    maxWidth: 600,
+                    padding: 40,
+                    background: colors.bg.secondary,
+                    borderRadius: 12,
+                    border: `1px solid ${colors.border.primary}`,
+                    textAlign: 'center',
+                }}
+            >
+                <AlertCircle
+                    size={64}
+                    style={{
+                        color: colors.semantic?.error || '#EF4444',
+                        marginBottom: 24,
+                    }}
+                />
+
+                <h1
+                    style={{
+                        fontSize: 24,
+                        fontWeight: 700,
+                        marginBottom: 16,
+                        color: colors.text.primary,
+                    }}
+                >
+                    Something went wrong
+                </h1>
+
+                <p
+                    style={{
+                        fontSize: 16,
+                        color: colors.text.secondary,
+                        marginBottom: 24,
+                        lineHeight: 1.6,
+                    }}
+                >
+                    We encountered an unexpected error. Please try refreshing the page.
+                    If the problem persists, contact support.
+                </p>
+
+                <button
+                    onClick={() => window.location.reload()}
+                    style={{
+                        padding: '12px 24px',
+                        fontSize: 16,
+                        fontWeight: 600,
+                        color: '#FFFFFF',
+                        background: colors.brand.primary,
+                        border: 'none',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s',
+                    }}
+                    onMouseEnter={(e) => (e.target.style.opacity = '0.9')}
+                    onMouseLeave={(e) => (e.target.style.opacity = '1')}
+                >
+                    Refresh Page
+                </button>
+
+                {process.env.NODE_ENV === 'development' && error && (
+                    <details
+                        style={{
+                            marginTop: 32,
+                            padding: 16,
+                            background: colors.bg.tertiary,
+                            borderRadius: 8,
+                            textAlign: 'left',
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            color: colors.text.secondary,
+                        }}
+                    >
+                        <summary style={{ cursor: 'pointer', marginBottom: 8, fontWeight: 600 }}>
+                            Error Details (Dev Only)
+                        </summary>
+                        <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {error.toString()}
+                            {errorInfo && errorInfo.componentStack}
+                        </pre>
+                    </details>
+                )}
+            </div>
+        </div>
+    );
+};
 
 export default ErrorBoundary;

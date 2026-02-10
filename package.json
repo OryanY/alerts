@@ -3,6 +3,7 @@
     "start": "concurrently \"npm run dev --prefix backend\" \"npm run start --prefix frontend\""
   },
   "dependencies": {
+    "node-sspi": "^0.2.11",
     "swagger-ui-express": "^5.0.1"
   }
 }

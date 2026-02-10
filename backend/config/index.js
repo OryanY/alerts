@@ -3,7 +3,6 @@ require('dotenv').config();
 
 const CONFIG = Object.freeze({
   cache: {
-    ttl: 300,
     maxEntries: 1000,
     enabled: true,
   },
@@ -15,12 +14,20 @@ const CONFIG = Object.freeze({
   },
 
   cors: {
-    origin: process.env.NODE_ENV === 'production'
-      ? (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
-      : true,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    restricted: {
+      origin: process.env.NODE_ENV === 'production'
+        ? [...(process.env.ALLOWED_ORIGINS || '').split(','), process.env.FRONTEND_URL].filter(Boolean)
+        : true,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    },
+    public: {
+      origin: true, // Allow any origin to connect (needed for external incident creation)
+      credentials: true,
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    }
   },
 
   shifts: {
@@ -44,6 +51,13 @@ const CONFIG = Object.freeze({
     defaultCap: 100000,
     maxPageSize: 1000,
     maxDateRangeDays: 100000,
+  },
+
+  auth: {
+    // Centralized list of groups that have Admin access
+    adminGroups: ['Admins', 'Administrators', 'Domain Admins'],
+    // Default groups for development mode
+    devGroups: ['Admins']
   }
 });
 
@@ -51,11 +65,11 @@ const encode = encodeURIComponent;
 
 // SQL Server Configuration
 const dbConfig = {
-  server: process.env.SQL_SERVER || 'localhost',
+  server: process.env.SQL_SERVER,
   port: parseInt(process.env.SQL_PORT, 10) || 1433,
-  database: process.env.SQL_DATABASE || 'your_database_name',
-  user: process.env.SQL_USER || 'your_user',
-  password: process.env.SQL_PASSWORD || 'your_password',
+  database: process.env.SQL_DATABASE,
+  user: process.env.SQL_USER,
+  password: process.env.SQL_PASSWORD,
   options: {
     encrypt: process.env.SQL_ENCRYPT === 'true' || false,
     trustServerCertificate: true,
@@ -70,9 +84,12 @@ const dbConfig = {
 };
 
 // MongoDB Configuration
+// MongoDB Configuration
 const mongoConfig = {
-  uri: process.env.MONGO_URI || `mongodb://${encode(process.env.MONGO_USER || 'grafana2sn')}:${encode(process.env.MONGO_PASSWORD || 'YOUR_STRONG_PASSWORD')}@${process.env.MONGO_HOST || 'localhost'}:${process.env.MONGO_PORT || '27017'}/${process.env.MONGO_DB || 'grafana_snow_dev'}?authSource=${process.env.MONGO_AUTH_DB || process.env.MONGO_DB || 'grafana_snow_dev'}`,
-  database: process.env.MONGO_DB || 'grafana_snow_dev',
+  // If MONGO_URI is provided, use it. Otherwise construct from parts (all must be present)
+  uri: process.env.MONGO_URI ||
+    `mongodb://${encode(process.env.MONGO_USER)}:${encode(process.env.MONGO_PASSWORD)}@${process.env.MONGO_HOST}:${process.env.MONGO_PORT}/${process.env.MONGO_DB}?authSource=${process.env.MONGO_AUTH_DB || process.env.MONGO_DB}`,
+  database: process.env.MONGO_DB,
   collections: {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
-import { withAlpha } from '../../utils/helpers';
+import { withAlpha, safeJson } from '../../utils/helpers';
 import MappingFormPatternBuilder from './MappingFormPatternBuilder';
 
 const baseMandatoryFields = [
@@ -255,14 +255,15 @@ const MappingForm = ({
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(dataToSave),
+                credentials: 'include'
             });
 
-            const data = await res.json();
+            const data = await safeJson(res);
 
             if (data.success) {
                 onSaved?.();
             } else {
-                onError?.(data.error.message || 'Failed to save mapping');
+                onError?.(data.error?.message || 'Failed to save mapping');
             }
         } catch (e2) {
             onError?.('Error saving mapping: ' + e2.message);

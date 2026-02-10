@@ -15,13 +15,18 @@ const swaggerSpec = {
             description: 'API Base Path'
         }
     ],
+    // Global security requirement
+    security: [
+        { negotiateAuth: [] }
+    ],
     tags: [
         { name: 'Health', description: 'Health check endpoints' },
+        { name: 'Auth', description: 'Authentication and User Info' },
         { name: 'Config', description: 'Application configuration' },
         { name: 'Alerts', description: 'Alert data and filtering' },
         { name: 'Incidents', description: 'Incident creation and management' },
         { name: 'System Mappings', description: 'Grafana to ServiceNow field mappings' },
-        { name: 'Incident Rules', description: 'Override rules for incident creation' }
+        { name: 'Incident Rules', description: 'Overri  de rules for incident creation' }
     ],
     paths: {
         '/health': {
@@ -56,6 +61,38 @@ const swaggerSpec = {
                 description: 'Returns shifts, duration thresholds, timezone, and feature flags',
                 responses: {
                     '200': { description: 'Configuration object' }
+                }
+            }
+        },
+        '/auth/me': {
+            get: {
+                tags: ['Auth'],
+                summary: 'Get current user',
+                description: 'Returns the currently authenticated user or guest information',
+                responses: {
+                    '200': {
+                        description: 'User details',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        success: { type: 'boolean', example: true },
+                                        data: {
+                                            type: 'object',
+                                            properties: {
+                                                username: { type: 'string', example: 'jdoe' },
+                                                fullName: { type: 'string', example: 'John Doe' },
+                                                isAuthenticated: { type: 'boolean', example: true },
+                                                isAdmin: { type: 'boolean', example: false },
+                                                initials: { type: 'string', example: 'JD' }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         },
@@ -281,6 +318,13 @@ const swaggerSpec = {
         }
     },
     components: {
+        securitySchemes: {
+            negotiateAuth: {
+                type: 'http',
+                scheme: 'negotiate',
+                description: 'Windows Authentication (Kerberos/NTLM)'
+            }
+        },
         schemas: {
             AlertQuery: {
                 type: 'object',

@@ -118,7 +118,8 @@ class SqlTemplates {
   static SHIFT_ANALYSIS = `
     SELECT 
       CASE 
-        WHEN DATEPART(HOUR, time_fired) >= @day_start AND DATEPART(HOUR, time_fired) < @day_end 
+        WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start 
+             AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end 
         THEN 'Day'
         ELSE 'Night'
       END AS shift,
@@ -134,7 +135,8 @@ class SqlTemplates {
     {WHERE_CLAUSE}
     GROUP BY 
       CASE 
-        WHEN DATEPART(HOUR, time_fired) >= @day_start AND DATEPART(HOUR, time_fired) < @day_end 
+        WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start 
+             AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end 
         THEN 'Day'
         ELSE 'Night'
       END
@@ -361,9 +363,13 @@ class SqlTemplates {
       FROM Grouped
       GROUP BY cluster_id
     ),
+    FilteredClusters AS (
+      SELECT * FROM Clusters
+      {CLUSTER_FILTER}
+    ),
     MedianCTE AS (
       SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cluster_duration) OVER () AS median_val
-      FROM Clusters
+      FROM FilteredClusters
     )
     SELECT 
       COUNT(*) AS total_alerts,
@@ -390,7 +396,7 @@ class SqlTemplates {
              AND cluster_duration <= @false_wakeup_threshold 
         THEN 1 
       END) AS night_false_wakeups
-    FROM Clusters
+    FROM FilteredClusters
   `;
 
   static CLUSTERED_HOURLY_HEATMAP = `
@@ -512,7 +518,8 @@ class SqlTemplates {
       AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
       MIN(cluster_duration) AS min_duration,
       MAX(cluster_duration) AS max_duration,
-      COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_wakeups
+      COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_wakeups,
+      COUNT(CASE WHEN cluster_duration > @false_wakeup_threshold THEN 1 END) AS true_alerts
     FROM Clusters
     GROUP BY CASE 
       WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start 
