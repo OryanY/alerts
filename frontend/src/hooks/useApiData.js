@@ -1,7 +1,6 @@
-// frontend/src/hooks/useApiData.js
-// COMPLETE REPLACEMENT - Copy this entire file
+// hooks/useApiData.js — Reusable data fetching hook with abort control and error handling
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { API_BASE } from '../utils/constants';
 
 export const useApiData = (endpoint, params = {}, options = {}) => {
@@ -13,7 +12,7 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
   // Track abort controller for cleanup
   const abortControllerRef = useRef(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (skip || !params) return;
 
     // Cancel any in-flight request
@@ -94,7 +93,7 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [endpoint, skip, params ? JSON.stringify(params) : '']);
 
   useEffect(() => {
     if (!skip && params) {
@@ -107,7 +106,7 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
         abortControllerRef.current.abort();
       }
     };
-  }, [endpoint, skip, params ? JSON.stringify(params) : '']); // Simple stable dependency
+  }, [fetchData, skip, params ? JSON.stringify(params) : '']);
 
   return { data, loading, error, refetch: fetchData };
 };

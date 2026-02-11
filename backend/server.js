@@ -24,13 +24,13 @@ const authRoutes = require('./routes/authRoutes');
 const { errorMiddleware, setupGlobalErrorHandlers } = require('./middleware/errorHandler');
 
 // Import utilities
-const { validateEnvironment } = require('./utils/validateEnv');
+const { validateEnvironmentVariables } = require('./utils/validateEnv');
 
 // Setup global handlers
 setupGlobalErrorHandlers();
 
 // Validate environment variables
-validateEnvironment();
+validateEnvironmentVariables();
 
 // App setup
 const app = express();

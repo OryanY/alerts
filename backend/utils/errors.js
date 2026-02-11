@@ -15,14 +15,32 @@ class AppError extends Error {
      * @param {string} message - Error message
      * @param {number} status - HTTP status code
      * @param {string} code - Error code from ERROR_CODES
+     * @param {Object} [context] - Additional context data for debugging
      */
-    constructor(message, status = HTTP_STATUS.INTERNAL_ERROR, code = ERROR_CODES.INTERNAL_ERROR) {
+    constructor(message, status = HTTP_STATUS.INTERNAL_ERROR, code = ERROR_CODES.INTERNAL_ERROR, context = {}) {
         super(message);
         this.name = this.constructor.name;
         this.status = status;
         this.code = code;
+        this.context = context;
+        this.timestamp = new Date().toISOString();
         this.isOperational = true; // Distinguishes operational errors from programming errors
         Error.captureStackTrace(this, this.constructor);
+    }
+
+    /**
+     * Format error for logging
+     */
+    toJSON() {
+        return {
+            name: this.name,
+            message: this.message,
+            code: this.code,
+            status: this.status,
+            context: this.context,
+            timestamp: this.timestamp,
+            stack: process.env.NODE_ENV === 'development' ? this.stack : undefined
+        };
     }
 }
 

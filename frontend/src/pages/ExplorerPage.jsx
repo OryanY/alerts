@@ -1,3 +1,4 @@
+// pages/ExplorerPage.jsx — Main alert exploration interface with filtering and visualization
 import { useMemo, useEffect, useState, useRef } from 'react';
 import { Search, Filter, Download, RefreshCw, X, AlertCircle } from 'lucide-react';
 
@@ -6,8 +7,8 @@ import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
-import { formatHourAndDay } from "../utils/helpers";
-import { escapeCsv } from '../utils/helpers';
+import { formatHourAndDay } from "../utils/dateUtils";
+import { escapeCsv } from '../utils/formatters';
 
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { LazyInput } from '../components/ui/LazyInput';

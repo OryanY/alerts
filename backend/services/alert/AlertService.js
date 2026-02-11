@@ -1,5 +1,8 @@
 // services/alert/AlertService.js
-// Main orchestration layer - coordinates between query, analysis, and transform layers
+// Main orchestration layer for alert analytics and listing.
+// Coordinates between AlertQueryService (SQL), AlertAnalysisService (computations),
+// and AlertTransformService (response shaping).
+// Used by: AlertController (alert listing), StatsController (all analytics endpoints)
 
 const { getSqlPool } = require('../../database/connection');
 const { AlertQueryService } = require('./AlertQueryService');
@@ -69,8 +72,12 @@ class AlertService {
 
     _getClusteringConfig(params = {}) {
         return {
-            enabled: params.clustering_enabled !== 'false' && params.clustering_enabled !== false,
-            threshold: params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : 15
+            enabled: params.clustering_enabled !== undefined
+                ? (params.clustering_enabled !== 'false' && params.clustering_enabled !== false)
+                : CONFIG.clustering.enabledByDefault,
+            threshold: params.clustering_threshold
+                ? parseInt(params.clustering_threshold, 10)
+                : (CONFIG.clustering.defaultThreshold || 15)
         };
     }
 
@@ -94,7 +101,12 @@ class AlertService {
         return { records, clusteringEnabled: shouldCluster };
     }
 
-    // Analytics Methods
+    /**
+     * Calculate executive KPIs: total alerts, avg/median duration, false-positive rate,
+     * true wakeups, signal ratio, and period-over-period trend percentages.
+     * @param {Object} params - Query filters (start_date, end_date, application, etc.)
+     * @returns {Object} ResponseFormatter-wrapped KPI data with noise_trend_pct and total_trend_pct
+     */
     async getExecutiveKPIs(params) {
         const thresholds = this._getThresholds(params);
         const { enabled, threshold } = this._getClusteringConfig(params);
@@ -163,6 +175,11 @@ class AlertService {
         }
     }
 
+    /**
+     * Get daily timeseries of alert counts, average duration, and day/night split.
+     * @param {Object} params - Query filters (start_date, end_date, application, etc.)
+     * @returns {Object} ResponseFormatter-wrapped array of { date_il, alert_count, avg_duration, day_count, night_count }
+     */
     async getTimeseriesStats(params) {
         const thresholds = this._getThresholds(params);
         const { enabled, threshold } = this._getClusteringConfig(params);
@@ -184,7 +201,11 @@ class AlertService {
         })));
     }
 
-    // Deep Analysis
+    /**
+     * Get duration histogram bucketed into Short / Medium / Long categories.
+     * @param {Object} params - Query filters
+     * @returns {Object} ResponseFormatter-wrapped array of { range, category, count, percentage }
+     */
     async getDurationHistogram(params) {
         const thresholds = this._getThresholds(params);
         const { enabled, threshold } = this._getClusteringConfig(params);
@@ -207,6 +228,11 @@ class AlertService {
         return ResponseFormatter.success(this.transformService.formatDurationHistogram(histogram, total));
     }
 
+    /**
+     * Get hourly heatmap: alert count and avg duration for each of 24 hours.
+     * @param {Object} params - Query filters
+     * @returns {Object} ResponseFormatter-wrapped array of { hour, count, avg_duration, is_night, hour_display }
+     */
     async getHourlyHeatmap(params) {
         const thresholds = this._getThresholds(params);
         const { enabled, threshold } = this._getClusteringConfig(params);
@@ -222,6 +248,11 @@ class AlertService {
         return ResponseFormatter.success(this.transformService.formatHourlyHeatmap(heatmap, thresholds));
     }
 
+    /**
+     * Analyze alerts by shift (Day vs Night), including false-wakeup rate per shift.
+     * @param {Object} params - Query filters
+     * @returns {Object} ResponseFormatter-wrapped array of { shift, alert_count, true_alerts, false_wakeups, false_wakeup_rate }
+     */
     async getShiftAnalysis(params) {
         const thresholds = this._getThresholds(params);
         const { enabled, threshold } = this._getClusteringConfig(params);
@@ -242,6 +273,12 @@ class AlertService {
         return ResponseFormatter.success(enriched);
     }
 
+    /**
+     * Deep-dive analysis for a specific panel: summary, duration distribution,
+     * daily trend, hourly heatmap, and top noisy alert messages.
+     * @param {Object} params - Must include panel_title; also accepts date range filters
+     * @returns {Object} ResponseFormatter-wrapped panel analysis with summary, duration_distribution, daily_trend, hourly_heatmap, top_noisy_alerts
+     */
     async getPanelAnalysis(params) {
         const thresholds = this._getThresholds(params);
         const { records } = await this._fetchAndCluster(
@@ -251,7 +288,12 @@ class AlertService {
         return ResponseFormatter.success(this.analysisService.computePanelAnalysis(records, thresholds));
     }
 
-    // List & Rankings
+    /**
+     * Get paginated list of alerts, with optional clustering, sorting, and filtering.
+     * When clustering is enabled, duration filters are applied after clustering.
+     * @param {Object} params - Query filters, pagination (page, limit), sorting (sort_by, sort_order)
+     * @returns {Object} ResponseFormatter-wrapped array of transformed alert records with pagination metadata
+     */
     async getAlerts(params) {
         const thresholds = this._getThresholds(params);
         const { enabled, threshold } = this._getClusteringConfig(params);
@@ -315,10 +357,15 @@ class AlertService {
             }
         }
 
-        const transformed = this.transformService.transformAlertRecords(clusteredRecords, thresholds);
+        const transformed = this.transformService.transformAlertRecords(finalRecords, thresholds);
         return ResponseFormatter.success(transformed, pagination);
     }
 
+    /**
+     * Get list of panels with their alert counts, avg duration, and health scores.
+     * @param {Object} params - Query filters
+     * @returns {Object} ResponseFormatter-wrapped array of panel stats with health_score and risk_level
+     */
     async getPanelList(params) {
         const thresholds = this._getThresholds(params);
         const { enabled } = this._getClusteringConfig(params);
@@ -333,6 +380,11 @@ class AlertService {
         return ResponseFormatter.success(this.transformService.enrichPanelStats(panels));
     }
 
+    /**
+     * Get top panels ranked by alert count (limited, default 20).
+     * @param {Object} params - Query filters, optional limit
+     * @returns {Object} ResponseFormatter-wrapped array of panel stats
+     */
     async getPanelStats(params) {
         const thresholds = this._getThresholds(params);
         const { enabled } = this._getClusteringConfig(params);
@@ -351,6 +403,11 @@ class AlertService {
         return ResponseFormatter.success(limited);
     }
 
+    /**
+     * Get top applications ranked by alert count.
+     * @param {Object} params - Query filters, optional limit (default 10)
+     * @returns {Object} ResponseFormatter-wrapped array of { application, alert_count }
+     */
     async getTopApplications(params) {
         const { enabled } = this._getClusteringConfig(params);
 
@@ -375,6 +432,11 @@ class AlertService {
         return ResponseFormatter.success(apps);
     }
 
+    /**
+     * Get top nodes ranked by alert count within a given application.
+     * @param {Object} params - Query filters including application, optional limit (default 10)
+     * @returns {Object} ResponseFormatter-wrapped array of { node_name, alert_count }
+     */
     async getTopNodesByApp(params) {
         const { enabled } = this._getClusteringConfig(params);
 
@@ -399,6 +461,11 @@ class AlertService {
         return ResponseFormatter.success(nodes);
     }
 
+    /**
+     * Find nodes that had alerts on 3+ consecutive days (indicates persistent issues).
+     * @param {Object} params - Query filters, optional limit (default 10)
+     * @returns {Object} ResponseFormatter-wrapped array of { node_name, consecutive_days, total_alerts, first_alert_date, last_alert_date }
+     */
     async getConsecutiveDaysNodes(params) {
         const { enabled } = this._getClusteringConfig(params);
 
@@ -468,7 +535,7 @@ class AlertService {
         return ResponseFormatter.success(sorted);
     }
 
-    // Internal Helpers
+    // ================== INTERNAL HELPERS ==================
     _calculateTrend(current, previous) {
         if (!previous || previous === 0) return current > 0 ? 100 : 0;
         return ((current - previous) / previous) * 100;

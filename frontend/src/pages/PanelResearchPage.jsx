@@ -150,12 +150,7 @@ const PanelResearchPage = () => {
     error: alertsError
   } = useApiData('/alerts', alertsParams, { skip: !selectedPanel });
 
-  // Parsing error debugging
-  useMemo(() => {
-    if (alertsError) console.error("Alerts API Error:", alertsError);
-    if (recentAlerts) console.log("Recent Alerts Data:", recentAlerts);
-    console.log("Alerts Params:", alertsParams);
-  }, [alertsError, recentAlerts, alertsParams]);
+
 
   // Columns for the AlertTable
   const visibleColumns = [

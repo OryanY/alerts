@@ -1,4 +1,4 @@
-import { formatHourAndDay } from "../../utils/helpers";
+import { formatHourAndDay } from "../../utils/dateUtils";
 import { useState, Fragment } from 'react';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 

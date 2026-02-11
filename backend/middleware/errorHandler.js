@@ -3,8 +3,9 @@
 
 const { ERROR_CODES } = require('../utils/constants');
 const { ResponseFormatter } = require('../utils/ResponseFormatter');
+const { AppError } = require('../utils/errors');
 
-// Custom error class for API errors
+// Custom error class for API errors (Legacy, consider replacing with AppError)
 class ApiError extends Error {
   constructor(code, message, status = 400, details = null) {
     super(message);
@@ -54,11 +55,13 @@ function logError(errorId, error, req = null) {
   const logData = {
     errorId,
     timestamp: new Date().toISOString(),
-    error: {
+    error: error.toJSON ? error.toJSON() : {
       name: error.name,
       message: error.message,
       code: error.code,
-      status: error.status
+      status: error.status,
+      // Capture context if it exists (legacy support)
+      context: error.context || error.details
     }
   };
 
@@ -71,14 +74,15 @@ function logError(errorId, error, req = null) {
     };
   }
 
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === 'development' && !error.toJSON) {
     logData.stack = error.stack;
   }
 
   // Use appropriate log level based on error type
-  if (error.status >= 500) {
+  const status = error.status || 500;
+  if (status >= 500) {
     console.error('Server Error:', JSON.stringify(logData, null, 2));
-  } else if (error.status >= 400) {
+  } else if (status >= 400) {
     console.warn('Client Error:', JSON.stringify(logData, null, 2));
   } else {
     console.info('Error:', JSON.stringify(logData, null, 2));
@@ -100,7 +104,18 @@ function handleError(res, err, req = null) {
     return res.status(400).json(response);
   }
 
-  // Custom API errors
+  // New AppError handling
+  if (err instanceof AppError) {
+    const response = ResponseFormatter.error(
+      err.code,
+      err.message,
+      err.status,
+      { errorId, context: err.context }
+    );
+    return res.status(err.status).json(response);
+  }
+
+  // Legacy ApiError handling
   if (err instanceof ApiError) {
     const response = ResponseFormatter.error(
       err.code,

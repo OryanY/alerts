@@ -92,21 +92,7 @@ class AlertTransformService {
     };
   }
 
-  /**
-   * Add date range to response metadata
-   */
-  addDateRangeMeta(data, params) {
-    return {
-      ...data,
-      date_range: (params.start_date && params.end_date)
-        ? {
-          start: params.start_date,
-          end: params.end_date,
-          days: this._calculateDaysDiff(params.start_date, params.end_date)
-        }
-        : null
-    };
-  }
+
 
   /**
    * Format hourly heatmap with night indicators

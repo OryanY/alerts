@@ -8,7 +8,7 @@ import IncidentRulesHeader from '../components/IncidentRules/IncidentRulesHeader
 import EmptyState from '../components/IncidentRules/EmptyState';
 import RuleCard from '../components/IncidentRules/RuleCard';
 import RuleForm from '../components/IncidentRules/RuleForm';
-import { safeJson } from '../utils/helpers';
+import { safeJson } from '../utils/api';
 
 const IncidentRules = () => {
   const { colors, gradients, PATTERN_COLORS } = useTheme();

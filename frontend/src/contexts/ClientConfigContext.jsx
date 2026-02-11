@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+// contexts/ClientConfigContext.jsx — Global client configuration and date range state
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 const ClientConfigContext = createContext();
 
@@ -150,7 +151,7 @@ export const ClientConfigProvider = ({ children }) => {
   };
 
   // Generate API params from config
-  const getApiParams = () => {
+  const getApiParams = useCallback(() => {
     const bands = (clientCfg.bands && Array.isArray(clientCfg.bands)) ? clientCfg.bands : DEFAULT_CLIENT_CFG.bands;
     return {
       day_start: clientCfg.dayStart || DEFAULT_CLIENT_CFG.dayStart,
@@ -163,7 +164,7 @@ export const ClientConfigProvider = ({ children }) => {
       dur_short_max: bands.find(b => b.key === 'short')?.max ?? 59,
       dur_medium_max: bands.find(b => b.key === 'medium')?.max ?? 299
     };
-  };
+  }, [clientCfg]);
 
   const value = {
     config: clientCfg,

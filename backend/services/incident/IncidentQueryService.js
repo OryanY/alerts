@@ -53,17 +53,8 @@ class IncidentQueryService {
             throw error;
         }
     }
-    async getLastSyncTime() {
-        try {
-            const doc = await this.assignmentGroupsCollection.findOne({
-                _id: 'assignment_groups_store'
-            });
-            return doc?.lastSynced || null;
-        } catch (error) {
-            console.error('❌ Error getting last sync time:', error);
-            return null;
-        }
-    }
+
+
     // ================== SYSTEM MAPPINGS ==================
 
     /**
@@ -284,18 +275,7 @@ class IncidentQueryService {
         return allRules.filter(rule => rule.enabled !== false);
     }
 
-    /**
-     * Find rule by ID
-     */
-    async findRuleById(id) {
-        try {
-            const objectId = new ObjectId(id);
-            return await this.incidentRulesCollection.findOne({ _id: objectId });
-        } catch (error) {
-            console.error('❌ Error fetching rule by ID:', error);
-            throw new Error('Failed to fetch rule');
-        }
-    }
+
 
     /**
      * Create incident rule
@@ -374,20 +354,7 @@ class IncidentQueryService {
         }
     }
 
-    /**
-     * Count rules by mapping ID
-     */
-    async countRulesByMapping(mappingId) {
-        try {
-            const objectId = new ObjectId(mappingId);
-            return await this.incidentRulesCollection.countDocuments({
-                system_mapping_id: objectId
-            });
-        } catch (error) {
-            console.error('❌ Error counting rules:', error);
-            return 0;
-        }
-    }
+
 
     // ================== INCIDENT LOGS ==================
 

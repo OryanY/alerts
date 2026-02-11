@@ -130,23 +130,7 @@ class AlertQueryService {
     return result.recordset;
   }
 
-  /**
-   * Fetch overview statistics using SQL aggregation
-   */
-  async fetchOverviewStats(params, thresholds) {
-    const request = this.pool.request();
 
-    const context = QueryContextBuilder.fromParams(params, this.constants);
-    context.addThresholdParams(thresholds);
-    context.applyToRequest(request);
-
-    const sqlQuery = new SqlBuilder(SqlTemplates.OVERVIEW_STATS)
-      .replace('WHERE_CLAUSE', context.getWhereClause())
-      .build();
-
-    const result = await request.query(sqlQuery);
-    return result.recordset[0];
-  }
 
   /**
    * Fetch panel list with aggregates
@@ -193,62 +177,7 @@ class AlertQueryService {
     return result.recordset;
   }
 
-  /**
-   * Fetch top noisy nodes
-   */
-  async fetchTopNoisyNodes(params) {
-    const request = this.pool.request();
 
-    const context = QueryContextBuilder.fromParams(params, this.constants);
-    const limit = Math.min(params.limit || 10, 50);
-
-    context.applyToRequest(request);
-    request.input('limit_param', sql.Int, limit);
-
-    const sqlQuery = new SqlBuilder(SqlTemplates.TOP_NOISY_NODES)
-      .replace('WHERE_CLAUSE', context.getWhereClause())
-      .build();
-
-    const result = await request.query(sqlQuery);
-    return result.recordset;
-  }
-
-  /**
-   * Fetch alert message breakdown
-   */
-  async fetchMessageBreakdown(params, thresholds) {
-    const request = this.pool.request();
-
-    const context = QueryContextBuilder.fromParams(params, this.constants, {
-      requirePanelTitle: true
-    });
-    context.addThresholdParams(thresholds);
-    context.applyToRequest(request);
-
-    const sqlQuery = new SqlBuilder(SqlTemplates.ALERT_MESSAGE_BREAKDOWN)
-      .replace('WHERE_CLAUSE', context.getWhereClause())
-      .build();
-
-    const result = await request.query(sqlQuery);
-    return result.recordset;
-  }
-
-  /**
-   * Count total alerts matching criteria
-   */
-  async countAlerts(params) {
-    const request = this.pool.request();
-
-    const context = QueryContextBuilder.fromParams(params, this.constants);
-    context.applyToRequest(request);
-
-    const sqlQuery = new SqlBuilder(SqlTemplates.COUNT_ALERTS)
-      .replace('WHERE_CLAUSE', context.getWhereClause())
-      .build();
-
-    const result = await request.query(sqlQuery);
-    return result.recordset[0].total;
-  }
 
   /**
    * Fetch top applications per panel

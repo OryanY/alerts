@@ -1,4 +1,8 @@
-// services/incident/IncidentService.js - Orchestration layer (REFACTORED)
+// services/incident/IncidentService.js
+// Orchestration layer for incident management: ServiceNow integration,
+// system mappings (Grafana app → ServiceNow fields), incident rules, and assignment groups.
+// Uses lazy-loaded sub-services to avoid circular dependencies.
+// Used by: IncidentController (all incident-related endpoints)
 const { getMongoDb } = require('../../database/connection');
 const { mongoConfig } = require('../../config');
 const { IncidentQueryService } = require('./IncidentQueryService');
@@ -60,6 +64,14 @@ class IncidentService {
 
     // ================== INCIDENT CREATION ==================
 
+    /**
+     * Main orchestration: match alert → system mapping → rules → build incident → send to ServiceNow.
+     * Stacks global rules first (low priority), then specific rules (high priority).
+     * Logs the result to MongoDB incident_logs collection.
+     * @param {Object} alertData - Alert fields: application, message, node_name, object_name, time_created
+     * @returns {Object} { incidentData, serviceNowResult, appliedRules[], matchedApplications[] }
+     * @throws {Error} If no system mapping found for the application
+     */
     // Create an incident from alert data (main orchestration method)
     async createIncidentFromAlert(alertData) {
         try {
@@ -162,16 +174,28 @@ class IncidentService {
         }
     }
 
-    // ================== SYSTEM MAPPINGS ==================
+    // ================== SYSTEM MAPPINGS (Grafana app → ServiceNow config) ==================
 
+    /** @returns {Array} All system mappings from MongoDB */
     async getSystemMappings() {
         return this.queryService.findAllMappings();
     }
 
+    /**
+     * Find system mapping matching a Grafana application name (via pattern matching).
+     * @param {string} grafanaName - Grafana application name to match
+     * @returns {Object|null} Matching system mapping or null
+     */
     async getMappingByApplication(grafanaName) {
         return this.queryService.findMappingByApplication(grafanaName, this.ruleEngine);
     }
 
+    /**
+     * Create a new system mapping. Validates patterns and checks for duplicates.
+     * @param {Object} mappingData - { grafana_names, assignment_group, u_network, service_offering, ... }
+     * @returns {Object} Created mapping with _id
+     * @throws {Error} On duplicate patterns or invalid data
+     */
     async createSystemMapping(mappingData) {
         try {
             // Handle legacy grafana_name field
@@ -212,6 +236,12 @@ class IncidentService {
         }
     }
 
+    /**
+     * Update an existing system mapping by ID. Re-validates patterns.
+     * @param {string} id - MongoDB ObjectId of the mapping
+     * @param {Object} mappingData - Updated mapping fields
+     * @returns {Object|null} Updated mapping or null if not found
+     */
     async updateSystemMapping(id, mappingData) {
         try {
             const { _id, created_at, ...updateData } = mappingData;
@@ -242,6 +272,12 @@ class IncidentService {
         }
     }
 
+    /**
+     * Delete a system mapping. Checks for dependent incident rules first.
+     * @param {string} id - MongoDB ObjectId of the mapping
+     * @returns {Object} { deletedCount }
+     * @throws {Error} If mapping has dependent rules
+     */
     async deleteSystemMapping(id) {
         try {
             const result = await this.queryService.deleteMapping(id);
@@ -253,12 +289,23 @@ class IncidentService {
         }
     }
 
-    // ================== INCIDENT RULES ==================
+    // ================== INCIDENT RULES (override ServiceNow fields based on alert conditions) ==================
 
+    /**
+     * Get all incident rules, optionally filtered by Grafana application name.
+     * @param {string|null} grafanaName - Optional application filter
+     * @returns {Array} Matching rules sorted by priority
+     */
     async getIncidentRules(grafanaName = null) {
         return this.queryService.findAllRules(grafanaName, this.ruleEngine);
     }
 
+    /**
+     * Create a new incident rule. Validates regex patterns and links to system mapping.
+     * @param {Object} ruleData - { rule_name, system_mapping_id, conditions[], incident_overrides, ... }
+     * @returns {Object} Created rule with _id
+     * @throws {Error} On invalid regex patterns or missing system mapping
+     */
     async createIncidentRule(ruleData) {
         try {
             let mapping = null;
@@ -311,6 +358,12 @@ class IncidentService {
         }
     }
 
+    /**
+     * Update an existing incident rule by ID.
+     * @param {string} id - MongoDB ObjectId of the rule
+     * @param {Object} ruleData - Updated rule fields
+     * @returns {Object|null} Updated rule or null if not found
+     */
     async updateIncidentRule(id, ruleData) {
         try {
             const { _id, created_at, system_mapping_id, ...updateData } = ruleData;
@@ -346,6 +399,7 @@ class IncidentService {
         }
     }
 
+    /** Delete an incident rule by ID. @returns {{ deletedCount: number }} */
     async deleteIncidentRule(id) {
         try {
             const result = await this.queryService.deleteRule(id);
@@ -357,6 +411,7 @@ class IncidentService {
         }
     }
 
+    /** Toggle an incident rule enabled/disabled. @returns {Object|null} Updated rule */
     async toggleIncidentRule(id, enabled) {
         try {
             const result = await this.queryService.toggleRule(id, enabled);
@@ -368,12 +423,14 @@ class IncidentService {
         }
     }
 
-    // ================== SERVICENOW INTEGRATION ==================
+    // ================== ASSIGNMENT GROUPS (cached from ServiceNow) ==================
 
+    /** Get locally-cached assignment groups. @returns {Array} Assignment group objects */
     async getAssignmentGroups() {
         return this.queryService.getAssignmentGroups();
     }
 
+    /** Fetch fresh assignment groups from ServiceNow and save to MongoDB. @returns {Array} */
     async syncAssignmentGroups() {
         try {
             const groups = await this.serviceNowClient.fetchAssignmentGroups();
@@ -385,13 +442,22 @@ class IncidentService {
             throw error;
         }
     }
-    // Create ServiceNow alert only (simpler than full incident)
+
+    // ================== SERVICENOW ALERT SHORTCUTS ==================
+
+    /**
+     * Create a simplified ServiceNow alert (lighter than a full incident).
+     * Finds the system mapping for the application to get service_offering,
+     * and sends only the fields ServiceNow needs for an alert record.
+     * @param {Object} alertData - Must include: application, message. Optional: user, prevented, incident_sys_id
+     * @returns {Object} { alertPayload, serviceNowResult, mapping_used }
+     */
     async createServiceNowAlert(alertData) {
         try {
-            const { application, incident_number } = alertData;
+            const { application, message, user, prevented, incident_sys_id } = alertData;
             if (!application) throw new Error('Alert must have an application field');
 
-            // Find basic system mapping for this application
+            // Find system mapping to get service_offering
             const systemMapping = await this.queryService.findMappingByApplication(
                 application,
                 this.ruleEngine
@@ -405,30 +471,29 @@ class IncidentService {
                 );
             }
 
-            // Build simplified alert data (not full incident)
+            // Build lean alert payload — only what ServiceNow needs
             const alertPayload = {
-                // Core alert fields
-                short_description: `Alert: ${alertData.message}`,
-                description: `Application: ${alertData.application}\nObject: ${alertData.object_name}\nNode: ${alertData.node_name}\nMessage: ${alertData.message}\nTime: ${alertData.time_created}`,
-
-                // System mapping fields (minimal set)
-                assignment_group: systemMapping.assignment_group,
-                u_network: systemMapping.u_network,
-
-                // Link to incident if provided
-                ...(incident_number && { parent_incident: incident_number }),
-
+                short_description: message,
+                service_offering: systemMapping.service_offering,
+                u_prevented_incident: Boolean(prevented),
             };
+
+            // Optional fields — only include if they have a value
+            if (user) {
+                alertPayload.caller_id = user;
+            }
+
+            if (prevented && incident_sys_id) {
+                alertPayload.parent_incident = incident_sys_id;
+            }
 
             console.log('📤 Alert payload:', JSON.stringify(alertPayload, null, 2));
 
-            // Send to ServiceNow
             const serviceNowResult = await this.serviceNowClient.createIncident(alertPayload);
 
             return {
                 alertPayload,
                 serviceNowResult,
-                matched_applications: systemMapping.grafana_names,
                 mapping_used: systemMapping._id
             };
         } catch (error) {
@@ -437,7 +502,14 @@ class IncidentService {
         }
     }
 
-    // Create incident + optional alert
+    /**
+     * Create a full incident + optionally a linked ServiceNow alert in one call.
+     * The alert is automatically marked as "prevented" and linked to the incident.
+     * @param {Object} alertData - Alert fields for incident creation
+     * @param {boolean} [createAlert=true] - Whether to also create a ServiceNow alert
+     * @param {boolean} [linkToIncident=true] - Whether to link the alert to the created incident
+     * @returns {Object} { incident, alert } or just incident result if createAlert is false
+     */
     async createIncidentWithAlert(alertData, createAlert = true, linkToIncident = true) {
         try {
             // First create the incident
@@ -448,10 +520,11 @@ class IncidentService {
                 return incidentResult;
             }
 
-            // Otherwise, also create a ServiceNow alert
+            // Create a linked ServiceNow alert — marked as prevented since incident was created
             const alertResult = await this.createServiceNowAlert({
                 ...alertData,
-                incident_number: linkToIncident ? incidentResult.serviceNowResult?.incident_number : undefined
+                prevented: true,
+                incident_sys_id: linkToIncident ? incidentResult.serviceNowResult?.sys_id : undefined
             });
 
             return {
@@ -466,6 +539,12 @@ class IncidentService {
 
     // ================== SIMULATION & DEBUGGING ==================
 
+    /**
+     * Dry-run: simulate what would happen if an alert triggered incident creation.
+     * Shows matched mapping, applied rules (stacked by priority), and generated incident data.
+     * @param {Object} alertData - Same shape as createIncidentFromAlert input
+     * @returns {Object} { system_mapping, applied_rules[], generated_incident, hierarchy_explanation }
+     */
     async simulateIncidentCreation(alertData) {
         try {
             const { application } = alertData;
@@ -530,6 +609,13 @@ class IncidentService {
 
     // ================== HISTORY / LOGS ==================
 
+    /**
+     * Get paginated incident creation history from MongoDB logs.
+     * @param {number} limit - Page size
+     * @param {number} skip - Offset
+     * @param {string} search - Optional search term
+     * @returns {Object} { logs, total }
+     */
     async getIncidentHistory(limit, skip, search) {
         return this.queryService.getIncidentLogs(limit, skip, { search });
     }

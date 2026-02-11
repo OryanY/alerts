@@ -1,4 +1,5 @@
-import { Suspense, useMemo, useCallback } from 'react';
+// pages/NOCDashboard.jsx — High-level dashboard for NOC operations
+import { useMemo, Suspense, useCallback } from 'react';
 import {
   BarChart,
   Bar,
@@ -34,7 +35,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 
 import { createChartConfig } from '../utils/chartConfig';
-import { formatDuration } from '../utils/helpers';
+import { formatDuration } from '../utils/formatters';
 
 const NocDashboard = () => {
 

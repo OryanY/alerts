@@ -1,41 +1,36 @@
 
 import React, { useState, useEffect } from 'react';
-import { API_BASE } from '../utils/constants';
+import { useApiData } from '../hooks/useApiData';
 import { useTheme } from '../contexts/ThemeContext';
 import {
-    FileText, Search, Clock, CheckCircle,
+    Search, CheckCircle,
     AlertTriangle, ChevronRight, Activity, Globe, Zap
 } from 'lucide-react';
-import { safeJson } from '../utils/helpers';
+
 
 const IncidentHistoryPage = () => {
     const { colors } = useTheme();
 
-    const [logs, setLogs] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [selectedLog, setSelectedLog] = useState(null);
     const [search, setSearch] = useState('');
+    const [selectedLog, setSelectedLog] = useState(null);
 
-    // Fetch logs
+    // Use useApiData hook which handles credentials, loading, and error states
+    const { data: logsData, loading, error } = useApiData(
+        '/incidents/incident-logs',
+        { search }, // Params
+        { skip: false } // Options
+    );
+
+    // useApiData already extracts json.data if present, so logsData is likely the array itself
+    const logs = Array.isArray(logsData) ? logsData : (logsData?.data || []);
+
+    // Effect to refetch when search changes is handled by useApiData automatically
+    // But we need to handle manual refresh if needed
     useEffect(() => {
-        fetchLogs();
-    }, [search]);
-
-    const fetchLogs = async () => {
-        try {
-            setLoading(true);
-            const query = search ? `?search=${encodeURIComponent(search)}` : '';
-            const res = await fetch(`${API_BASE}/incidents/incident-logs${query}`);
-            const data = await safeJson(res);
-            if (data.success) {
-                setLogs(data.data || []);
-            }
-        } catch (error) {
+        if (error) {
             console.error('Failed to fetch logs', error);
-        } finally {
-            setLoading(false);
         }
-    };
+    }, [error]);
 
     // Helper to format date
     const formatDate = (isoString) => {

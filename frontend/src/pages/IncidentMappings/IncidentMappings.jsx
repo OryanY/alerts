@@ -5,7 +5,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import MappingForm from '../../components/IncidentMappings/MappingForm';
 import IncidentMappingsList from './IncidentMappingsList';
 import IncidentMappingsHeader from '../../components/IncidentMappings/IncidentMappingsHeader';
-import { safeJson } from '../../utils/helpers';
+import { safeJson } from '../../utils/api';
 
 // Pattern types are semantic only (no colors here)
 export const PATTERN_TYPES = {

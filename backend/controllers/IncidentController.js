@@ -1,4 +1,7 @@
-// controllers/IncidentController.js - Clean separation of HTTP handling from business logic
+// controllers/IncidentController.js
+// HTTP request/response handling for incident-related endpoints.
+// Delegates all business logic to IncidentService.
+// Used by: incidentRoutes.js
 const { getErrorHtml } = require('../utils/htmlTemplates');
 
 /**
@@ -42,6 +45,7 @@ class IncidentController {
 
     // ================== ASSIGNMENT GROUPS ==================
 
+    /** GET /api/incidents/assignment-groups — Returns cached ServiceNow assignment groups */
     async getAssignmentGroups(req, res, next) {
         try {
             const groups = await this.incidentService.getAssignmentGroups();
@@ -64,6 +68,7 @@ class IncidentController {
         }
     }
 
+    /** POST /api/incidents/assignment-groups/sync — Re-fetches groups from ServiceNow */
     async syncAssignmentGroups(req, res, next) {
         try {
             console.log('🔄 Starting assignment groups sync from ServiceNow...');
@@ -95,6 +100,7 @@ class IncidentController {
 
     // ================== INCIDENT CREATION ==================
 
+    /** GET /api/incidents/create — Creates incident from query params (used by Grafana webhooks) */
     async createIncidentFromAlertGET(req, res, next) {
         try {
             const alertData = req.validatedQuery;
@@ -125,6 +131,7 @@ class IncidentController {
         }
     }
 
+    /** POST /api/incidents/create — Creates incident from JSON body (used by frontend) */
     async createIncidentFromAlertPOST(req, res, next) {
         try {
             const alertData = req.validatedBody;
@@ -147,6 +154,7 @@ class IncidentController {
         }
     }
 
+    /** POST /api/incidents/simulate — Dry-run incident creation without sending to ServiceNow */
     async simulateIncidentCreation(req, res, next) {
         try {
             const alertData = req.validatedBody;
@@ -166,6 +174,7 @@ class IncidentController {
 
     // ================== SYSTEM MAPPINGS ==================
 
+    /** GET /api/incidents/system-mappings — List all Grafana→ServiceNow system mappings */
     async getSystemMappings(req, res, next) {
         try {
             const mappings = await this.incidentService.getSystemMappings();
@@ -179,6 +188,7 @@ class IncidentController {
         }
     }
 
+    /** POST /api/incidents/system-mappings — Create a new system mapping */
     async createSystemMapping(req, res, next) {
         try {
             const mappingData = req.validatedBody;
@@ -200,6 +210,7 @@ class IncidentController {
         }
     }
 
+    /** PUT /api/incidents/system-mappings/:id — Update an existing system mapping */
     async updateSystemMapping(req, res, next) {
         try {
             const { id } = req.params;
@@ -222,6 +233,7 @@ class IncidentController {
         }
     }
 
+    /** DELETE /api/incidents/system-mappings/:id — Delete a system mapping */
     async deleteSystemMapping(req, res, next) {
         try {
             const { id } = req.params;
@@ -244,6 +256,7 @@ class IncidentController {
 
     // ================== INCIDENT RULES ==================
 
+    /** GET /api/incidents/rules — List rules, optionally filtered by ?grafana_name */
     async getIncidentRules(req, res, next) {
         try {
             const { application } = req.query;
@@ -258,6 +271,7 @@ class IncidentController {
         }
     }
 
+    /** POST /api/incidents/rules — Create a new incident rule */
     async createIncidentRule(req, res, next) {
         try {
             const ruleData = req.validatedBody;
@@ -279,6 +293,7 @@ class IncidentController {
         }
     }
 
+    /** PUT /api/incidents/rules/:id — Update an existing rule */
     async updateIncidentRule(req, res, next) {
         try {
             const { id } = req.params;
@@ -301,6 +316,7 @@ class IncidentController {
         }
     }
 
+    /** DELETE /api/incidents/rules/:id — Delete an incident rule */
     async deleteIncidentRule(req, res, next) {
         try {
             const { id } = req.params;
@@ -321,6 +337,7 @@ class IncidentController {
         }
     }
 
+    /** PATCH /api/incidents/rules/:id/toggle — Enable or disable a rule */
     async toggleIncidentRule(req, res, next) {
         try {
             const { id } = req.params;
@@ -354,6 +371,7 @@ class IncidentController {
 
     // ================== HISTORY / LOGS ==================
 
+    /** GET /api/incidents/logs — Paginated incident creation history */
     async getIncidentLogs(req, res, next) {
         try {
             const { limit = 50, skip = 0, search = '' } = req.query;
@@ -375,6 +393,7 @@ class IncidentController {
 
     // ================== UTILITY ==================
 
+    /** GET /api/incidents/distinct/:field — Get distinct values for a field (for filter dropdowns) */
     async getDistinctValues(req, res, next) {
         try {
             const { field } = req.params;

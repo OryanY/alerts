@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
-import { withAlpha, safeJson } from '../../utils/helpers';
+import { withAlpha } from '../../utils/formatters';
+import { safeJson } from '../../utils/api';
 import MappingFormPatternBuilder from './MappingFormPatternBuilder';
 
 const baseMandatoryFields = [

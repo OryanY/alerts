@@ -15,46 +15,7 @@ class IncidentTransformService {
         return Boolean(value);
     }
 
-    /**
-     * Sanitize Grafana names (convert to lowercase, trim, deduplicate)
-     */
-    sanitizeGrafanaNames(names) {
-        if (!names) return [];
 
-        // Handle both string (comma-separated) and array inputs
-        let namesArray = Array.isArray(names) ? names : names.split(',');
-
-        // Clean, deduplicate, and sort
-        return [...new Set(
-            namesArray
-                .map(name => String(name).trim().toLowerCase())
-                .filter(name => name.length > 0)
-        )].sort();
-    }
-
-    /**
-     * Validate Grafana names
-     */
-    validateGrafanaNames(names) {
-        const sanitized = this.sanitizeGrafanaNames(names);
-
-        if (sanitized.length === 0) {
-            throw new Error('At least one Grafana application name is required');
-        }
-
-        // Check for invalid characters
-        const invalidNames = sanitized.filter(name =>
-            /[^a-z0-9_-]/.test(name)
-        );
-
-        if (invalidNames.length > 0) {
-            throw new Error(
-                `Invalid Grafana names (only lowercase letters, numbers, hyphens, and underscores allowed): ${invalidNames.join(', ')}`
-            );
-        }
-
-        return sanitized;
-    }
 
     /**
      * Sanitize a single Grafana pattern
@@ -248,25 +209,7 @@ class IncidentTransformService {
         return incidentData;
     }
 
-    /**
-     * Validate required fields in incident data
-     */
-    validateIncidentData(incidentData) {
-        const required = [
-            'service_offering',
-            'business_service',
-            'u_network',
-            'assignment_group'
-        ];
 
-        const missing = required.filter(field => !incidentData[field]);
-
-        if (missing.length > 0) {
-            throw new Error(`Missing required fields: ${missing.join(', ')}`);
-        }
-
-        return true;
-    }
 }
 
 module.exports = { IncidentTransformService };

@@ -1,6 +1,6 @@
 // frontend/src/contexts/ThemeContext.jsx
 import { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { withAlpha } from '../utils/helpers';
+import { withAlpha } from '../utils/formatters';
 import { createThemedStyles } from '../utils/themedStyles';
 
 const ThemeContext = createContext();

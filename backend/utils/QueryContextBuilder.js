@@ -16,7 +16,15 @@ class QueryContextBuilder {
   /**
    * Add date range filter
    */
+  /**
+   * Add date range filter
+   */
   addDateRange(startDate, endDate, maxDays = null) {
+    // Guard clause: nothing to do if no dates provided
+    if (!startDate && !endDate) {
+      return this;
+    }
+
     const range = TimeUtils.validateDateRange(
       startDate,
       endDate,
@@ -45,16 +53,22 @@ class QueryContextBuilder {
   /**
    * Add single panel filter
    */
+  /**
+   * Add single panel filter
+   */
   addPanelFilter(panelTitle, required = false) {
-    if (panelTitle) {
-      this.params.set('panel_title_param', {
-        type: sql.NVarChar,
-        value: panelTitle
-      });
-      this.conditions.push('panel_title = @panel_title_param');
-    } else if (required) {
-      throw new Error('panel_title is required for this operation');
+    if (!panelTitle) {
+      if (required) {
+        throw new Error('panel_title is required for this operation');
+      }
+      return this;
     }
+
+    this.params.set('panel_title_param', {
+      type: sql.NVarChar,
+      value: panelTitle
+    });
+    this.conditions.push('panel_title = @panel_title_param');
 
     return this;
   }
@@ -67,13 +81,17 @@ class QueryContextBuilder {
       return this;
     }
 
-    const placeholders = panelTitles.map((title, i) => {
+    const placeholders = [];
+
+    panelTitles.forEach((title, i) => {
       const paramName = `panel_title_${i}`;
+
       this.params.set(paramName, {
         type: sql.NVarChar,
         value: title
       });
-      return `@${paramName}`;
+
+      placeholders.push(`@${paramName}`);
     });
 
     this.conditions.push(`panel_title IN (${placeholders.join(', ')})`);

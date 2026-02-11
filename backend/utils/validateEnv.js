@@ -18,13 +18,13 @@ const REQUIRED_ENV_VARS = [
     'SERVICENOW_USERNAME',
     'SERVICENOW_PASSWORD',
     'NODE_ENV',
+    'FRONTEND_URL', // Required for CORS
 ];
 
 /**
  * Optional but recommended environment variables
  */
 const RECOMMENDED_ENV_VARS = [
-    'FRONTEND_URL',
     'AUTH_DEV_BYPASS', // For local development without Windows Auth
     'SQL_POOL_MAX',
     'SQL_POOL_MIN',
@@ -35,7 +35,7 @@ const RECOMMENDED_ENV_VARS = [
  * Validates environment variables on startup
  * @throws {Error} If required variables are missing in production
  */
-function validateEnvironment() {
+function validateEnvironmentVariables() {
     const isProduction = process.env.NODE_ENV === 'production';
     const missing = [];
     const warnings = [];
@@ -77,4 +77,4 @@ function validateEnvironment() {
     console.log(`📋 Environment: ${process.env.NODE_ENV || 'development'}`);
 }
 
-module.exports = { validateEnvironment, REQUIRED_ENV_VARS, RECOMMENDED_ENV_VARS };
+module.exports = { validateEnvironmentVariables, REQUIRED_ENV_VARS, RECOMMENDED_ENV_VARS };

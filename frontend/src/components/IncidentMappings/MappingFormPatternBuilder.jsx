@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, X, Search, Zap, Check, Target } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { withAlpha } from '../../utils/helpers';
+import { withAlpha } from '../../utils/formatters';
 
 const MappingFormPatternBuilder = ({
     grafanaNames,

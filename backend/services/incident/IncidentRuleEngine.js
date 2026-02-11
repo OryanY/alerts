@@ -96,7 +96,6 @@ class IncidentRuleEngine {
     // Check if an alert matches a rule
     doesAlertMatchRule(alertData, rule) {
         const { conditions, logic_operator = 'OR' } = rule;
-        const { message, node_name, object_name, network, operator } = alertData;
 
         const conditionGroups = [];
 
@@ -124,11 +123,7 @@ class IncidentRuleEngine {
             : conditionGroups.some(result => result === true);
     }
 
-    // Find the most specific rule that matches this alert
-    findBestMatch(alertData, rules) {
-        const matches = this.findAllMatches(alertData, rules);
-        return matches.length > 0 ? matches[0].rule : null;
-    }
+
 
     // Find all rules that match, sorted by specificity
     findAllMatches(alertData, rules) {

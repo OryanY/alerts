@@ -1,6 +1,6 @@
 import { Settings, Plus, RefreshCw, X, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { withAlpha } from '../../utils/helpers';
+import { withAlpha } from '../../utils/formatters';
 
 const IncidentMappingsHeader = ({ showForm, onCreateClick, onRefresh, searchTerm, onSearchChange }) => {
     const { colors } = useTheme();

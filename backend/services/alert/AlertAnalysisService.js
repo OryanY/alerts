@@ -98,7 +98,9 @@ class AlertAnalysisService {
     // Ensure we don't have unrealistic 0s duration for single instant alerts
     if (cluster.duration_sec < 1) cluster.duration_sec = 1;
 
-    // cleanup temporary objects if needed, but keeping for now
+    // Remove internal-only properties that shouldn't leak to API responses
+    delete cluster.startTime;
+    delete cluster.endTime;
   }
 
   /**
@@ -226,159 +228,7 @@ class AlertAnalysisService {
       }));
   }
 
-  /**
-   * Compute hourly statistics with duration breakdown
-   */
-  computeHourlyStats(records, thresholds) {
-    if (!records || records.length === 0) {
-      return this._emptyHourlyStats();
-    }
 
-    // Pre-allocate buckets for all 24 hours
-    const buckets = Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      count: 0,
-      sum: 0,
-      short: 0,
-      medium: 0,
-      long: 0
-    }));
-
-    // Batch get hours for performance
-    const uniqueDates = [...new Set(records.map(r => r.time_fired.getTime()))];
-    const hourMap = TimeUtils.batchGetILHours(
-      uniqueDates.map(ts => new Date(ts))
-    );
-
-    for (const record of records) {
-      const timestamp = record.time_fired.getTime();
-      const hour = hourMap.get(timestamp);
-
-      if (hour === null || hour < 0 || hour >= 24) continue;
-
-      const bucket = buckets[hour];
-      bucket.count++;
-      bucket.sum += record.duration_sec;
-
-      // Duration categorization
-      if (record.duration_sec <= thresholds.dur_short_max) {
-        bucket.short++;
-      } else if (record.duration_sec <= thresholds.dur_medium_max) {
-        bucket.medium++;
-      } else {
-        bucket.long++;
-      }
-    }
-
-    return buckets.map(b => ({
-      hour: b.hour,
-      hour_display: `${String(b.hour).padStart(2, '0')}:00`,
-      alert_count: b.count,
-      avg_duration: this._calculateAverage(b.sum, b.count),
-      short_alerts: b.short,
-      medium_alerts: b.medium,
-      long_alerts: b.long
-    }));
-  }
-
-  /**
-   * Compute hourly heatmap from clustered records
-   * Matches SQL output: returns all 24 hours with { hour, count, avg_duration }
-   */
-  computeHourlyHeatmap(records, thresholds) {
-    // Initialize all 24 hours with zero counts
-    const hourlyData = {};
-    for (let h = 0; h < 24; h++) {
-      hourlyData[h] = { count: 0, totalDuration: 0 };
-    }
-
-    // Aggregate data by hour
-    if (records && records.length > 0) {
-      for (const record of records) {
-        const date = record.time_fired instanceof Date ? record.time_fired : new Date(record.time_fired);
-        const hour = date.getHours();
-        const duration = record.duration_sec || 0;
-
-        hourlyData[hour].count++;
-        hourlyData[hour].totalDuration += duration;
-      }
-    }
-
-    // Convert to array format matching SQL output
-    return Object.entries(hourlyData)
-      .map(([hour, data]) => ({
-        hour: parseInt(hour, 10),
-        count: data.count,
-        avg_duration: data.count > 0 ? data.totalDuration / data.count : 0
-      }))
-      .sort((a, b) => a.hour - b.hour);
-  }
-
-  /**
-   * Compute shift analysis from clustered records
-   * Matches SQL output: Day (6:00-22:00) vs Night (22:00-6:00)
-   * Returns: shift, alert_count, true_alerts, false_wakeups, false_wakeup_rate
-   */
-  computeShiftAnalysis(records, thresholds) {
-    if (!records || records.length === 0) {
-      return [
-        { shift: 'Day', alert_count: 0, true_alerts: 0, false_wakeups: 0, false_wakeup_rate: 0 },
-        { shift: 'Night', alert_count: 0, true_alerts: 0, false_wakeups: 0, false_wakeup_rate: 0 }
-      ];
-    }
-
-    const shifts = {
-      Day: { count: 0, falseWakeups: 0, trueAlerts: 0, durations: [] },
-      Night: { count: 0, falseWakeups: 0, trueAlerts: 0, durations: [] }
-    };
-
-    const falseThreshold = thresholds.false_wakeup_threshold || 120;
-    // Default day hours: 6-22 (matching SQL's @day_start=6, @day_end=22)
-    const dayStart = 6;
-    const dayEnd = 22;
-
-    for (const record of records) {
-      const date = record.time_fired instanceof Date ? record.time_fired : new Date(record.time_fired);
-      const hour = date.getHours();
-
-      const shift = (hour >= dayStart && hour < dayEnd) ? 'Day' : 'Night';
-      const duration = record.duration_sec || 0;
-
-      shifts[shift].count++;
-      shifts[shift].durations.push(duration);
-
-      if (duration <= falseThreshold) {
-        shifts[shift].falseWakeups++;
-      } else {
-        shifts[shift].trueAlerts++;
-      }
-    }
-
-    return [
-      {
-        shift: 'Day',
-        alert_count: shifts.Day.count,
-        true_alerts: shifts.Day.trueAlerts,
-        false_wakeups: shifts.Day.falseWakeups,
-        avg_duration: this._calculateAverage(
-          shifts.Day.durations.reduce((a, b) => a + b, 0),
-          shifts.Day.count
-        ),
-        false_wakeup_rate: this._calculatePercentage(shifts.Day.falseWakeups, shifts.Day.count)
-      },
-      {
-        shift: 'Night',
-        alert_count: shifts.Night.count,
-        true_alerts: shifts.Night.trueAlerts,
-        false_wakeups: shifts.Night.falseWakeups,
-        avg_duration: this._calculateAverage(
-          shifts.Night.durations.reduce((a, b) => a + b, 0),
-          shifts.Night.count
-        ),
-        false_wakeup_rate: this._calculatePercentage(shifts.Night.falseWakeups, shifts.Night.count)
-      }
-    ];
-  }
 
   /**
    * Compute detailed panel analysis
@@ -397,8 +247,8 @@ class AlertAnalysisService {
       uniqueDates.map(ts => new Date(ts))
     );
 
-    // Single-pass aggregation
-    const agg = {
+    // Single-pass aggregation object to collect all stats in one loop
+    const aggregation = {
       total: 0,
       sum: 0,
       short: 0,
@@ -419,58 +269,58 @@ class AlertAnalysisService {
       const hour = hourMap.get(timestamp);
       const date = dateMap.get(timestamp);
 
-      agg.total++;
-      agg.sum += record.duration_sec;
-      if (!agg.durations) agg.durations = [];
-      agg.durations.push(record.duration_sec); // Collect for global median
+      aggregation.total++;
+      aggregation.sum += record.duration_sec;
+      if (!aggregation.durations) aggregation.durations = [];
+      aggregation.durations.push(record.duration_sec); // Collect for global median
 
       // Duration buckets
       if (record.duration_sec <= thresholds.dur_short_max) {
-        agg.short++;
+        aggregation.short++;
       } else if (record.duration_sec <= thresholds.dur_medium_max) {
-        agg.medium++;
+        aggregation.medium++;
       } else {
-        agg.long++;
+        aggregation.long++;
       }
 
       // False positives
       if (record.duration_sec <= thresholds.false_wakeup_threshold) {
-        agg.falsePositives++;
+        aggregation.falsePositives++;
       }
 
       // Shift analysis
       const isNight = TimeUtils.isNightHour(hour, thresholds.night_start, thresholds.night_end);
 
       if (isNight) {
-        agg.nightAlerts++;
+        aggregation.nightAlerts++;
         if (record.duration_sec > thresholds.false_wakeup_threshold) {
-          agg.nightWakeups++;
+          aggregation.nightWakeups++;
         } else {
-          agg.nightFalseWakeups++;
+          aggregation.nightFalseWakeups++;
         }
       } else {
-        agg.dayAlerts++;
+        aggregation.dayAlerts++;
       }
 
       // Hourly distribution
       if (hour !== null && hour >= 0 && hour < 24) {
-        agg.hourly[hour].count++;
-        agg.hourly[hour].sum += record.duration_sec;
+        aggregation.hourly[hour].count++;
+        aggregation.hourly[hour].sum += record.duration_sec;
         // Optimization: Don't store full hourly arrays unless needed to avoid explosive memory
         // For now, hourly heatmap only shows AVG, so we skip median there to save RAM
       }
 
       // Daily trend
       if (date) {
-        agg.daily.set(date, (agg.daily.get(date) || 0) + 1);
+        aggregation.daily.set(date, (aggregation.daily.get(date) || 0) + 1);
       }
 
       // Message breakdown
       if (record.message) {
-        let msgStats = agg.messages.get(record.message);
+        let msgStats = aggregation.messages.get(record.message);
         if (!msgStats) {
           msgStats = { count: 0, sum: 0, falsePos: 0, durations: [] };
-          agg.messages.set(record.message, msgStats);
+          aggregation.messages.set(record.message, msgStats);
         }
         msgStats.count++;
         msgStats.sum += record.duration_sec;
@@ -482,7 +332,7 @@ class AlertAnalysisService {
     }
 
     // Format results
-    return this._formatPanelAnalysis(agg, thresholds);
+    return this._formatPanelAnalysis(aggregation, thresholds);
   }
 
   /**
@@ -518,21 +368,21 @@ class AlertAnalysisService {
   /**
    * Helper: Format panel analysis results
    */
-  _formatPanelAnalysis(agg, thresholds) {
-    const dailyTrend = Array.from(agg.daily.entries())
+  _formatPanelAnalysis(aggregation, thresholds) {
+    const dailyTrend = Array.from(aggregation.daily.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, count]) => ({ date, count }));
 
     const trendDirection = this._calculateTrendDirection(dailyTrend);
 
-    const hourlyHeatmap = agg.hourly.map((h, hour) => ({
+    const hourlyHeatmap = aggregation.hourly.map((hourlyBucket, hour) => ({
       hour,
-      count: h.count,
-      avg_duration: this._calculateAverage(h.sum, h.count),
+      count: hourlyBucket.count,
+      avg_duration: this._calculateAverage(hourlyBucket.sum, hourlyBucket.count),
       is_night: TimeUtils.isNightHour(hour, thresholds.night_start, thresholds.night_end)
     }));
 
-    const topNoisyAlerts = Array.from(agg.messages.entries())
+    const topNoisyAlerts = Array.from(aggregation.messages.entries())
       .map(([message, stats]) => ({
         message,
         count: stats.count,
@@ -547,22 +397,22 @@ class AlertAnalysisService {
 
     return {
       summary: {
-        total_alerts: agg.total,
-        avg_duration: this._calculateAverage(agg.sum, agg.total),
-        median_duration: agg.durations ? this._calculateMedian(agg.durations) : 0,
-        false_positive_count: agg.falsePositives, // All shifts
-        false_positive_rate: this._calculatePercentage(agg.falsePositives, agg.total), // Rate within Total Alerts
-        night_alerts: agg.nightAlerts,
-        night_wakeups: agg.nightWakeups,
-        night_false_wakeups: agg.nightFalseWakeups,
-        day_alerts: agg.dayAlerts,
-        alerts_per_day: parseFloat((agg.total / daysInRange).toFixed(2)),
+        total_alerts: aggregation.total,
+        avg_duration: this._calculateAverage(aggregation.sum, aggregation.total),
+        median_duration: aggregation.durations ? this._calculateMedian(aggregation.durations) : 0,
+        false_positive_count: aggregation.falsePositives, // All shifts
+        false_positive_rate: this._calculatePercentage(aggregation.falsePositives, aggregation.total), // Rate within Total Alerts
+        night_alerts: aggregation.nightAlerts,
+        night_wakeups: aggregation.nightWakeups,
+        night_false_wakeups: aggregation.nightFalseWakeups,
+        day_alerts: aggregation.dayAlerts,
+        alerts_per_day: parseFloat((aggregation.total / daysInRange).toFixed(2)),
         trend_direction: trendDirection
       },
       duration_distribution: [
-        { category: 'Short', range: `≤${thresholds.dur_short_max}s`, count: agg.short },
-        { category: 'Medium', range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`, count: agg.medium },
-        { category: 'Long', range: `>${thresholds.dur_medium_max}s`, count: agg.long }
+        { category: 'Short', range: `≤${thresholds.dur_short_max}s`, count: aggregation.short },
+        { category: 'Medium', range: `${thresholds.dur_short_max + 1}-${thresholds.dur_medium_max}s`, count: aggregation.medium },
+        { category: 'Long', range: `>${thresholds.dur_medium_max}s`, count: aggregation.long }
       ],
       daily_trend: dailyTrend,
       hourly_heatmap: hourlyHeatmap,
@@ -607,17 +457,7 @@ class AlertAnalysisService {
     };
   }
 
-  _emptyHourlyStats() {
-    return Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      hour_display: `${String(hour).padStart(2, '0')}:00`,
-      alert_count: 0,
-      avg_duration: 0,
-      short_alerts: 0,
-      medium_alerts: 0,
-      long_alerts: 0
-    }));
-  }
+
 
   _emptyPanelAnalysis() {
     return {
