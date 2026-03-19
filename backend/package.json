@@ -21,7 +21,7 @@
     "luxon": "^3.7.2",
     "mongodb": "^6.19.0",
     "mssql": "^10.0.4",
-    "node-sspi": "^0.2.11"
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",

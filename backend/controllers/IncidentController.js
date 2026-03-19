@@ -9,8 +9,10 @@ const { getErrorHtml } = require('../utils/htmlTemplates');
  * Single Responsibility: Request/Response handling only
  */
 class IncidentController {
-    constructor(incidentService) {
+    constructor(incidentService, mappingService, ruleService) {
         this.incidentService = incidentService;
+        this.mappingService = mappingService;
+        this.ruleService = ruleService;
 
         // Bind methods to preserve 'this' context
         this.getAssignmentGroups = this.getAssignmentGroups.bind(this);
@@ -28,7 +30,6 @@ class IncidentController {
         this.deleteIncidentRule = this.deleteIncidentRule.bind(this);
         this.toggleIncidentRule = this.toggleIncidentRule.bind(this);
         this.getIncidentLogs = this.getIncidentLogs.bind(this);
-        this.getDistinctValues = this.getDistinctValues.bind(this);
     }
 
     // Helper to generate error action link
@@ -131,7 +132,7 @@ class IncidentController {
         }
     }
 
-    /** POST /api/incidents/create — Creates incident from JSON body (used by frontend) */
+    /** POST /api/incidents/create — Creates incident from JSON body */
     async createIncidentFromAlertPOST(req, res, next) {
         try {
             const alertData = req.validatedBody;
@@ -177,7 +178,7 @@ class IncidentController {
     /** GET /api/incidents/system-mappings — List all Grafana→ServiceNow system mappings */
     async getSystemMappings(req, res, next) {
         try {
-            const mappings = await this.incidentService.getSystemMappings();
+            const mappings = await this.mappingService.getSystemMappings();
             res.json({
                 success: true,
                 data: mappings,
@@ -192,7 +193,7 @@ class IncidentController {
     async createSystemMapping(req, res, next) {
         try {
             const mappingData = req.validatedBody;
-            const newMapping = await this.incidentService.createSystemMapping(mappingData);
+            const newMapping = await this.mappingService.createSystemMapping(mappingData);
             res.status(201).json({
                 success: true,
                 message: 'System mapping created successfully',
@@ -215,7 +216,7 @@ class IncidentController {
         try {
             const { id } = req.params;
             const mappingData = req.validatedBody;
-            const updatedMapping = await this.incidentService.updateSystemMapping(id, mappingData);
+            const updatedMapping = await this.mappingService.updateSystemMapping(id, mappingData);
             res.json({
                 success: true,
                 message: 'System mapping updated successfully',
@@ -237,7 +238,7 @@ class IncidentController {
     async deleteSystemMapping(req, res, next) {
         try {
             const { id } = req.params;
-            const result = await this.incidentService.deleteSystemMapping(id);
+            const result = await this.mappingService.deleteSystemMapping(id);
             res.json({
                 success: true,
                 message: result.message
@@ -260,7 +261,7 @@ class IncidentController {
     async getIncidentRules(req, res, next) {
         try {
             const { application } = req.query;
-            const rules = await this.incidentService.getIncidentRules(application);
+            const rules = await this.ruleService.getIncidentRules(application);
             res.json({
                 success: true,
                 data: rules,
@@ -275,7 +276,7 @@ class IncidentController {
     async createIncidentRule(req, res, next) {
         try {
             const ruleData = req.validatedBody;
-            const newRule = await this.incidentService.createIncidentRule(ruleData);
+            const newRule = await this.ruleService.createIncidentRule(ruleData);
             res.status(201).json({
                 success: true,
                 message: 'Incident rule created successfully',
@@ -298,7 +299,7 @@ class IncidentController {
         try {
             const { id } = req.params;
             const ruleData = req.validatedBody;
-            const updatedRule = await this.incidentService.updateIncidentRule(id, ruleData);
+            const updatedRule = await this.ruleService.updateIncidentRule(id, ruleData);
             res.json({
                 success: true,
                 message: 'Incident rule updated successfully',
@@ -320,7 +321,7 @@ class IncidentController {
     async deleteIncidentRule(req, res, next) {
         try {
             const { id } = req.params;
-            const result = await this.incidentService.deleteIncidentRule(id);
+            const result = await this.ruleService.deleteIncidentRule(id);
             res.json({
                 success: true,
                 message: result.message
@@ -351,7 +352,7 @@ class IncidentController {
                 });
             }
 
-            const result = await this.incidentService.toggleIncidentRule(id, enabled);
+            const result = await this.ruleService.toggleIncidentRule(id, enabled);
 
             res.json({
                 success: true,
@@ -393,37 +394,6 @@ class IncidentController {
 
     // ================== UTILITY ==================
 
-    /** GET /api/incidents/distinct/:field — Get distinct values for a field (for filter dropdowns) */
-    async getDistinctValues(req, res, next) {
-        try {
-            const { field } = req.params;
-            const validFields = [
-                'assignment_group',
-                'service_offering',
-                'business_service',
-                'u_network',
-                'u_site',
-                'u_impact_technology',
-                'u_monitor_identifier'
-            ];
-
-            if (!validFields.includes(field)) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Invalid field',
-                    details: `Valid fields are: ${validFields.join(', ')}`
-                });
-            }
-
-            const values = await this.incidentService.getDistinctValues(field);
-            res.json({
-                success: true,
-                data: values
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
 }
 
 module.exports = { IncidentController };

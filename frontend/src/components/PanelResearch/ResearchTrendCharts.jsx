@@ -35,7 +35,7 @@ const ResearchTrendCharts = ({ daily_trend, duration_distribution, loading }) =>
                     <ComposedChart data={daily_trend || []}>
                         <CartesianGrid {...chartProps.grid} />
                         <XAxis
-                            dataKey="date"
+                            dataKey="date_il"
                             {...chartProps.xAxis}
                             tickFormatter={(date) =>
                                 new Date(date).toLocaleDateString('en-IL', {
@@ -53,7 +53,7 @@ const ResearchTrendCharts = ({ daily_trend, duration_distribution, loading }) =>
                         />
                         <Area
                             type="monotone"
-                            dataKey="count"
+                            dataKey="alert_count"
                             fill={colors.chart.primary}
                             fillOpacity={0.25}
                             stroke={colors.chart.primary}
@@ -61,7 +61,7 @@ const ResearchTrendCharts = ({ daily_trend, duration_distribution, loading }) =>
                         />
                         <Line
                             type="monotone"
-                            dataKey="count"
+                            dataKey="alert_count"
                             stroke={colors.chart.secondary}
                             strokeWidth={2}
                             dot={{ r: 4, fill: colors.chart.primary }}

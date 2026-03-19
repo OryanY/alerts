@@ -100,15 +100,14 @@ const ExplorerPage = () => {
     }
 
     return {
-      ...adjustedDateRange,
-      ...getApiParams(),
       ...serverFilters,
       sort_by: f.sort_by || 'time_fired',
       sort_order: normalizedSortOrder,
       limit: 1000,
     };
-  }, [debouncedFilters, adjustedDateRange, getApiParams]);
+  }, [debouncedFilters]);
 
+  // useApiData automatically injects dateRange and getApiParams()
   const { data: alerts, loading, error, refetch } = useApiData('/alerts', apiParams);
 
   const dropdownOptions = useMemo(() => {
@@ -755,6 +754,7 @@ const ExplorerPage = () => {
             </div>
           </div>
         </div>
+
 
         {/* RESULTS TABLE */}
         <div style={S.card()}>

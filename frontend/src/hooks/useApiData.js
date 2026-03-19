@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { API_BASE } from '../utils/constants';
+import { useClientConfig } from '../contexts/ClientConfigContext';
 
 export const useApiData = (endpoint, params = {}, options = {}) => {
   const { skip = false } = options;
+  const { dateRange, getApiParams } = useClientConfig();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(!skip);
   const [error, setError] = useState(null);
@@ -27,8 +29,15 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
       setLoading(true);
       setError(null);
 
+      // Auto-merge global config (dateRange + getApiParams) with specific params
+      const finalParams = {
+        ...dateRange,
+        ...getApiParams(),
+        ...params
+      };
+
       const queryString = new URLSearchParams(
-        Object.entries(params || {}).filter(([_, v]) => v !== '' && v != null)
+        Object.entries(finalParams || {}).filter(([_, v]) => v !== '' && v != null)
       ).toString();
 
       const url = `${API_BASE}${endpoint}${queryString ? `?${queryString}` : ''}`;

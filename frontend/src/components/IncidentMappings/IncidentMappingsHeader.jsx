@@ -67,27 +67,27 @@ const IncidentMappingsHeader = ({ showForm, onCreateClick, onRefresh, searchTerm
             <div style={{ display: 'flex', gap: 12 }}>
                 <button
                     onClick={onCreateClick}
-                    style={{
-                        background: showForm
-                            ? `linear-gradient(135deg, ${colors.brand.yellow} 0%, ${colors.semantic.warning} 100%)`
-                            : `linear-gradient(135deg, ${colors.brand.primary} 0%, ${colors.brand.primaryHover} 100%)`,
-                        color: colors.text.inverse,
-                        border: 'none',
-                        borderRadius: 12,
-                        padding: '12px 24px',
-                        fontSize: 16,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        boxShadow: `0 4px 12px ${withAlpha(colors.brand.primary, '40')}`,
-                        transition: 'all 0.2s ease',
-                    }}
-                >
-                    {showForm ? <X size={18} /> : <Plus size={18} />}
-                    {showForm ? 'Cancel' : 'Create New Mapping'}
-                </button>
+                        style={{
+                            background: showForm
+                                ? `linear-gradient(135deg, ${colors.brand.yellow} 0%, ${colors.semantic.warning} 100%)`
+                                : `linear-gradient(135deg, ${colors.brand.primary} 0%, ${colors.brand.primaryHover} 100%)`,
+                            color: colors.text.inverse,
+                            border: 'none',
+                            borderRadius: 12,
+                            padding: '12px 24px',
+                            fontSize: 16,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            boxShadow: `0 4px 12px ${withAlpha(colors.brand.primary, '40')}`,
+                            transition: 'all 0.2s ease',
+                        }}
+                    >
+                        {showForm ? <X size={18} /> : <Plus size={18} />}
+                        {showForm ? 'Cancel' : 'Create New Mapping'}
+                    </button>
 
                 <button
                     onClick={onRefresh}

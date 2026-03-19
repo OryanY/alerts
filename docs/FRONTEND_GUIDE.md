@@ -42,9 +42,6 @@ We prefer **Local State** and **Context** over global state libraries (like Redu
 *   **`useApiData(url, options)`**:
     The standard hook for data fetching. It handles loading states, error catching, and credential inclusion (Windows Auth). **Always** use this for GET requests.
 
-*   **`useUser()`**:
-    Provides access to the currently authenticated user's identity and group memberships. Use this for permission checks (e.g., `isAdmin`).
-
 ## Performance Considerations
 
 *   **Debouncing**: Use `LazyInput` for search fields. It prevents API spam by waiting for the user to finish typing (`useDebounce` logic internal).

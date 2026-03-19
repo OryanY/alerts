@@ -99,30 +99,18 @@ const PanelResearchPage = () => {
     );
   };
 
-  // No need to adjust date range - backend handles Israeli timezone conversion
-  const adjustedDateRange = dateRange;
-
-  const apiParams = useMemo(
-    () => ({
-      ...adjustedDateRange,
-      ...getApiParams(),
-      false_wakeup_threshold: config.falseWakeupThreshold || 120,
-    }),
-    [adjustedDateRange, getApiParams, config.falseWakeupThreshold]
-  );
-
-  // Fetch panel list
+  // Fetch panel list. useApiData automatically injects date range and global params.
   const {
     data: panelsList,
     loading: panelsLoading,
     error: panelsError,
-  } = useApiData('/stats/panels', apiParams);
+  } = useApiData('/stats/panels');
 
   // Fetch selected panel analysis
   const panelApiParams = useMemo(() => {
     if (!selectedPanel) return null;
-    return { ...apiParams, panel_title: selectedPanel };
-  }, [apiParams, selectedPanel]);
+    return { panel_title: selectedPanel };
+  }, [selectedPanel]);
 
   const {
     data: panelAnalysis,
@@ -134,15 +122,13 @@ const PanelResearchPage = () => {
   const alertsParams = useMemo(() => {
     if (!selectedPanel) return null;
     return {
-      ...adjustedDateRange,
-      ...getApiParams(),
       panel_title: selectedPanel,
       limit: 100,
       sort_by: sortConfig.sort_by,
       sort_order: sortConfig.sort_order.toUpperCase(), // Backend expects UPPERCASE
       ...(selectedNode ? { node_name: selectedNode } : {}),
     };
-  }, [adjustedDateRange, getApiParams, selectedPanel, selectedNode, sortConfig]);
+  }, [selectedPanel, selectedNode, sortConfig]);
 
   const {
     data: recentAlerts,
@@ -209,7 +195,7 @@ const PanelResearchPage = () => {
       `Generated: ${new Date().toLocaleString('en-IL', {
         timeZone: 'Asia/Jerusalem',
       })}`,
-      `Date Range: ${adjustedDateRange.start_date} to ${adjustedDateRange.end_date}`,
+      `Date Range: ${dateRange.start_date} to ${dateRange.end_date}`,
       '',
       '=== EXECUTIVE SUMMARY ===',
       `Total Alerts: ${summary.total_alerts}`,
@@ -235,7 +221,7 @@ const PanelResearchPage = () => {
     a.download = `panel_report_${selectedPanel.replace(
       /[^a-z0-9]/gi,
       '_'
-    )}_${adjustedDateRange.start_date}.txt`;
+    )}_${dateRange.start_date}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

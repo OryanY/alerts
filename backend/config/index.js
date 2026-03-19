@@ -27,7 +27,7 @@ const CONFIG = Object.freeze({
     public: {
       origin: true, // Allow any origin to connect (needed for external incident creation)
       credentials: true,
-      methods: ['GET', 'POST', 'OPTIONS'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control']
     }
   },
@@ -59,13 +59,6 @@ const CONFIG = Object.freeze({
   clustering: {
     enabledByDefault: process.env.CLUSTER_ENABLED_DEFAULT !== 'false', // Default to true
     defaultThreshold: parseInt(process.env.CLUSTER_THRESHOLD_MINUTES, 10) || 15
-  },
-
-  auth: {
-    // Centralized list of groups that have Admin access
-    adminGroups: ['Admins', 'Oryan', 'Administrators', 'Domain Admins'],
-    // Default groups for development mode
-    devGroups: ['Admins']
   }
 });
 

@@ -230,70 +230,68 @@ const RuleCard = ({
                     <button
                         onClick={() => onToggle(rule._id, !Boolean(rule.enabled))}
                         style={{
-                            background: rule.enabled
-                                ? colors.semantic.warning
-                                : colors.semantic.success,
-                            color: colors.text.inverse,
-                            border: 'none',
-                            borderRadius: 8,
-                            padding: '6px 12px',
-                            fontSize: 12,
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                        }}
-                    >
-                        {rule.enabled ? (
-                            <ToggleRight size={14} />
-                        ) : (
-                            <ToggleLeft size={14} />
-                        )}
-                        {rule.enabled ? 'Disable' : 'Enable'}
-                    </button>
+                                background: rule.enabled
+                                    ? colors.semantic.warning
+                                    : colors.semantic.success,
+                                color: colors.text.inverse,
+                                border: 'none',
+                                borderRadius: 8,
+                                padding: '6px 12px',
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                            }}
+                        >
+                            {rule.enabled ? (
+                                <ToggleRight size={14} />
+                            ) : (
+                                <ToggleLeft size={14} />
+                            )}
+                            {rule.enabled ? 'Disable' : 'Enable'}
+                        </button>
 
                     {/* EDIT */}
-                    <button
-                        onClick={() => onEdit(rule)}
-                        style={{
-                            background: colors.semantic.info,
-                            color: colors.text.inverse,
-                            border: 'none',
-                            borderRadius: 8,
-                            padding: '6px 12px',
-                            fontSize: 12,
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                        }}
-                    >
-                        <Edit size={12} />
-                        Edit
-                    </button>
+                        <button
+                            onClick={() => onEdit(rule)}
+                            style={{
+                                background: colors.semantic.info,
+                                color: colors.text.inverse,
+                                border: 'none',
+                                borderRadius: 8,
+                                padding: '6px 12px',
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                            }}
+                        >
+                            Edit
+                        </button>
 
                     {/* DELETE */}
-                    <button
-                        onClick={() => onDelete(rule._id)}
-                        style={{
-                            background: colors.semantic.error,
-                            color: colors.text.inverse,
-                            border: 'none',
-                            borderRadius: 8,
-                            padding: '6px 12px',
-                            fontSize: 12,
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                        }}
-                    >
-                        <Trash2 size={12} />
-                        Delete
-                    </button>
+                        <button
+                            onClick={() => onDelete(rule._id)}
+                            style={{
+                                background: colors.semantic.error,
+                                color: colors.text.inverse,
+                                border: 'none',
+                                borderRadius: 8,
+                                padding: '6px 12px',
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                            }}
+                        >
+                            Delete
+                        </button>
                 </div>
             </div >
 

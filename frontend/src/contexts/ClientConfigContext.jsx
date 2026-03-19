@@ -1,6 +1,7 @@
 // contexts/ClientConfigContext.jsx — Global client configuration and date range state
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
+import { toYMD_IL } from '../utils/dateUtils';
 const ClientConfigContext = createContext();
 
 export const useClientConfig = () => {
@@ -11,16 +12,12 @@ export const useClientConfig = () => {
   return context;
 };
 
-// Helper to get default date range (last 7 days)
+// Helper to get default date range (last 7 days) in Israeli timezone
 const getDefaultDateRange = () => {
   const now = Date.now();
-  const end = new Date(now);
-  const start = new Date(now - 6 * 864e5); // 6 days ago
-
-
   return {
-    start_date: start.toISOString().split('T')[0],
-    end_date: end.toISOString().split('T')[0]
+    start_date: toYMD_IL(now - 6 * 864e5), // 6 days ago in IL time
+    end_date: toYMD_IL(now)                 // today in IL time
   };
 };
 
@@ -137,12 +134,9 @@ export const ClientConfigProvider = ({ children }) => {
 
   const setPresetRange = (days) => {
     const now = Date.now();
-    const end = new Date(now);
-    const start = new Date(now - (days - 1) * 864e5);
-
     setDateRangeState({
-      start_date: start.toISOString().split('T')[0],
-      end_date: end.toISOString().split('T')[0]
+      start_date: toYMD_IL(now - (days - 1) * 864e5),
+      end_date: toYMD_IL(now)
     });
   };
 

@@ -57,39 +57,26 @@ const NocDashboard = () => {
   // No need to format dates - backend handles Israeli timezone conversion
   const adjustedDateRange = dateRange;
 
-  const apiParams = useMemo(() => {
-    const params = {
-      ...adjustedDateRange,
-      false_wakeup_threshold: config.falseWakeupThreshold || 120,
-      ...getApiParams(),
-    };
-
-    if (selectedPanel) {
-      params.panel_title = selectedPanel;
-    }
-
-    return params;
-  }, [adjustedDateRange, config.falseWakeupThreshold, getApiParams, selectedPanel]);
-
   const panelListParams = useMemo(
     () => ({
-      ...adjustedDateRange,
-      ...getApiParams(),
       limit: 1000
     }),
-    [adjustedDateRange, getApiParams]
+    []
   );
 
   // ---- Data Fetching ----
-  const exec = useApiData('/stats/executive-kpis', apiParams);
-  const shifts = useApiData('/stats/shift-analysis', apiParams);
-  const duration = useApiData('/stats/duration-histogram', apiParams);
-  const heatmap = useApiData('/stats/hourly-heatmap', apiParams);
-  const timeseries = useApiData('/stats/timeseries', apiParams);
+  // useApiData automatically injects dateRange and getApiParams()
+  const customParams = selectedPanel ? { panel_title: selectedPanel } : {};
+  
+  const exec = useApiData('/stats/executive-kpis', customParams);
+  const shifts = useApiData('/stats/shift-analysis', customParams);
+  const duration = useApiData('/stats/duration-histogram', customParams);
+  const heatmap = useApiData('/stats/hourly-heatmap', customParams);
+  const timeseries = useApiData('/stats/timeseries', customParams);
 
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
   // Only fetch detailed panel stats if we are not filtered by a specific panel
-  const panelStats = useApiData('/stats/by-panel', selectedPanel ? null : { ...apiParams, limit: 20 });
+  const panelStats = useApiData('/stats/by-panel', selectedPanel ? null : { limit: 20 });
 
   // Handlers
   const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);

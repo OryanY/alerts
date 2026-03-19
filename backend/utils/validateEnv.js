@@ -18,17 +18,16 @@ const REQUIRED_ENV_VARS = [
     'SERVICENOW_USERNAME',
     'SERVICENOW_PASSWORD',
     'NODE_ENV',
-    'FRONTEND_URL', // Required for CORS
+    'FRONTEND_URL',
 ];
 
 /**
  * Optional but recommended environment variables
  */
 const RECOMMENDED_ENV_VARS = [
-    'AUTH_DEV_BYPASS', // For local development without Windows Auth
     'SQL_POOL_MAX',
     'SQL_POOL_MIN',
-    'SQL_PORT'
+    'SQL_PORT',
 ];
 
 /**

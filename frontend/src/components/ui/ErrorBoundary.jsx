@@ -120,7 +120,7 @@ const ErrorFallback = ({ error, errorInfo }) => {
                         }}
                     >
                         <summary style={{ cursor: 'pointer', marginBottom: 8, fontWeight: 600 }}>
-                            Error Details (Dev Only)
+                            Error Details
                         </summary>
                         <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                             {error.toString()}

@@ -73,24 +73,24 @@ const IncidentRulesHeader = ({
                 <button
                     onClick={onToggleForm}
                     style={{
-                        background: showForm
-                            ? gradients.warningGradient
-                            : gradients.infoGradient,
-                        color: colors.text.primary,
-                        border: 'none',
-                        borderRadius: 12,
-                        padding: '12px 24px',
-                        fontSize: 16,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                    }}
-                >
-                    {showForm ? <X size={18} /> : <Plus size={18} />}
-                    {showForm ? 'Cancel' : 'Create Rule'}
-                </button>
+                            background: showForm
+                                ? gradients.warningGradient
+                                : gradients.infoGradient,
+                            color: colors.text.primary,
+                            border: 'none',
+                            borderRadius: 12,
+                            padding: '12px 24px',
+                            fontSize: 16,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                        }}
+                    >
+                        {showForm ? <X size={18} /> : <Plus size={18} />}
+                        {showForm ? 'Cancel' : 'Create Rule'}
+                    </button>
 
                 <button
                     onClick={onRefresh}

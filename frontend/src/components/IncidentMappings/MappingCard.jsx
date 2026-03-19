@@ -137,44 +137,45 @@ const MappingCard = ({
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                        onClick={() => onEdit(mapping)}
-                        style={{
-                            background: colors.brand.primary,
-                            color: colors.text.inverse,
-                            border: 'none',
-                            borderRadius: 6,
-                            padding: '8px 14px',
-                            fontSize: 13,
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                        }}
-                    >
-                        <Edit size={14} />
-                        Edit
-                    </button>
-                    <button
-                        onClick={() => onDelete(mapping._id)}
-                        style={{
-                            background: 'transparent',
-                            color: colors.semantic.error,
-                            border: `1px solid ${colors.semantic.error}`,
-                            borderRadius: 6,
-                            padding: '8px 14px',
-                            fontSize: 13,
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                        }}
-                    >
-                        <Trash2 size={14} />
-                        Delete
-                    </button>
+                    {/* EDIT */}
+                        <button
+                            onClick={() => onEdit(mapping)}
+                            style={{
+                                background: colors.brand.primary,
+                                color: colors.text.inverse,
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: '8px 14px',
+                                fontSize: 13,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                            }}
+                        >
+                            Edit
+                        </button>
+
+                    {/* DELETE */}
+                        <button
+                            onClick={() => onDelete(mapping._id)}
+                            style={{
+                                background: 'transparent',
+                                color: colors.semantic.error,
+                                border: `1px solid ${colors.semantic.error}`,
+                                borderRadius: 6,
+                                padding: '8px 14px',
+                                fontSize: 13,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                            }}
+                        >
+                            Delete
+                        </button>
                 </div>
             </div>
 
