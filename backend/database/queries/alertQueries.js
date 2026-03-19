@@ -315,5 +315,206 @@ module.exports = {
     FROM #TempRaw GROUP BY message ORDER BY count DESC;
 
     DROP TABLE #TempRaw;
+  `,
+
+  // ==========================================
+  // INCIDENT BI QUERIES (UNCLUSTERED)
+  // ==========================================
+  INCIDENT_COVERAGE_STATS: `
+    SELECT
+      COUNT(*) AS total_alerts,
+      COUNT(incident_number) AS alerts_covered,
+      COUNT(DISTINCT incident_number) AS unique_incidents,
+      COUNT(*) - COUNT(incident_number) AS alerts_no_incident,
+      CAST(COUNT(incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS coverage_pct,
+      CAST(COUNT(DISTINCT incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS incident_creation_rate,
+      COUNT(DISTINCT panel_title) AS total_teams,
+      COUNT(DISTINCT CASE WHEN incident_number IS NOT NULL THEN panel_title END) AS teams_with_incidents,
+      COUNT(DISTINCT application) AS total_apps,
+      COUNT(DISTINCT CASE WHEN incident_number IS NOT NULL THEN application END) AS apps_with_incidents,
+      CAST(COUNT(incident_number) * 1.0 / NULLIF(COUNT(DISTINCT incident_number), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+  `,
+
+  INCIDENTS_BY_TEAM: `
+    SELECT TOP 25
+      panel_title,
+      COUNT(*) AS total_alerts,
+      COUNT(incident_number) AS alerts_covered,
+      COUNT(DISTINCT incident_number) AS unique_incidents,
+      COUNT(*) - COUNT(incident_number) AS no_incident,
+      CAST(COUNT(incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS coverage_pct,
+      CAST(COUNT(incident_number) * 1.0 / NULLIF(COUNT(DISTINCT incident_number), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    GROUP BY panel_title
+    ORDER BY unique_incidents DESC
+  `,
+
+  INCIDENTS_BY_APPLICATION: `
+    SELECT TOP 25
+      application,
+      COUNT(*) AS total_alerts,
+      COUNT(incident_number) AS alerts_covered,
+      COUNT(DISTINCT incident_number) AS unique_incidents,
+      COUNT(*) - COUNT(incident_number) AS no_incident,
+      CAST(COUNT(incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS coverage_pct,
+      CAST(COUNT(incident_number) * 1.0 / NULLIF(COUNT(DISTINCT incident_number), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    GROUP BY application
+    ORDER BY unique_incidents DESC
+  `,
+
+  INCIDENT_DAILY_TREND: `
+    SELECT
+      CAST(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE) AS date_il,
+      COUNT(*) AS total_alerts,
+      COUNT(incident_number) AS alerts_covered,
+      COUNT(DISTINCT incident_number) AS unique_incidents
+    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    GROUP BY CAST(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE)
+    ORDER BY date_il
+  `,
+
+  // ==========================================
+  // INCIDENT BI QUERIES (CLUSTERED / EVENT-BASED)
+  // ==========================================
+  CLUSTERED_INCIDENT_COVERAGE_STATS: `
+    WITH Marked AS (
+        SELECT time_fired, incident_number, panel_title, application,
+        CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+        SELECT *, SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id FROM Marked
+    ),
+    ClusterStats AS (
+        SELECT 
+            cluster_id, 
+            MAX(panel_title) AS panel_title, 
+            MAX(application) AS application,
+            COUNT(DISTINCT incident_number) AS unique_tickets_in_cluster
+        FROM Grouped 
+        GROUP BY cluster_id
+    )
+    SELECT 
+      COUNT(*) AS total_alerts,
+      SUM(CASE WHEN unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) AS alerts_covered, 
+      (SELECT COUNT(DISTINCT incident_number) FROM dbo.historicalAlerts {WHERE_CLAUSE}) AS unique_incidents,
+      SUM(CASE WHEN unique_tickets_in_cluster = 0 THEN 1 ELSE 0 END) AS alerts_no_incident,
+      CAST(SUM(CASE WHEN unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS coverage_pct,
+      COUNT(DISTINCT panel_title) AS total_teams,
+      COUNT(DISTINCT CASE WHEN unique_tickets_in_cluster > 0 THEN panel_title END) AS teams_with_incidents,
+      COUNT(DISTINCT application) AS total_apps,
+      COUNT(DISTINCT CASE WHEN unique_tickets_in_cluster > 0 THEN application END) AS apps_with_incidents,
+      CAST((SELECT COUNT(DISTINCT incident_number) FROM dbo.historicalAlerts {WHERE_CLAUSE}) * 1.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+    FROM ClusterStats
+  `,
+
+  CLUSTERED_INCIDENTS_BY_TEAM: `
+    WITH Marked AS (
+        SELECT time_fired, incident_number, panel_title, 
+        CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+        SELECT *, SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id FROM Marked
+    ),
+    ClusterStats AS (
+        SELECT 
+            cluster_id, 
+            MAX(panel_title) AS panel_title, 
+            COUNT(DISTINCT incident_number) AS unique_tickets_in_cluster
+        FROM Grouped 
+        GROUP BY cluster_id
+    ),
+    UniqueTickets AS (
+        SELECT panel_title, COUNT(DISTINCT incident_number) AS unique_incidents 
+        FROM dbo.historicalAlerts {WHERE_CLAUSE} 
+        GROUP BY panel_title
+    )
+    SELECT TOP 25
+      c.panel_title, 
+      COUNT(c.cluster_id) AS total_alerts, 
+      SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) AS alerts_covered,
+      MAX(ISNULL(u.unique_incidents, 0)) AS unique_incidents,
+      SUM(CASE WHEN c.unique_tickets_in_cluster = 0 THEN 1 ELSE 0 END) AS no_incident,
+      CAST(SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS coverage_pct,
+      CAST(MAX(ISNULL(u.unique_incidents, 0)) * 1.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+    FROM ClusterStats c 
+    LEFT JOIN UniqueTickets u ON c.panel_title = u.panel_title
+    WHERE c.panel_title IS NOT NULL
+    GROUP BY c.panel_title 
+    ORDER BY unique_incidents DESC
+  `,
+
+  CLUSTERED_INCIDENTS_BY_APPLICATION: `
+    WITH Marked AS (
+        SELECT time_fired, incident_number, application, 
+        CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+        SELECT *, SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id FROM Marked
+    ),
+    ClusterStats AS (
+        SELECT 
+            cluster_id, 
+            MAX(application) AS application, 
+            COUNT(DISTINCT incident_number) AS unique_tickets_in_cluster
+        FROM Grouped 
+        GROUP BY cluster_id
+    ),
+    UniqueTickets AS (
+        SELECT application, COUNT(DISTINCT incident_number) AS unique_incidents 
+        FROM dbo.historicalAlerts {WHERE_CLAUSE} 
+        GROUP BY application
+    )
+    SELECT TOP 25
+      c.application, 
+      COUNT(c.cluster_id) AS total_alerts, 
+      SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) AS alerts_covered,
+      MAX(ISNULL(u.unique_incidents, 0)) AS unique_incidents,
+      SUM(CASE WHEN c.unique_tickets_in_cluster = 0 THEN 1 ELSE 0 END) AS no_incident,
+      CAST(SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS coverage_pct,
+      CAST(MAX(ISNULL(u.unique_incidents, 0)) * 1.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+    FROM ClusterStats c 
+    LEFT JOIN UniqueTickets u ON c.application = u.application
+    WHERE c.application IS NOT NULL
+    GROUP BY c.application 
+    ORDER BY unique_incidents DESC
+  `,
+
+  CLUSTERED_INCIDENT_DAILY_TREND: `
+    WITH Marked AS (
+        SELECT time_fired, incident_number, 
+        CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    ),
+    Grouped AS (
+        SELECT *, SUM(is_new_cluster) OVER (ORDER BY time_fired) AS cluster_id FROM Marked
+    ),
+    ClusterStats AS (
+        SELECT 
+            cluster_id, 
+            MIN(time_fired) AS cluster_start, 
+            COUNT(DISTINCT incident_number) AS unique_tickets_in_cluster
+        FROM Grouped 
+        GROUP BY cluster_id
+    ),
+    UniqueTickets AS (
+        SELECT CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, 
+        COUNT(DISTINCT incident_number) AS unique_incidents 
+        FROM dbo.historicalAlerts {WHERE_CLAUSE} 
+        GROUP BY CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE)
+    )
+    SELECT 
+      CAST((c.cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il,
+      COUNT(c.cluster_id) AS total_alerts, 
+      SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) AS alerts_covered,
+      MAX(ISNULL(u.unique_incidents, 0)) AS unique_incidents
+    FROM ClusterStats c 
+    LEFT JOIN UniqueTickets u ON CAST((c.cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) = u.date_il
+    GROUP BY CAST((c.cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) 
+    ORDER BY date_il
   `
 };

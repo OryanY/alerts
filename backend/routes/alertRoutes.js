@@ -38,5 +38,6 @@ router.get('/stats/panel-analysis', validateQuery(panelResearchSchema), controll
 router.get('/stats/top-applications', validateQuery(statsSchema), controller.getTopApplications);
 router.get('/stats/top-nodes-by-app', validateQuery(statsSchema), controller.getTopNodesByApp);
 router.get('/stats/consecutive-days', validateQuery(statsSchema), controller.getConsecutiveDaysNodes);
+router.get('/stats/incident-stats', validateQuery(statsSchema), controller.getIncidentStats);
 
 module.exports = router;

@@ -16,6 +16,8 @@ class AlertController {
         this.getTopApplications = this.getTopApplications.bind(this);
         this.getTopNodesByApp = this.getTopNodesByApp.bind(this);
         this.getConsecutiveDaysNodes = this.getConsecutiveDaysNodes.bind(this);
+        this.getIncidentStats = this.getIncidentStats.bind(this);
+
     }
 
     async getAlerts(req, res, next) {
@@ -33,6 +35,13 @@ class AlertController {
     async getExecutiveKPIs(req, res, next) {
         try {
             const result = await this.alertService.getExecutiveKPIs(req.validatedQuery || req.query);
+            res.json({ success: true, data: result.data, meta: result.meta });
+        } catch (error) { next(error); }
+    }
+
+    async getIncidentStats(req, res, next) {
+        try {
+            const result = await this.alertService.getIncidentStats(req.validatedQuery || req.query);
             res.json({ success: true, data: result.data, meta: result.meta });
         } catch (error) { next(error); }
     }

@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Eye, Settings, FileText, BookOpen, TrendingUp } from 'lucide-react';
+import { AlertTriangle, BarChart3, Eye, Settings, FileText, BookOpen } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
 import { ThemeToggle } from './ThemeToggle';
@@ -12,6 +12,7 @@ const navigationItems = [
   { path: '/history', label: 'History', icon: FileText },
   { path: '/how-to-use', label: 'How to Use', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/incident-stats', label: 'Incident BI', icon: BarChart3 },
 ];
 
 export const Layout = () => {

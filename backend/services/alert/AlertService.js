@@ -256,6 +256,44 @@ class AlertService {
         return { success: true, data: records };
     }
 
+    async getIncidentStats(params) {
+        // 1. Check if clustering is toggled on from the frontend
+        const { enabled } = this._getClusteringConfig(params);
+
+        // 2. Select the correct set of queries based on the toggle
+        const queryMap = enabled ? {
+            coverage: queries.CLUSTERED_INCIDENT_COVERAGE_STATS,
+            team: queries.CLUSTERED_INCIDENTS_BY_TEAM,
+            app: queries.CLUSTERED_INCIDENTS_BY_APPLICATION,
+            trend: queries.CLUSTERED_INCIDENT_DAILY_TREND
+        } : {
+            coverage: queries.INCIDENT_COVERAGE_STATS,
+            team: queries.INCIDENTS_BY_TEAM,
+            app: queries.INCIDENTS_BY_APPLICATION,
+            trend: queries.INCIDENT_DAILY_TREND
+        };
+
+        // 3. Execute all 4 queries concurrently
+        const [coverageRows, byTeam, byApp, dailyTrend] = await Promise.all([
+            this._execute(queryMap.coverage, params),
+            this._execute(queryMap.team, params),
+            this._execute(queryMap.app, params),
+            this._execute(queryMap.trend, params),
+        ]);
+
+        // 4. Return the structured data
+        return {
+            success: true,
+            data: {
+                coverage: coverageRows[0] || {},
+                by_team: byTeam || [],
+                by_application: byApp || [],
+                daily_trend: dailyTrend || [],
+            }
+        };
+    }
+
+
     async getDurationHistogram(params) {
         let records;
         const { enabled } = this._getClusteringConfig(params);
