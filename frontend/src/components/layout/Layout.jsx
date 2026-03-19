@@ -9,10 +9,10 @@ const navigationItems = [
   { path: '/explorer', label: 'Explorer', icon: Eye },
   { path: '/research', label: 'Panel Research', icon: FileText },
   { path: '/incident', label: 'Incident Managment', icon: AlertTriangle },
+  { path: '/incident-stats', label: 'Incident BI', icon: BarChart3 },
   { path: '/history', label: 'History', icon: FileText },
   { path: '/how-to-use', label: 'How to Use', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },
-  { path: '/incident-stats', label: 'Incident BI', icon: BarChart3 },
 ];
 
 export const Layout = () => {
@@ -23,7 +23,7 @@ export const Layout = () => {
 
   const isActivePath = (path) => {
     if (path === '/dashboard') return location.pathname === '/' || location.pathname === '/dashboard';
-    return location.pathname.startsWith(path);
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
   };
 
   return (

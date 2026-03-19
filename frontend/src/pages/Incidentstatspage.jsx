@@ -219,14 +219,6 @@ const IncidentStatsPage = () => {
                     icon={Layers} logoColor="purple" loading={loading}
                     tooltip="מדד צפיפות - כמה התראות בממוצע קובצו לתוך כל תקלה שנפתחה."
                 />
-                <MetricCard
-                    title="צוותים עם אירועים"
-                    value={coverage.teams_with_incidents != null
-                        ? `${coverage.teams_with_incidents} / ${coverage.total_teams}`
-                        : '—'}
-                    icon={Users} logoColor="orange" loading={loading}
-                    tooltip="מספר הצוותים (לפי פאנל) שנפתחה להם לפחות תקלה אחת."
-                />
             </div>
 
             {/* Stacked bar charts */}
