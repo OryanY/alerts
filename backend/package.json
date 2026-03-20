@@ -20,8 +20,7 @@
     "lru-cache": "^11.2.4",
     "luxon": "^3.7.2",
     "mongodb": "^6.19.0",
-    "mssql": "^10.0.4",
-    "swagger-ui-express": "^5.0.1"
+    "mssql": "^10.0.4"
   },
   "devDependencies": {
     "jest": "^29.7.0",

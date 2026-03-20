@@ -406,7 +406,7 @@ module.exports = {
       COUNT(DISTINCT CASE WHEN unique_tickets_in_cluster > 0 THEN panel_title END) AS teams_with_incidents,
       COUNT(DISTINCT application) AS total_apps,
       COUNT(DISTINCT CASE WHEN unique_tickets_in_cluster > 0 THEN application END) AS apps_with_incidents,
-      CAST((SELECT COUNT(DISTINCT incident_number) FROM dbo.historicalAlerts {WHERE_CLAUSE}) * 1.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+      CAST(SUM(CASE WHEN unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 1.0 / NULLIF((SELECT COUNT(DISTINCT incident_number) FROM dbo.historicalAlerts {WHERE_CLAUSE}), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
     FROM ClusterStats
   `,
 
@@ -439,7 +439,7 @@ module.exports = {
       MAX(ISNULL(u.unique_incidents, 0)) AS unique_incidents,
       SUM(CASE WHEN c.unique_tickets_in_cluster = 0 THEN 1 ELSE 0 END) AS no_incident,
       CAST(SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS coverage_pct,
-      CAST(MAX(ISNULL(u.unique_incidents, 0)) * 1.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+      CAST(SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 1.0 / NULLIF(MAX(ISNULL(u.unique_incidents, 0)), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
     FROM ClusterStats c 
     LEFT JOIN UniqueTickets u ON c.panel_title = u.panel_title
     WHERE c.panel_title IS NOT NULL
@@ -476,7 +476,7 @@ module.exports = {
       MAX(ISNULL(u.unique_incidents, 0)) AS unique_incidents,
       SUM(CASE WHEN c.unique_tickets_in_cluster = 0 THEN 1 ELSE 0 END) AS no_incident,
       CAST(SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS coverage_pct,
-      CAST(MAX(ISNULL(u.unique_incidents, 0)) * 1.0 / NULLIF(COUNT(c.cluster_id), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
+      CAST(SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) * 1.0 / NULLIF(MAX(ISNULL(u.unique_incidents, 0)), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
     FROM ClusterStats c 
     LEFT JOIN UniqueTickets u ON c.application = u.application
     WHERE c.application IS NOT NULL

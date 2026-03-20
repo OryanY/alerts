@@ -211,7 +211,7 @@ const IncidentStatsPage = () => {
                     value={(coverage.alerts_no_incident ?? 0).toLocaleString()}
                     subtitle={`${noIncidentPct}% מההתראות`}
                     icon={Zap} logoColor="red" loading={loading}
-                    tooltip="התראות שלא נפתחה עבורן תקלה (בגלל חוק ה-15 דקות, חוסר מיפוי, או שנסגרו מהר מדי)."
+                    tooltip="התראות שלא נפתחה עבורן תקלה (בגלל חוק ה-15 דקות, סוננו ע״י חוק אחר, או שנסגרו מהר מדי)."
                 />
                 <MetricCard
                     title="ממוצע התראות לתקלה"

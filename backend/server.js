@@ -5,13 +5,11 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
-const swaggerUi = require('swagger-ui-express');
 const { DateTime } = require('luxon');
 
 
 // Import configuration and database connections
 const { CONFIG } = require('./config');
-const { swaggerSpec } = require('./config/swagger');
 const { initializeSqlDatabase, initializeMongoDatabase, closeConnections } = require('./database/connection');
 
 const alertRoutes = require('./routes/alertRoutes');
@@ -75,12 +73,6 @@ app.get('/api/health', (req, res) => {
 // API Routes
 app.use('/api', restrictedCors, alertRoutes);
 app.use('/api/incidents', publicCors, incidentRoutes);
-
-// Swagger UI at root
-app.use('/', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Alert Management API'
-}));
 
 // ================== ERROR HANDLING ==================
 
