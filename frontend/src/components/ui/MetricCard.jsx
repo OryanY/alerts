@@ -17,6 +17,7 @@ export const MetricCard = memo(function MetricCard({
   loading = false,
   error,
   invertTrend = false,
+  onClick,
 }) {
   const { colors } = useTheme();
   // ... rest of hook usage
@@ -73,7 +74,23 @@ export const MetricCard = memo(function MetricCard({
 
   /* ---------- NORMAL STATE ---------- */
   return (
-    <div style={S.card()}>
+    <div 
+        style={{ ...S.card(), cursor: onClick ? 'pointer' : 'default', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+        onClick={onClick}
+        onMouseEnter={(e) => { 
+            if(onClick) {
+                e.currentTarget.style.transform = 'translateY(-2px)'; 
+                e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)';
+            }
+        }}
+        onMouseLeave={(e) => { 
+            if(onClick) {
+                e.currentTarget.style.transform = 'none'; 
+                e.currentTarget.style.boxShadow = 'none'; // Reverts to base style box-shadow if needed, or inline overrides
+            }
+        }}
+        title={onClick ? "לחץ לצפייה בהתראות האלו בטבלה צף (Drilldown)" : undefined}
+    >
       <div style={{
         display: 'flex',
         flexDirection: 'column',

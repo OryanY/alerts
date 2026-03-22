@@ -39,11 +39,6 @@ const CONFIG = Object.freeze({
     nightEnd: parseInt(process.env.SHIFT_NIGHT_END, 10) || 8,
   },
 
-  tz: {
-    IL_WIN: 'Israel Standard Time',
-    IANA: 'Asia/Jerusalem'
-  },
-
   server: {
     port: 5000,
     host: '0.0.0.0',

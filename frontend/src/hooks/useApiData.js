@@ -14,6 +14,11 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
   // Track abort controller for cleanup
   const abortControllerRef = useRef(null);
 
+  // Stringify dependencies to avoid infinite re-renders while allowing deep comparison
+  const paramsStr = params ? JSON.stringify(params) : '';
+  const dateRangeStr = JSON.stringify(dateRange || {});
+  const globalParamsStr = JSON.stringify(typeof getApiParams === 'function' ? getApiParams() : {});
+
   const fetchData = useCallback(async () => {
     if (skip || !params) return;
 
@@ -102,7 +107,7 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [endpoint, skip, params ? JSON.stringify(params) : '']);
+  }, [endpoint, skip, paramsStr, dateRangeStr, globalParamsStr]);
 
   useEffect(() => {
     if (!skip && params) {
@@ -115,7 +120,7 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
         abortControllerRef.current.abort();
       }
     };
-  }, [fetchData, skip, params ? JSON.stringify(params) : '']);
+  }, [fetchData, skip, paramsStr, dateRangeStr, globalParamsStr]);
 
   return { data, loading, error, refetch: fetchData };
 };

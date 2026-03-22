@@ -68,6 +68,15 @@ class AlertService {
             conditions.push('duration_sec <= @max_duration');
         }
 
+        if (params.has_incident !== undefined) {
+            const hasInc = params.has_incident === 'true' || params.has_incident === true;
+            if (hasInc) {
+                conditions.push('incident_number IS NOT NULL');
+            } else {
+                conditions.push('incident_number IS NULL');
+            }
+        }
+
         return conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     }
 
@@ -260,37 +269,42 @@ class AlertService {
         // 1. Check if clustering is toggled on from the frontend
         const { enabled } = this._getClusteringConfig(params);
 
-        // 2. Select the correct set of queries based on the toggle
-        const queryMap = enabled ? {
-            coverage: queries.CLUSTERED_INCIDENT_COVERAGE_STATS,
-            team: queries.CLUSTERED_INCIDENTS_BY_TEAM,
-            app: queries.CLUSTERED_INCIDENTS_BY_APPLICATION,
-            trend: queries.CLUSTERED_INCIDENT_DAILY_TREND
-        } : {
-            coverage: queries.INCIDENT_COVERAGE_STATS,
-            team: queries.INCIDENTS_BY_TEAM,
-            app: queries.INCIDENTS_BY_APPLICATION,
-            trend: queries.INCIDENT_DAILY_TREND
-        };
+        try {
+            const batchQuery = enabled ? queries.CLUSTERED_INCIDENT_STATS_BATCH : queries.UNCLUSTERED_INCIDENT_STATS_BATCH;
 
-        // 3. Execute all 4 queries concurrently
-        const [coverageRows, byTeam, byApp, dailyTrend] = await Promise.all([
-            this._execute(queryMap.coverage, params),
-            this._execute(queryMap.team, params),
-            this._execute(queryMap.app, params),
-            this._execute(queryMap.trend, params),
-        ]);
+            const req = this.getPool().request();
+            const whereClause = this._buildWhereClause(params, req);
+            this._bindThresholds(req, params);
 
-        // 4. Return the structured data
-        return {
-            success: true,
-            data: {
-                coverage: coverageRows[0] || {},
-                by_team: byTeam || [],
-                by_application: byApp || [],
-                daily_trend: dailyTrend || [],
+            if (enabled) {
+                req.input('cluster_threshold', sql.Int, params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : (this.constants.DEFAULT_THRESHOLD || 15));
             }
-        };
+
+            const finalQuery = batchQuery.replace(/{WHERE_CLAUSE}/g, whereClause);
+            const result = await req.query(finalQuery);
+
+            if (!result.recordsets || result.recordsets.length < 4) {
+                throw new Error('Batch query did not return all 4 expected recordsets');
+            }
+
+            const [coverageRows, byTeam, byApp, dailyTrend] = result.recordsets;
+
+            return {
+                success: true,
+                data: {
+                    coverage: coverageRows[0] || {},
+                    by_team: byTeam || [],
+                    by_application: byApp || [],
+                    daily_trend: dailyTrend || [],
+                }
+            };
+        } catch (error) {
+            console.error('Error fetching incident stats:', error);
+            return {
+                success: false,
+                error: { message: 'Failed to fetch incident stats' }
+            };
+        }
     }
 
 

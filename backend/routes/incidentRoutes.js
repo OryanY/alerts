@@ -28,10 +28,7 @@ router.get('/incident', validateQuery(alertQuerySchema), controller.createIncide
 router.post('/incident', validateBody(alertQuerySchema), controller.createIncidentFromAlertPOST);
 router.post('/incident/simulate', validateBody(alertQuerySchema), controller.simulateIncidentCreation);
 
-// ================== PROTECTED ROUTES (System Mappings & Incident Rules) ==================
-
 // ================== SYSTEM MAPPINGS ==================
-// GET is available to all authenticated users (Viewers)
 router.get('/system-mappings', controller.getSystemMappings);
 
 router.post('/system-mappings',
@@ -47,7 +44,6 @@ router.delete('/system-mappings/:id',
 );
 
 // ================== INCIDENT RULES ==================
-// GET is available to all authenticated users (Viewers)
 router.get('/incident-rules', controller.getIncidentRules);
 
 router.post('/incident-rules',

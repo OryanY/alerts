@@ -21,7 +21,8 @@ const baseSchema = {
   // Clustering Configuration
   clustering_enabled: Joi.boolean().optional(),
   clustering_threshold: Joi.number().integer().min(1).max(1440).optional(),
-  duration_metric: Joi.string().valid('average', 'median').default('average').optional()
+  duration_metric: Joi.string().valid('average', 'median').default('average').optional(),
+  has_incident: Joi.boolean().optional()
 };
 
 // Schema for main alerts endpoint with filtering and pagination
@@ -50,8 +51,6 @@ const alertsSchema = Joi.object({
   min_duration: Joi.number().integer().min(0).optional(),
   max_duration: Joi.number().integer().min(0).optional()
 }).custom((value, helpers) => {
-  // Note: Date range validation is handled by TimeUtils.validateDateRange() with timezone awareness
-
   // Validate duration range
   if (value.min_duration !== undefined && value.max_duration !== undefined) {
     if (value.min_duration >= value.max_duration) {
@@ -136,7 +135,7 @@ const patternSchema = Joi.object({
   min_correlation_count: Joi.number().integer().min(2).max(100).default(3)
 });
 
-// Schema for statistics endpoints that REQUIRE panel_title (e.g. message breakdown)
+// Schema for statistics endpoints that REQUIRE panel_title
 const statsSchemaRequiredPanel = statsSchema.keys({
   panel_title: Joi.string().trim().max(100).required()
 });

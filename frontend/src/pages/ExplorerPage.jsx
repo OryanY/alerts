@@ -74,7 +74,7 @@ const ExplorerPage = () => {
     const normalizedSortOrder = (f.sort_order || 'desc').toString().toUpperCase();
 
     const serverFilters = {};
-    const serverSideFields = ['panel_title', 'application', 'operator'];
+    const serverSideFields = ['panel_title', 'application', 'operator', 'has_incident'];
 
     serverSideFields.forEach((field) => {
       if (f[field] && f[field] !== '') {
@@ -413,6 +413,7 @@ const ExplorerPage = () => {
       duration_category: '',
       min_duration: '',
       max_duration: '',
+      has_incident: '',
     });
   };
 
@@ -670,6 +671,33 @@ const ExplorerPage = () => {
                 onChange={(val) => setFilters({ application: val })}
                 options={dropdownOptions.applications || []}
                 placeholder="All Applications"
+                disabled={loading}
+                colors={colors}
+              />
+            </div>
+
+            {/* Incident Status Dropdown */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: colors.text.secondary,
+                  marginBottom: 6,
+                }}
+              >
+                Incident Status
+              </label>
+              <CustomSelect
+                value={filters.has_incident || ''}
+                onChange={(val) => setFilters({ has_incident: val })}
+                options={[
+                  { value: '', label: 'All Alerts' },
+                  { value: 'true', label: 'Linked to Incident' },
+                  { value: 'false', label: 'No Incident' }
+                ]}
+                placeholder="All Alerts"
                 disabled={loading}
                 colors={colors}
               />

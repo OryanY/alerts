@@ -14,6 +14,7 @@ export const useExplorerFilters = () => {
     duration_category: searchParams.get('duration') || '',
     min_duration: searchParams.get('min_dur') || '',
     max_duration: searchParams.get('max_dur') || '',
+    has_incident: searchParams.get('has_inc') || '',
     sort_by: searchParams.get('sort') || 'time_fired',
     sort_order: searchParams.get('order') || 'desc',
     page: parseInt(searchParams.get('page') || '1', 10)
@@ -30,18 +31,20 @@ export const useExplorerFilters = () => {
             key === 'application' ? 'app' :
               key === 'min_duration' ? 'min_dur' :
                 key === 'max_duration' ? 'max_dur' :
-                  key === 'duration_category' ? 'duration' :
-                    key === 'sort_by' ? 'sort' :
-                      key === 'sort_order' ? 'order' : key);
+                  key === 'has_incident' ? 'has_inc' :
+                    key === 'duration_category' ? 'duration' :
+                      key === 'sort_by' ? 'sort' :
+                        key === 'sort_order' ? 'order' : key);
         } else {
           const urlValue = key === 'sort_order' ? String(value).toLowerCase() : String(value);
           next.set(key === 'panel_title' ? 'panel' :
             key === 'application' ? 'app' :
               key === 'min_duration' ? 'min_dur' :
                 key === 'max_duration' ? 'max_dur' :
-                  key === 'duration_category' ? 'duration' :
-                    key === 'sort_by' ? 'sort' :
-                      key === 'sort_order' ? 'order' : key, urlValue);
+                  key === 'has_incident' ? 'has_inc' :
+                    key === 'duration_category' ? 'duration' :
+                      key === 'sort_by' ? 'sort' :
+                        key === 'sort_order' ? 'order' : key, urlValue);
         }
       });
 

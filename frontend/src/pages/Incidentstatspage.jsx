@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { FileText, AlertTriangle, Users, Zap, TrendingUp, Layers } from 'lucide-react';
 import { useApiData } from '../hooks/useApiData';
+import { useNavigate } from 'react-router-dom';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { ChartCard } from '../components/ui/ChartCard';
@@ -30,7 +31,7 @@ const CoverageBar = ({ value, colors }) => {
     );
 };
 
-const StatTable = ({ rows, nameKey, colors }) => (
+const StatTable = ({ rows, nameKey, colors, onRowClick }) => (
     <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
@@ -59,8 +60,14 @@ const StatTable = ({ rows, nameKey, colors }) => (
                     return (
                         <tr key={i} style={{
                             borderBottom: `1px solid ${colors.border.primary}`,
-                            background: i < 3 ? `${colors.brand.primary}08` : 'transparent'
-                        }}>
+                            background: i < 3 ? `${colors.brand.primary}08` : 'transparent',
+                            cursor: onRowClick ? 'pointer' : 'default',
+                            transition: 'background 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => { if(onRowClick) e.currentTarget.style.background = colors.bg.secondary; }}
+                        onMouseLeave={(e) => { if(onRowClick) e.currentTarget.style.background = i < 3 ? `${colors.brand.primary}08` : 'transparent'; }}
+                        onClick={() => onRowClick && onRowClick(name)}
+                        >
                             <td style={{
                                 padding: '8px 10px', fontWeight: 500, color: colors.text.primary,
                                 maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -108,12 +115,27 @@ const StatTable = ({ rows, nameKey, colors }) => (
 
 
 const IncidentStatsPage = () => {
-    const { dateRange, setDateRange, setPresetRange } = useClientConfig();
+    const navigate = useNavigate();
+    const { getApiParams, dateRange, setDateRange, setPresetRange } = useClientConfig();
     const { colors } = useTheme();
     const S = createThemedStyles(colors);
     const chartProps = getChartProps(colors);
 
-    const { data, loading } = useApiData('/stats/incident-stats');
+    const apiParams = getApiParams();
+    const isClustered = apiParams.clustering_enabled;
+    const { data, loading } = useApiData('/stats/incident-stats', apiParams);
+
+    const handleDrilldown = (filterParams = {}) => {
+        const search = new URLSearchParams();
+        if (dateRange.start_date) search.set('start_date', dateRange.start_date);
+        if (dateRange.end_date) search.set('end_date', dateRange.end_date);
+        
+        Object.entries(filterParams).forEach(([k, v]) => {
+            if (v !== undefined && v !== '') search.set(k, v);
+        });
+        
+        navigate(`/explorer?${search.toString()}`);
+    };
 
     const CustomTooltip = ({ active, payload, label }) => {
         if (!active || !payload?.length) return null;
@@ -191,33 +213,36 @@ const IncidentStatsPage = () => {
                     title='סה"כ התראות'
                     value={(coverage.total_alerts ?? 0).toLocaleString()}
                     icon={AlertTriangle} logoColor="orange" loading={loading}
-                    tooltip="סך כל ההתראות שהתקבלו בתקופת הזמן שנבחרה."
+                    tooltip={isClustered ? "סך הכל רצפי התראות שהתקבלו. מנגנון הקיבוץ פעיל: מספר התראות שהגיעו ברצף של פחות מ-15 דקות נספרות כאירוע התראות אחד מתמשך." : "סך כל ההתראות הבודדות שהתקבלו במערכת בתקופת הזמן."}
+                    onClick={() => handleDrilldown({})}
                 />
                 <MetricCard
                     title="תקלות שנפתחו"
                     value={(coverage.unique_incidents ?? 0).toLocaleString()}
                     icon={FileText} logoColor="blue" loading={loading}
-                    tooltip="מספר התקלות הייחודיות שנפתחו בפועל ב-ServiceNow."
+                    tooltip="מספר התקלות הייחודיות (Tickets) שנפתחו ב-ServiceNow כתוצאה מהתראות אלו."
                 />
                 <MetricCard
                     title="קושרו לתקלה"
                     value={(coverage.alerts_covered ?? 0).toLocaleString()}
                     subtitle={`${coverage.coverage_pct ?? 0}% מההתראות`}
                     icon={TrendingUp} logoColor="green" loading={loading}
-                    tooltip="מספר ההתראות שקובצו בהצלחה לתוך תקלות."
+                    tooltip={isClustered ? "מספר רצפי ההתראות שקושרו בהצלחה לפחות לתקלה אחת. (הספירה מונה אירועים מתמשכים ולא כל התראה בנפרד)." : "מספר ההתראות הבודדות שקובצו וקושרו בהצלחה לתקלה קיימת."}
+                    onClick={() => handleDrilldown({ has_inc: 'true' })}
                 />
                 <MetricCard
                     title="התראות ללא תקלה"
                     value={(coverage.alerts_no_incident ?? 0).toLocaleString()}
                     subtitle={`${noIncidentPct}% מההתראות`}
                     icon={Zap} logoColor="red" loading={loading}
-                    tooltip="התראות שלא נפתחה עבורן תקלה (בגלל חוק ה-15 דקות, סוננו ע״י חוק אחר, או שנסגרו מהר מדי)."
+                    tooltip={isClustered ? "רצפי התראות שלמים שהסתיימו מבלי שנפתחה עבורם אף תקלה במערכת." : "התראות בודדות שלא נפתחה עבורן תקלה."}
+                    onClick={() => handleDrilldown({ has_inc: 'false' })}
                 />
                 <MetricCard
                     title="ממוצע התראות לתקלה"
                     value={coverage.avg_alerts_per_incident ?? '—'}
                     icon={Layers} logoColor="purple" loading={loading}
-                    tooltip="מדד צפיפות - כמה התראות בממוצע קובצו לתוך כל תקלה שנפתחה."
+                    tooltip={isClustered ? "מדד צפיפות - ממוצע רצפי ההתראות הקיימים בתוך כל תקלה שנפתחה." : "מדד טיפוסי - כמה התראות בודדות ממוצעות קיימות בתוך כל תקלה."}
                 />
             </div>
 
@@ -301,7 +326,7 @@ const IncidentStatsPage = () => {
                     </h3>
                     {loading
                         ? <div style={{ color: colors.text.tertiary, padding: 20, textAlign: 'center' }}>טוען נתונים...</div>
-                        : <StatTable rows={byTeam} nameKey="panel_title" colors={colors} />
+                        : <StatTable rows={byTeam} nameKey="panel_title" colors={colors} onRowClick={(name) => handleDrilldown({ panel: name, has_inc: 'true' })} />
                     }
                 </div>
                 <div style={S.card()}>
@@ -310,7 +335,7 @@ const IncidentStatsPage = () => {
                     </h3>
                     {loading
                         ? <div style={{ color: colors.text.tertiary, padding: 20, textAlign: 'center' }}>טוען נתונים...</div>
-                        : <StatTable rows={byApp} nameKey="application" colors={colors} />
+                        : <StatTable rows={byApp} nameKey="application" colors={colors} onRowClick={(name) => handleDrilldown({ app: name, has_inc: 'true' })} />
                     }
                 </div>
             </div>
