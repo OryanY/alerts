@@ -1,5 +1,6 @@
 // pages/ExplorerPage.jsx — Main alert exploration interface with filtering and visualization
 import { useMemo, useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Download, RefreshCw, X, AlertCircle } from 'lucide-react';
 
 import { useTheme } from '../contexts/ThemeContext';
@@ -28,6 +29,22 @@ const ExplorerPage = () => {
   const { colors, styles: S } = useTheme();
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { colorByDuration } = useDurationBands(config);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Hydrate global Date context strictly from navigation URL parameters
+  useEffect(() => {
+      const urlStart = searchParams.get('start_date');
+      const urlEnd = searchParams.get('end_date');
+      if (urlStart && urlEnd) {
+          setDateRange({ start_date: urlStart, end_date: urlEnd });
+          setSearchParams(prev => {
+              const next = new URLSearchParams(prev);
+              next.delete('start_date');
+              next.delete('end_date');
+              return next;
+          }, { replace: true });
+      }
+  }, [searchParams, setDateRange, setSearchParams]);
 
   // No need to format dates - backend handles Israeli timezone conversion
   const adjustedDateRange = dateRange;

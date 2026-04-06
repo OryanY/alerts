@@ -32,10 +32,12 @@ import {
   Filter,
   X,
 } from '../icons';
+import { Download } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 import { createChartConfig } from '../utils/chartConfig';
 import { formatDuration } from '../utils/formatters';
+import { exportNocStatsToPPTX } from '../utils/exportPptx';
 
 const NocDashboard = () => {
 
@@ -195,9 +197,24 @@ const NocDashboard = () => {
                     ? "Alerts are grouped by source and time - Click to change in Settings"
                     : "Showing all individual alerts - Click to enable grouping in Settings"}
                 >
-                  {config.clusteringEnabled ? '🔗' : '📋'}
-                  {config.clusteringEnabled ? 'Grouped' : 'All Alerts'}
                 </a>
+
+                {/* Export Button */}
+                <button 
+                  onClick={() => exportNocStatsToPPTX(exec.data, shifts.data, panelsList, dateRange, config.clusteringEnabled)}
+                  disabled={exec.loading || !exec.data}
+                  title="Export Dashboard Insights to PowerPoint"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 12px', borderRadius: 16,
+                    background: colors.brand.primary, color: '#fff',
+                    border: 'none', fontWeight: 600, fontSize: 13,
+                    cursor: exec.loading ? 'not-allowed' : 'pointer',
+                    opacity: (exec.loading || !exec.data) ? 0.6 : 1, transition: 'all 0.2s',
+                    marginLeft: 8
+                  }}>
+                  <Download size={16} />
+                </button>
               </div>
             }
           />
@@ -449,6 +466,25 @@ const NocDashboard = () => {
                   );
                 })}
               </div>
+            </ChartCard>
+          )}
+
+          {/* New Requested Feature: Alerts per Panel Title */}
+          {!selectedPanel && (
+            <ChartCard
+              title="פילוח התראות לפי צוות (Panel Title)"
+              icon={Network}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={(panelsList || []).slice(0, 10)} layout="vertical" margin={{ left: 10, right: 30 }}>
+                  <CartesianGrid {...chartConfig.grid} horizontal={false} />
+                  <XAxis type="number" {...chartConfig.axis} />
+                  <YAxis type="category" dataKey="panel_title" width={110} tick={{ fill: colors.text.secondary, fontSize: 11 }} tickLine={false} axisLine={false} />
+                  <Tooltip {...chartConfig.tooltip} />
+                  <Bar dataKey="alert_count" name='סה"כ התראות' fill={colors.brand.secondary} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="false_positive_count" name="התראות שווא" fill={colors.semantic.error} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </ChartCard>
           )}
         </div>

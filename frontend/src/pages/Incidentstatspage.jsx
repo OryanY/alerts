@@ -4,7 +4,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Area, ComposedChart, Line
 } from 'recharts';
-import { FileText, AlertTriangle, Users, Zap, TrendingUp, Layers } from 'lucide-react';
+import { FileText, AlertTriangle, Users, Zap, TrendingUp, Layers, Download } from 'lucide-react';
 import { useApiData } from '../hooks/useApiData';
 import { useNavigate } from 'react-router-dom';
 import { useClientConfig } from '../contexts/ClientConfigContext';
@@ -14,6 +14,7 @@ import { MetricCard } from '../components/ui/MetricCard';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
 import { getChartProps } from '../utils/chartConfig';
+import { exportIncidentStatsToPPTX } from '../utils/exportPptx';
 
 const CoverageBar = ({ value, colors }) => {
     const color = value > 66
@@ -126,11 +127,14 @@ const IncidentStatsPage = () => {
     const { data, loading } = useApiData('/stats/incident-stats', apiParams);
 
     const handleDrilldown = (filterParams = {}) => {
-        const search = new URLSearchParams();
-        if (dateRange.start_date) search.set('start_date', dateRange.start_date);
-        if (dateRange.end_date) search.set('end_date', dateRange.end_date);
+        const { start_date, end_date, ...rest } = filterParams;
+
+        if (start_date && end_date) {
+            setDateRange({ start_date, end_date });
+        }
         
-        Object.entries(filterParams).forEach(([k, v]) => {
+        const search = new URLSearchParams();
+        Object.entries(rest).forEach(([k, v]) => {
             if (v !== undefined && v !== '') search.set(k, v);
         });
         
@@ -204,8 +208,21 @@ const IncidentStatsPage = () => {
 
     return (
         <div dir="rtl">
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20, gap: 16 }}>
                 <DateRangePicker dateRange={dateRange} onChange={setDateRange} setPresetRange={setPresetRange} />
+                <button 
+                  onClick={() => exportIncidentStatsToPPTX(data, dateRange, isClustered)}
+                  disabled={loading || !data}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 16px', borderRadius: 8,
+                    background: colors.brand.primary, color: '#fff',
+                    border: 'none', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: (loading || !data) ? 0.6 : 1, transition: 'all 0.2s'
+                  }}>
+                  <Download size={18} />
+                  ייצוא למצגת (PPTX)
+                </button>
             </div>
             {/* KPIs */}
             <div style={{ ...S.grid('repeat(auto-fit, minmax(160px, 1fr))'), marginBottom: 24 }}>
@@ -258,11 +275,11 @@ const IncidentStatsPage = () => {
                                 tickLine={false} axisLine={false} />
                             <Tooltip content={<CustomTooltip />} />
                             <Bar dataKey="tickets" name="תקלות (Incidents)" stackId="a"
-                                fill={colors.brand.primary} />
+                                fill={colors.brand.primary} onClick={(data) => handleDrilldown({ panel: data.fullName, has_inc: 'true' })} style={{ cursor: 'pointer' }} />
                             <Bar dataKey="coveredExtra" name="התראות נוספות באותה תקלה" stackId="a"
-                                fill={`${colors.brand.primary}44`} />
+                                fill={`${colors.brand.primary}44`} onClick={(data) => handleDrilldown({ panel: data.fullName, has_inc: 'true' })} style={{ cursor: 'pointer' }} />
                             <Bar dataKey="noIncident" name="ללא תקלה" stackId="a"
-                                fill={colors.border.secondary} radius={[0, 4, 4, 0]} />
+                                fill={colors.border.secondary} radius={[0, 4, 4, 0]} onClick={(data) => handleDrilldown({ panel: data.fullName, has_inc: 'false' })} style={{ cursor: 'pointer' }} />
                         </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
@@ -277,11 +294,11 @@ const IncidentStatsPage = () => {
                                 tickLine={false} axisLine={false} />
                             <Tooltip content={<CustomTooltip />} />
                             <Bar dataKey="tickets" name="תקלות (Incidents)" stackId="a"
-                                fill={colors.brand.purple} />
+                                fill={colors.brand.purple} onClick={(data) => handleDrilldown({ app: data.fullName, has_inc: 'true' })} style={{ cursor: 'pointer' }} />
                             <Bar dataKey="coveredExtra" name="התראות נוספות באותה תקלה" stackId="a"
-                                fill={`${colors.brand.purple}44`} />
+                                fill={`${colors.brand.purple}44`} onClick={(data) => handleDrilldown({ app: data.fullName, has_inc: 'true' })} style={{ cursor: 'pointer' }} />
                             <Bar dataKey="noIncident" name="ללא תקלה" stackId="a"
-                                fill={colors.border.secondary} radius={[0, 4, 4, 0]} />
+                                fill={colors.border.secondary} radius={[0, 4, 4, 0]} onClick={(data) => handleDrilldown({ app: data.fullName, has_inc: 'false' })} style={{ cursor: 'pointer' }} />
                         </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
@@ -291,7 +308,13 @@ const IncidentStatsPage = () => {
             <div dir="ltr" style={{ marginTop: 20 }}>
                 <ChartCard title="מגמת אירועים יומית - התראות לעומת תקלות" loading={loading} height={260}>
                     <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={daily}>
+                        <ComposedChart data={daily} style={{ cursor: 'pointer' }} onClick={(state) => {
+                            let d = state?.activePayload?.[0]?.payload?.date_il || state?.activeLabel;
+                            if (d) {
+                                d = String(d).substring(0, 10);
+                                handleDrilldown({ start_date: d, end_date: d });
+                            }
+                        }}>
                             <CartesianGrid {...chartProps.grid} />
                             <XAxis dataKey="date_il" {...chartProps.xAxis}
                                 tickFormatter={d => {
