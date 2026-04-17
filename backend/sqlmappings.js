@@ -23,7 +23,7 @@ const norm = (s) => (typeof s === 'string' ? s.trim().toLowerCase() : '');
     // -------------------------------------------------
     await Promise.all([initializeSqlDatabase(), initializeMongoDatabase()]);
     const sqlPool = getSqlPool();
-    const mongo   = getMongoDb();
+    const mongo = getMongoDb();
 
     const {
       collections,

@@ -69,12 +69,13 @@ const NocDashboard = () => {
   // ---- Data Fetching ----
   // useApiData automatically injects dateRange and getApiParams()
   const customParams = selectedPanel ? { panel_title: selectedPanel } : {};
-  
+
   const exec = useApiData('/stats/executive-kpis', customParams);
   const shifts = useApiData('/stats/shift-analysis', customParams);
   const duration = useApiData('/stats/duration-histogram', customParams);
   const heatmap = useApiData('/stats/hourly-heatmap', customParams);
   const timeseries = useApiData('/stats/timeseries', customParams);
+  const incidentStats = useApiData('/stats/incident-stats', customParams);
 
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
   // Only fetch detailed panel stats if we are not filtered by a specific panel
@@ -197,11 +198,13 @@ const NocDashboard = () => {
                     ? "Alerts are grouped by source and time - Click to change in Settings"
                     : "Showing all individual alerts - Click to enable grouping in Settings"}
                 >
+                  <Network size={14} />
+                  {config.clusteringEnabled ? 'Clustered' : 'Raw Alerts'}
                 </a>
 
                 {/* Export Button */}
-                <button 
-                  onClick={() => exportNocStatsToPPTX(exec.data, shifts.data, panelsList, dateRange, config.clusteringEnabled)}
+                <button
+                  onClick={() => exportNocStatsToPPTX(exec.data, shifts.data, panelsList, dateRange, config.clusteringEnabled, heatmap.data, duration.data, incidentStats.data)}
                   disabled={exec.loading || !exec.data}
                   title="Export Dashboard Insights to PowerPoint"
                   style={{
@@ -468,29 +471,28 @@ const NocDashboard = () => {
               </div>
             </ChartCard>
           )}
+        </div>
 
-          {/* New Requested Feature: Alerts per Panel Title */}
+        {/* Charts Row 3: Team Breakdown + Timeseries */}
+        <div style={S.grid(!selectedPanel ? '1fr 1.5fr' : '1fr')} className="fade-in">
           {!selectedPanel && (
             <ChartCard
-              title="פילוח התראות לפי צוות (Panel Title)"
+              title="פילוח התראות לפי צוות"
               icon={Network}
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={(panelsList || []).slice(0, 10)} layout="vertical" margin={{ left: 10, right: 30 }}>
+                <BarChart data={[...(panelsList || [])].sort((a, b) => b.alert_count - a.alert_count).slice(0, 10).reverse()} layout="vertical" margin={{ left: 10, right: 30 }}>
                   <CartesianGrid {...chartConfig.grid} horizontal={false} />
                   <XAxis type="number" {...chartConfig.axis} />
                   <YAxis type="category" dataKey="panel_title" width={110} tick={{ fill: colors.text.secondary, fontSize: 11 }} tickLine={false} axisLine={false} />
                   <Tooltip {...chartConfig.tooltip} />
-                  <Bar dataKey="alert_count" name='סה"כ התראות' fill={colors.brand.secondary} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="alert_count" name='סה"כ התראות' fill={colors.brand.primary} radius={[0, 4, 4, 0]} />
                   <Bar dataKey="false_positive_count" name="התראות שווא" fill={colors.semantic.error} radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
           )}
-        </div>
 
-        {/* Charts Row 3 */}
-        <div style={S.grid('2fr 1fr')}>
           <ChartCard
             title="כמות התראות לאורך זמן + ממוצע זמן התראה"
             icon={TrendingUp}

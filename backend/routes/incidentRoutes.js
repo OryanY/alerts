@@ -8,7 +8,9 @@ const { validateQuery, validateBody } = require('../middleware/validation');
 const {
   alertQuerySchema,
   systemMappingSchema,
-  incidentRuleSchema
+  incidentRuleSchema,
+  serviceNowAlertSchema,
+  combinedCreateSchema
 } = require('../schemas/incidentSchemas');
 
 const router = express.Router();
@@ -23,10 +25,25 @@ const controller = new IncidentController(incidentService, mappingService, ruleS
 router.get('/assignment-groups', controller.getAssignmentGroups);
 router.get('/assignment-groups/sync', controller.syncAssignmentGroups);
 
+router.get(
+  '/incident-with-alert',
+  validateQuery(combinedCreateSchema),  
+  controller.createIncidentWithAlertGET 
+);
+
+router.post(
+  '/incident-with-alert',
+  validateBody(combinedCreateSchema),    
+  controller.createIncidentWithAlertPOST 
+);
+
 // ================== INCIDENT CREATION ==================
 router.get('/incident', validateQuery(alertQuerySchema), controller.createIncidentFromAlertGET);
 router.post('/incident', validateBody(alertQuerySchema), controller.createIncidentFromAlertPOST);
 router.post('/incident/simulate', validateBody(alertQuerySchema), controller.simulateIncidentCreation);
+
+router.post('/alert', validateBody(serviceNowAlertSchema), controller.createServiceNowAlert);
+router.get('/alert', validateQuery(serviceNowAlertSchema), controller.createServiceNowAlert);
 
 // ================== SYSTEM MAPPINGS ==================
 router.get('/system-mappings', controller.getSystemMappings);
@@ -61,7 +78,11 @@ router.patch('/incident-rules/:id/toggle',
   controller.toggleIncidentRule
 );
 
+
 // ================== HISTORY / LOGS ==================
 router.get('/incident-logs', controller.getIncidentLogs);
+
+// ================== GRAFANA WEBHOOK ==================
+router.get('/', controller.createIncidentFromGrafana);
 
 module.exports = router;

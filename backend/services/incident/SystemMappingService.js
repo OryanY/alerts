@@ -35,15 +35,29 @@ class SystemMappingService {
 
     async checkMappingConflicts(patterns, excludeId = null) {
         const exactValues = patterns.filter(p => p.type === 'exact').map(p => p.value);
-        if (exactValues.length === 0) return;
+        
+        // Throw Error for EXACT duplicates (breaking)
+        if (exactValues.length > 0) {
+            const query = { 'grafana_names.value': { $in: exactValues }, 'grafana_names.type': 'exact' };
+            if (excludeId) query._id = { $ne: new ObjectId(excludeId) };
 
-        const query = { 'grafana_names.value': { $in: exactValues }, 'grafana_names.type': 'exact' };
-        if (excludeId) query._id = { $ne: new ObjectId(excludeId) };
+            const existingMapping = await this.collection.findOne(query);
+            if (existingMapping) {
+                const conflicts = exactValues.filter(val => existingMapping.grafana_names.some(p => (typeof p === 'string' ? p : p.value) === val));
+                throw new Error(`Exact match pattern(s) already exist: ${conflicts.join(', ')}`);
+            }
+        }
 
-        const existingMapping = await this.collection.findOne(query);
-        if (existingMapping) {
-            const conflicts = exactValues.filter(val => existingMapping.grafana_names.some(p => (typeof p === 'string' ? p : p.value) === val));
-            throw new Error(`Exact match pattern(s) already exist: ${conflicts.join(', ')}`);
+        // Add pure Console Warning for Regex/Contains overlaps
+        const nonExactPatterns = patterns.filter(p => p.type !== 'exact').map(p => p.value);
+        if (nonExactPatterns.length > 0) {
+            const overlapQuery = { 'grafana_names.value': { $in: nonExactPatterns }, 'grafana_names.type': { $ne: 'exact' } };
+            if (excludeId) overlapQuery._id = { $ne: new ObjectId(excludeId) };
+            
+            const existingNonExact = await this.collection.findOne(overlapQuery);
+            if (existingNonExact) {
+                console.warn(`⚠️ Warning: Regex or contains pattern(s) overlap with existing mapping [${existingNonExact._id}]`);
+            }
         }
     }
 

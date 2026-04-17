@@ -2,24 +2,26 @@
 const axios = require('axios');
 
 class ServiceNowClient {
-    constructor(config = {}) {
-        this.url = config.url || process.env.SERVICENOW_URL;
-        this.username = config.username || process.env.SERVICENOW_USERNAME;
-        this.password = config.password || process.env.SERVICENOW_PASSWORD;
+    constructor() {
+        this.url = process.env.SERVICENOW_URL;
+        this.username = process.env.SERVICENOW_USERNAME;
+        this.password = process.env.SERVICENOW_PASSWORD;
         this.enabled = Boolean(this.url);
+        this.CACHE_TTL = 86_400_000; // 24 hours in milliseconds
+        this.fallbackSysId = process.env.SERVICENOW_FALLBACK_SYS_ID || "b52e61db853a7d549dd83f48caed07f5";
+        this.domain = process.env.SERVICENOW_DOMAIN || "domain.com";
     }
 
     /**
      * Check if ServiceNow integration is enabled
      */
     isEnabled() {
-        return this.enabled && this.url;
+        return this.enabled;
     }
 
     async createIncident(incidentData) {
         if (!this.isEnabled()) {
-            console.log('❌ ServiceNow integration disabled or not configured');
-            return { success: false, message: 'ServiceNow integration disabled' };
+            throw new Error('ServiceNow integration disabled or not configured');
         }
 
         try {
@@ -50,13 +52,12 @@ class ServiceNowClient {
             };
 
         } catch (error) {
-            console.error('❌ ServiceNow API Error:', error.response?.data || error.message);
+            const errorMsg = error.response?.data?.error?.message || error.message;
+            console.error('❌ ServiceNow API Error:', errorMsg);
 
-            return {
-                success: false,
-                error: error.response?.data?.error?.message || error.message,
-                status: error.response?.status
-            };
+            const snError = new Error(`ServiceNow API Error: ${errorMsg}`);
+            snError.status = error.response?.status || 500;
+            throw snError;
         }
     }
 
@@ -78,7 +79,7 @@ class ServiceNowClient {
                 method: 'GET',
                 url: `${this.url}/api/now/table/sys_user_group`,
                 params: {
-                    sysparm_query: 'active=true^u_unit=7180',
+                    sysparm_query: 'active=true^u_unit=mainunit',
                     sysparm_fields: 'sys_id,name',
                     sysparm_limit: 1000
                 },
@@ -114,20 +115,20 @@ class ServiceNowClient {
             return [];
         }
     }
-    
-   async getSysIdByUser(username) {
-        const fallbackSysId = "b52e61db853a7d549dd83f48caed07f5";
-        const domain = "d360.dom"
+
+    async getSysIdByUser(username) {
+        const fallbackSysId = this.fallbackSysId;
+        const domain = this.domain;
         if (!this.isEnabled() || !username) {
             return fallbackSysId;
         }
 
         const email = `${username}@${domain}`;
-        
+
         try {
             const response = await axios({
                 method: 'GET',
-                url: `https://servicenow.domain.com/api/now/table/sys_user`,
+                url: `${this.url}/api/now/table/sys_user`,
                 params: {
                     sysparm_query: `email=${email}`,
                     sysparm_fields: 'sys_id',
@@ -148,7 +149,7 @@ class ServiceNowClient {
             }
 
             const userRecord = Array.isArray(result) ? result[0] : result;
-            
+
             if (!userRecord || !userRecord.sys_id) {
                 console.log(`User found, but no sys_id present, using fallback: ${fallbackSysId}`);
                 return fallbackSysId;
@@ -159,11 +160,10 @@ class ServiceNowClient {
             return fallbackSysId;
         }
     }
-    
+
     async createTiudAlert(alertData) {
         if (!this.isEnabled()) {
-            console.log('❌ ServiceNow integration disabled or not configured');
-            return { success: false, message: 'ServiceNow integration disabled' };
+            throw new Error('ServiceNow integration disabled or not configured');
         }
 
         try {
@@ -194,12 +194,12 @@ class ServiceNowClient {
             };
 
         } catch (error) {
-            console.error('❌ ServiceNow API Error:', error.response?.data || error.message);
-            return {
-                success: false,
-                error: error.response?.data?.error?.message || error.message,
-                status: error.response?.status
-            };
+            const errorMsg = error.response?.data?.error?.message || error.message;
+            console.error('❌ ServiceNow API Error:', errorMsg);
+
+            const snError = new Error(`ServiceNow API Error: ${errorMsg}`);
+            snError.status = error.response?.status || 500;
+            throw snError;
         }
     }
 

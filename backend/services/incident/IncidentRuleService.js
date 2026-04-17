@@ -26,7 +26,6 @@ class IncidentRuleService {
 
     async getIncidentRules(grafanaName = null) {
         const allRules = await this.collection.aggregate([
-            { $match: {} },
             { $lookup: { from: mongoConfig.collections.systemMappings, localField: 'system_mapping_id', foreignField: '_id', as: 'system_mapping' } },
             { $unwind: { path: '$system_mapping', preserveNullAndEmptyArrays: true } },
             { $sort: { created_at: -1 } }

@@ -69,7 +69,6 @@ const VALID_DISTINCT_FIELDS = Object.freeze([
     'business_service',
     'u_network',
     'u_site',
-    'u_impact_technology',
     'u_monitor_identifier',
 ]);
 

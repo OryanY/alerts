@@ -23,6 +23,8 @@ const TopNoisyAlertsList = ({ alerts, loading }) => {
                 style={{
                     maxHeight: 300,
                     overflowY: 'auto',
+                    overflowX: 'hidden',
+                    paddingRight: 16,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 8,

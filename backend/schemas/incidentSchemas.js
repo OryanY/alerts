@@ -13,7 +13,7 @@ const alertQuerySchema = Joi.object({
   user: Joi.string().trim().optional()
 });
 
-// ServiceNow alert creation
+// ServiceNow alert creation (system_offering REMOVED)
 const serviceNowAlertSchema = Joi.object({
   application: Joi.string().required().trim(),
   object_name: Joi.string().required().trim(),
@@ -26,7 +26,7 @@ const serviceNowAlertSchema = Joi.object({
   user: Joi.string().trim().optional()
 });
 
-// Combined incident + alert creation
+// Combined incident + alert creation (system_offering REMOVED)
 const combinedCreateSchema = Joi.object({
   application: Joi.string().required().trim().max(100),
   object_name: Joi.string().required().trim().max(100),
@@ -56,7 +56,6 @@ const systemMappingSchema = Joi.object({
   service_offering: Joi.string().required().trim(),
   business_service: Joi.string().required().trim(),
   u_network: Joi.string().required().trim(),
-  u_impact_technology: Joi.string().required().trim(),
   assignment_group: Joi.string().required().trim(),
   u_system_failure: Joi.boolean().default(false)
 }).unknown(true);

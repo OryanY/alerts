@@ -21,7 +21,8 @@ module.exports = {
     Clusters AS (
         SELECT 
             cluster_id, panel_title, application, MIN(time_fired) AS time_fired, MAX(time_resolved) AS time_resolved,
-            SUM(ISNULL(duration_sec, 0)) AS duration_sec, COUNT(*) AS cluster_count,
+            DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS duration_sec, 
+            COUNT(*) AS cluster_count,
             MAX(node_name) AS node_name,
             MAX(network) AS network, MAX(object) AS object, MAX(operator) AS operator,
             MAX(message) AS message, MIN(incident_id) AS incident_id, MIN(incident_number) AS incident_number,
@@ -34,7 +35,10 @@ module.exports = {
         c.history_id, c.cluster_count,
         (
             SELECT time_fired, duration_sec, message 
-            FROM Grouped g WHERE g.cluster_id = c.cluster_id 
+            FROM Grouped g 
+            WHERE g.cluster_id = c.cluster_id 
+              AND g.panel_title = c.panel_title  -- Ensure we only get alerts from this specific app/type
+              AND g.application = c.application  -- Ensure we only get alerts from this specific app/type
             ORDER BY time_fired ASC FOR JSON PATH
         ) AS raw_alerts_json
     FROM Clusters c
