@@ -1,5 +1,5 @@
 // utils/constants.js — App-wide constants and configuration defaults
-export const API_BASE = "http://localhost:5000/api";
+export const API_BASE = "http://localhost:8080/api";
 export const JERUSALEM_TZ = 'Asia/Jerusalem';
 export const DEFAULT_CLIENT_CFG = {
   dayStart: 8,

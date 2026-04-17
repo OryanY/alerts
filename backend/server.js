@@ -1,5 +1,3 @@
-// server.js - Main server with modularized structure and improved error handling
-require('dotenv').config();  // Load .env file FIRST
 
 const express = require('express');
 const cors = require('cors');
@@ -71,6 +69,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // API Routes
+app.use('/from-grafana', publicCors, incidentRoutes);
+
 app.use('/api', restrictedCors, alertRoutes);
 app.use('/api/incidents', publicCors, incidentRoutes);
 

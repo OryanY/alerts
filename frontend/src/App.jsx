@@ -12,6 +12,7 @@ import HowToUsePage from './pages/HowToUsePage';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import IncidentStatsPage from './pages/Incidentstatspage';
+import Health from './pages/Health';
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
                 <Route path="research" element={<PanelResearchPage />} />
                 <Route path="how-to-use" element={<HowToUsePage />} />
                 <Route path="incident-stats" element={<IncidentStatsPage />} />
+                <Route path="/health" element={<Health />} />
 
                 {/* 404 */}
                 <Route path="*" element={<NotFoundPage />} />

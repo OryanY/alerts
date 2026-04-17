@@ -40,7 +40,7 @@ const CONFIG = Object.freeze({
   },
 
   server: {
-    port: 5000,
+    port: 8080,
     host: '0.0.0.0',
   },
 
@@ -79,21 +79,23 @@ const dbConfig = {
   }
 };
 
-// MongoDB Configuration
-// MongoDB Configuration
+
+// Mongo
+const mongoUser = process.env.MONGO_USER;
+const mongoPassword = process.env.MONGO_PASSWORD;
+const mongoHost = process.env.MONGO_HOST;
+const mongoDb = process.env.MONGO_DB;
 const mongoConfig = {
-  // If MONGO_URI is provided, use it. Otherwise construct from parts (all must be present)
-  uri: process.env.MONGO_URI ||
-    `mongodb://${encode(process.env.MONGO_USER)}:${encode(process.env.MONGO_PASSWORD)}@${process.env.MONGO_HOST}:${process.env.MONGO_PORT}/${process.env.MONGO_DB}?authSource=${process.env.MONGO_AUTH_DB || process.env.MONGO_DB}`,
-  database: process.env.MONGO_DB,
-  collections: {
+    uri: mongoHost.includes('localhost') ? `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authSource=admin` : `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true&replicaSet=mgk-grafana2sn-znp`,
+    database: process.env.MONGO_DB,
+    collections: {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',
     assignmentGroups: 'assignment_groups',
     incidentLogs: 'incident_logs'
+
   }
 };
-
 module.exports = {
   CONFIG,
   dbConfig,
