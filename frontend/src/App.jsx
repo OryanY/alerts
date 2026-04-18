@@ -19,7 +19,7 @@ function App() {
     <ThemeProvider>
       <ClientConfigProvider>
         <ErrorBoundary>
-          <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Router>
             <Routes>
               <Route path="/" element={<Layout />}>
                 {/* Default redirect */}

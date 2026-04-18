@@ -2,12 +2,12 @@
 module.exports = {
   SELECT_ALERTS: `
     SELECT {TOP_CLAUSE}
-      incident_id, panel_title, application, node_name, network, object, operator, time_fired, time_resolved, duration_sec, message, key_field, incident_number, history_id
+      incident_id, panel_title, application, node_name, network, object, operator, time_fired, time_resolved, duration_sec, message, key_field, incident_number, incident_sys_id, history_id
     FROM dbo.historicalAlerts {WHERE_CLAUSE} {ORDER_CLAUSE} {PAGINATION_CLAUSE}
   `,
   CLUSTERED_ALERTS: `
     WITH Filtered AS (
-        SELECT {TOP_CLAUSE} incident_id, panel_title, application, node_name, network, object, operator, time_fired, time_resolved, duration_sec, message, key_field, incident_number, history_id
+        SELECT {TOP_CLAUSE} incident_id, panel_title, application, node_name, network, object, operator, time_fired, time_resolved, duration_sec, message, key_field, incident_number, incident_sys_id, history_id
         FROM dbo.historicalAlerts {WHERE_CLAUSE} {RAW_ORDER_CLAUSE} {PAGINATION_CLAUSE}
     ),
     Marked AS (
@@ -26,13 +26,14 @@ module.exports = {
             MAX(node_name) AS node_name,
             MAX(network) AS network, MAX(object) AS object, MAX(operator) AS operator,
             MAX(message) AS message, MIN(incident_id) AS incident_id, MIN(incident_number) AS incident_number,
+            MIN(incident_sys_id) AS incident_sys_id,
             MIN(history_id) AS history_id, MAX(key_field) AS key_field
         FROM Grouped GROUP BY cluster_id, panel_title, application
     )
     SELECT 
         c.incident_id, c.panel_title, c.application, c.node_name, c.network, c.object, c.operator, 
         c.time_fired, c.time_resolved, c.duration_sec, c.message, c.key_field, c.incident_number, 
-        c.history_id, c.cluster_count,
+        c.incident_sys_id, c.history_id, c.cluster_count,
         (
             SELECT time_fired, duration_sec, message 
             FROM Grouped g 

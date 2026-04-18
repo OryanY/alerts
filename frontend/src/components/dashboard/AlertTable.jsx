@@ -67,6 +67,7 @@ export const AlertTable = ({
     switch (key) {
       case 'incident_number': {
         const formatted = alert.incident_number;
+        const sysId = alert.incident_sys_id;
 
         // If incident_number is visible but NOT first, it's just text
         // If it IS first, renderClusteringUI handles the chevron
@@ -84,7 +85,26 @@ export const AlertTable = ({
           >
             <div style={wrapperStyle}>
               {renderClusteringUI()}
-              {formatted ? formatted : <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>}
+              {formatted ? (
+                  <a
+                    href={`${process.env.REACT_APP_SERVICENOW_URL || 'https://servicenow.com'}/nav_to.do?uri=incident.do?${sysId ? `sys_id=${sysId}` : `sysparm_query=number=${formatted}`}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      color: colors.brand.primary,
+                      textDecoration: 'none',
+                      borderBottom: `1px dashed ${colors.brand.primary}50`,
+                      transition: 'border-bottom-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderBottomStyle = 'solid')}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderBottomStyle = 'dashed')}
+                    title={sysId ? `Open Incident in ServiceNow (sys_id: ${sysId})` : `Search Incident in ServiceNow (${formatted})`}
+                  >
+                    {formatted}
+                  </a>
+              ) : (
+                <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
+              )}
               {/* Only show cluster badge if this is the expansion point column */}
               {isFirstColumn && alert.is_cluster && (
                 <span style={{

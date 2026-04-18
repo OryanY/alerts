@@ -557,14 +557,16 @@ const styles = {
   headerContainer: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     marginBottom: 20,
     gap: 16,
     flexWrap: 'wrap',
   },
   controlsWrapper: {
     flex: '1 1 auto',
-    minWidth: 300
+    minWidth: 300,
+    display: 'flex',
+    justifyContent: 'center'
   },
   filterGroup: {
     display: 'flex',

@@ -1,0 +1,194 @@
+/* ─────────────────────────────────────────────
+   TOP NAVBAR LAYOUT
+───────────────────────────────────────────── */
+.top-nav-layout {
+  display: block !important; /* Overrides app-shell flex */
+  overflow: auto !important;
+  width: 100% !important;
+}
+
+.top-navbar {
+  position: sticky;
+  top: 0; /* Changed from 2px */
+  z-index: 1000;
+  width: 100% !important;
+  border-bottom: 1px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.top-navbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 0 24px;
+  gap: 32px;
+}
+
+/* Brand */
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: box-shadow 0.3s ease;
+}
+
+.brand-text {
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.brand-text .bold {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-right: 4px;
+}
+
+.brand-text .light {
+  font-weight: 500;
+}
+
+/* Desktop Links */
+.desktop-links {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.top-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.top-nav-item:hover:not(.active) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary) !important;
+}
+
+.active-line {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  border-radius: 4px;
+}
+
+/* Actions */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary) !important;
+  border-color: var(--border-secondary) !important;
+}
+
+.nav-actions .divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+}
+
+.mobile-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.mobile-menu {
+  display: none;
+}
+
+/* Main Content Adjustments for Top Nav */
+.main-content.top-nav-main {
+  width: 100% !important;
+  height: auto !important;
+  min-height: calc(100vh - 66px) !important;
+  padding: 32px 24px !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  overflow: visible !important;
+  flex: none !important; /* disable flex item if app-shell is still flex */
+}
+
+.main-content-inner {
+  max-width: 1800px !important;
+  margin: 0 auto !important;
+  width: 100% !important;
+}
+
+@media (max-width: 1024px) {
+  .desktop-links { display: none; }
+  .mobile-toggle { display: block; }
+  
+  .mobile-menu {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 64px;
+    left: 0; right: 0;
+    border-bottom: 1px solid var(--border-primary);
+    padding: 12px;
+    box-shadow: var(--shadow-lg);
+  }
+  
+  .mobile-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-radius: 8px;
+    text-align: left;
+    font-family: inherit;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+}

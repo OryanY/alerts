@@ -73,22 +73,27 @@ const HowToUsePage = () => {
         },
         copyBox: {
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
             background: colors.bg.tertiary,
             border: `1px solid ${colors.border.primary}`,
             borderRadius: 6,
             padding: 8,
             gap: 12,
-            marginTop: 4
+            marginTop: 4,
+            width: '100%',
+            boxSizing: 'border-box'
         },
         copyParams: {
             fontFamily: 'monospace',
             fontSize: '0.85rem',
-            color: colors.brand.purple, // Highlight params
+            color: colors.brand.purple,
             wordBreak: 'break-all',
+            whiteSpace: 'pre-wrap',
             direction: 'ltr',
             textAlign: 'left',
-            flex: 1
+            flex: 1,
+            margin: 0,
+            minWidth: 0
         },
         fieldGrid: {
             display: 'grid',
@@ -149,7 +154,16 @@ const HowToUsePage = () => {
                                 <code style={{ ...pageStyles.copyParams }}>{grafanaUrl}</code>
                                 <button
                                     onClick={() => copyToClipboard(grafanaUrl, 'url')}
-                                    style={{ ...S.navBtn(false), padding: 8, background: colors.bg.secondary, border: `1px solid ${colors.border.secondary}` }}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        width: 32, height: 32, flexShrink: 0,
+                                        borderRadius: 6,
+                                        background: colors.bg.secondary,
+                                        border: `1px solid ${colors.border.secondary}`,
+                                        color: colors.text.secondary,
+                                        cursor: 'pointer',
+                                    }}
+                                    title="Copy to clipboard"
                                 >
                                     {copiedSection === 'url' ? <Check size={16} color={colors.semantic.success} /> : <Copy size={16} />}
                                 </button>

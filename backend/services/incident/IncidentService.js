@@ -111,7 +111,24 @@ class IncidentService {
     // ================== ASSIGNMENT GROUPS ==================
 
     async getAssignmentGroups() {
+        const REFRESH_THRESHOLD = 7 * 24 * 60 * 60 * 1000; // 7 days
         const doc = await this.db.assignmentGroups.findOne({ _id: 'assignment_groups_store' });
+
+        const isStale = !doc || !doc.lastSynced || (Date.now() - new Date(doc.lastSynced).getTime() > REFRESH_THRESHOLD);
+
+        if (isStale) {
+            console.log('🔄 Assignment groups are stale or missing, triggering auto-sync...');
+            if (!doc) {
+                // If no data exists at all, wait for the first sync
+                return await this.syncAssignmentGroups();
+            } else {
+                // If data exists but is stale, sync in background to avoid blocking the user
+                this.syncAssignmentGroups().catch(err => 
+                    console.error('❌ Background auto-sync of assignment groups failed:', err.message)
+                );
+            }
+        }
+
         return doc ? doc.groups : [];
     }
 

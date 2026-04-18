@@ -444,39 +444,38 @@ const ExplorerPage = () => {
         <div
           style={{
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: 24,
+            marginBottom: 20,
             gap: 16,
-            flexWrap: 'wrap',
+            flexWrap: 'nowrap',
           }}
         >
-          <div>
-            <h2
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                margin: 0,
-                color: colors.text.primary,
-              }}
-            >
-              Alert Explorer
-            </h2>
-            <p
-              style={{
-                fontSize: 14,
-                color: colors.text.secondary,
-                margin: '6px 0 0 0',
-              }}
-            >
-              {loading
-                ? 'Loading alerts…'
-                : `${processedAlerts.length.toLocaleString()} ${processedAlerts.length === 1 ? 'alert' : 'alerts'
-                } found`}
-            </p>
+          {/* LEFT: Alert Count */}
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: colors.text.secondary,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {loading
+              ? 'Loading alerts…'
+              : `${processedAlerts.length.toLocaleString()} ${processedAlerts.length === 1 ? 'alert' : 'alerts'
+              } found`}
           </div>
 
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* RIGHT: Actions */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' }}>
+            <div style={{ marginRight: 12 }}>
+              <DateRangePicker
+                dateRange={dateRange}
+                onChange={setDateRange}
+                setPresetRange={setPresetRange}
+              />
+            </div>
+
             <ColumnVisibilityPanel
               visibleColumns={visibleColumns}
               onToggle={handleToggleColumn}
@@ -513,22 +512,6 @@ const ExplorerPage = () => {
               </span>
             </button>
           </div>
-        </div>
-
-        {/* DATE RANGE */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 16,
-          }}
-        >
-          <DateRangePicker
-            dateRange={dateRange}
-            onChange={setDateRange}
-            setPresetRange={setPresetRange}
-          />
         </div>
 
         {/* FILTERS CARD */}
