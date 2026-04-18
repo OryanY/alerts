@@ -333,7 +333,6 @@ module.exports = {
       COUNT(DISTINCT incident_number) AS unique_incidents,
       COUNT(*) - COUNT(incident_number) AS alerts_no_incident,
       CAST(COUNT(incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS coverage_pct,
-      CAST(COUNT(DISTINCT incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS incident_creation_rate,
       COUNT(DISTINCT panel_title) AS total_teams,
       COUNT(DISTINCT CASE WHEN incident_number IS NOT NULL THEN panel_title END) AS teams_with_incidents,
       COUNT(DISTINCT application) AS total_apps,

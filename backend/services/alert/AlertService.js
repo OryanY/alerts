@@ -266,7 +266,6 @@ class AlertService {
     }
 
     async getIncidentStats(params) {
-        // 1. Check if clustering is toggled on from the frontend
         const { enabled } = this._getClusteringConfig(params);
 
         try {
@@ -274,10 +273,12 @@ class AlertService {
 
             const req = this.getPool().request();
             const whereClause = this._buildWhereClause(params, req);
-            this._bindThresholds(req, params);
 
             if (enabled) {
-                req.input('cluster_threshold', sql.Int, params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : (this.constants.DEFAULT_THRESHOLD || 15));
+                const clusterThreshold = params.clustering_threshold
+                    ? parseInt(params.clustering_threshold, 10)
+                    : (CONFIG.clustering.defaultThreshold || 15);
+                req.input('cluster_threshold', sql.Int, clusterThreshold);
             }
 
             const finalQuery = batchQuery.replace(/{WHERE_CLAUSE}/g, whereClause);
