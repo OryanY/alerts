@@ -47,10 +47,10 @@ export const useApiData = (endpoint, params = {}, options = {}) => {
 
       const url = `${API_BASE}${endpoint}${queryString ? `?${queryString}` : ''}`;
 
-      // Add timeout (60 seconds) for heavy analytical queries
+      // Add timeout (30 seconds)
       const timeoutId = setTimeout(() => {
         abortControllerRef.current.abort();
-      }, 60000);
+      }, 30000);
 
       const res = await fetch(url, {
         signal: abortControllerRef.current.signal,

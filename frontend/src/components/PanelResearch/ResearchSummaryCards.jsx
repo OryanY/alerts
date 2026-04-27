@@ -4,6 +4,7 @@ import { useClientConfig } from '../../contexts/ClientConfigContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
 import Tooltip from '../ui/Tooltip';
+import { formatDuration } from '../../utils/formatters';
 
 const ResearchSummaryCards = ({ summary }) => {
     const { colors } = useTheme();
@@ -111,7 +112,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         color: colors.text.primary,
                     }}
                 >
-                    {durationMetric === 'median' ? summary.median_duration : summary.avg_duration}s
+                    {formatDuration(durationMetric === 'median' ? summary.median_duration : summary.avg_duration)}
                 </div>
             </div>
 

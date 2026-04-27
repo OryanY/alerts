@@ -1,56 +1,65 @@
-// middleware/queryLogger.js — Dev-only query logger
-// Logs: endpoint + params → result count + duration
-// Only active when NODE_ENV=development
-//
-// Example output:
-//   [QUERY] GET /api/alerts { start_date: '2025-03-01', end_date: '2025-03-18', application: 'MyApp' }
-//   [QUERY] ✓ 142 rows — 234ms
+// middleware/queryLogger.js
+// Logs incident/mapping/assignment activity with timing in all environments.
+// Skips /health and /metrics entirely.
+// In production: logs only actionable incident-related routes.
+// In development: logs all /api routes.
+
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Routes to never log (infrastructure noise)
+const SKIP_PATHS = ['/health', '/metrics'];
+
+// In production, only log incident-related routes
+const PROD_ALLOW_PATTERNS = [
+  /\/incidents/,
+  /\/incident/,
+  /\/mappings/,
+  /\/rules/,
+  /\/assignment-groups/,
+  /\/sync/,
+  /\/from-grafana/,
+];
 
 const SENSITIVE_KEYS = new Set(['password', 'token', 'secret', 'key', 'auth']);
 
-/**
- * Sanitize query params for logging — redact sensitive keys.
- */
 function sanitizeParams(params) {
-    const out = {};
-    for (const [k, v] of Object.entries(params)) {
-        out[k] = SENSITIVE_KEYS.has(k.toLowerCase()) ? '[REDACTED]' : v;
-    }
-    return out;
+  const out = {};
+  for (const [k, v] of Object.entries(params)) {
+    out[k] = SENSITIVE_KEYS.has(k.toLowerCase()) ? '[REDACTED]' : v;
+  }
+  return out;
 }
 
-/**
- * Dev query logger middleware.
- * Wraps res.json() to intercept the response and log result count + duration.
- */
 const queryLogger = (req, res, next) => {
-    const start = Date.now();
-    const params = Object.keys(req.query).length ? sanitizeParams(req.query) : null;
+  const path = req.path;
 
-    // Log the incoming request
-    const paramsStr = params ? ` ${JSON.stringify(params)}` : '';
-    console.log(`[QUERY] ${req.method} ${req.path}${paramsStr}`);
+  // Never log health/metrics
+  if (SKIP_PATHS.some(p => path.startsWith(p))) return next();
 
-    // Wrap res.json to intercept the outgoing response
-    const originalJson = res.json.bind(res);
-    res.json = (body) => {
-        const ms = Date.now() - start;
+  // In production, skip non-incident routes
+  if (IS_PROD && !PROD_ALLOW_PATTERNS.some(re => re.test(path))) return next();
 
-        if (body && body.success !== false) {
-            // Count rows: data is usually an array, or has a count field
-            const rows = Array.isArray(body.data)
-                ? body.data.length
-                : (body.count ?? (body.data ? 1 : 0));
-            console.log(`[QUERY] ✓ ${rows} rows — ${ms}ms`);
-        } else {
-            const errMsg = body?.error?.message || body?.error || 'error';
-            console.log(`[QUERY] ✗ ${errMsg} — ${ms}ms`);
-        }
+  const start = Date.now();
+  const params = Object.keys(req.query).length ? sanitizeParams(req.query) : null;
+  const paramsStr = params ? ` ${JSON.stringify(params)}` : '';
+  const ts = new Date().toISOString();
 
-        return originalJson(body);
-    };
+  console.log(`[${ts}] ${req.method} ${path}${paramsStr}`);
 
-    next();
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    const ms = Date.now() - start;
+    if (body?.success !== false) {
+      const rows = Array.isArray(body?.data) ? body.data.length : (body?.count ?? (body?.data ? 1 : 0));
+      console.log(`[${ts}] ✓ ${rows} rows — ${ms}ms`);
+    } else {
+      const errMsg = body?.error?.message || body?.error || 'error';
+      console.log(`[${ts}] ✗ ${errMsg} — ${ms}ms`);
+    }
+    return originalJson(body);
+  };
+
+  next();
 };
 
 module.exports = { queryLogger };

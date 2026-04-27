@@ -12,10 +12,11 @@ import { withAlpha } from '../../utils/formatters';
 import { safeJson } from '../../utils/api';
 import MappingFormPatternBuilder from './MappingFormPatternBuilder';
 
-const builtInFields = [
+const baseMandatoryFields = [
     'service_offering',
     'business_service',
     'u_network',
+    'u_impact_technology',
     'assignment_group',
     'u_system_failure',
 ];
@@ -25,7 +26,7 @@ const excludeFromCustom = [
     'grafana_names',
     'created_at',
     'updated_at',
-    ...builtInFields,
+    ...baseMandatoryFields,
 ];
 
 const TemplateHints = ({ colors }) => (
@@ -92,6 +93,7 @@ const MappingForm = ({
         service_offering: '',
         business_service: '',
         u_network: '',
+        u_impact_technology: '',
         assignment_group: '',
         u_system_failure: false,
     });
@@ -104,6 +106,7 @@ const MappingForm = ({
             service_offering: '',
             business_service: '',
             u_network: '',
+            u_impact_technology: '',
             assignment_group: '',
             u_system_failure: false,
         });
@@ -128,6 +131,7 @@ const MappingForm = ({
             service_offering: editingItem.service_offering || '',
             business_service: editingItem.business_service || '',
             u_network: editingItem.u_network || '',
+            u_impact_technology: editingItem.u_impact_technology || '',
             assignment_group: editingItem.assignment_group || '',
             u_system_failure: Boolean(editingItem.u_system_failure),
         };
@@ -206,6 +210,7 @@ const MappingForm = ({
             service_offering: 'Service Offering',
             business_service: 'Business Service',
             u_network: 'Network',
+            u_impact_technology: 'Impact Technology',
             assignment_group: 'Assignment Group',
         };
 
@@ -238,6 +243,7 @@ const MappingForm = ({
                 service_offering: form.service_offering?.trim(),
                 business_service: form.business_service?.trim(),
                 u_network: form.u_network?.trim(),
+                u_impact_technology: form.u_impact_technology?.trim(),
                 assignment_group: form.assignment_group?.trim(),
             };
 
@@ -463,7 +469,36 @@ const MappingForm = ({
                             />
                         </div>
 
-
+                        <div>
+                            <label
+                                style={{
+                                    display: 'block',
+                                    marginBottom: 8,
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: colors.text.secondary,
+                                }}
+                            >
+                                Impact Technology
+                            </label>
+                            <input
+                                type="text"
+                                value={form.u_impact_technology}
+                                onChange={(e) =>
+                                    setForm({ ...form, u_impact_technology: e.target.value })
+                                }
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    borderRadius: 8,
+                                    border: `1px solid ${colors.border.primary}`,
+                                    background: colors.bg.primary,
+                                    color: colors.text.primary,
+                                    fontSize: 14,
+                                    outline: 'none',
+                                }}
+                            />
+                        </div>
 
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                             <label

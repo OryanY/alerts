@@ -1,10 +1,11 @@
 import React from 'react';
 import { Edit, Trash2 } from 'lucide-react';
 
-const builtInFields = [
+const baseMandatoryFields = [
     'service_offering',
     'business_service',
     'u_network',
+    'u_impact_technology',
     'assignment_group',
     'u_system_failure',
 ];
@@ -14,7 +15,7 @@ const excludeFromCustom = [
     'grafana_names',
     'created_at',
     'updated_at',
-    ...builtInFields,
+    ...baseMandatoryFields,
 ];
 
 const MappingCard = ({
@@ -275,7 +276,34 @@ const MappingCard = ({
                     </div>
                 </div>
 
-
+                <div
+                    style={{
+                        background: colors.bg.tertiary,
+                        padding: 12,
+                        borderRadius: 6,
+                        border: `1px solid ${colors.border.primary}`,
+                    }}
+                >
+                    <div
+                        style={{
+                            fontSize: 11,
+                            fontWeight: 500,
+                            color: colors.text.secondary,
+                            marginBottom: 4,
+                        }}
+                    >
+                        Impact Technology
+                    </div>
+                    <div
+                        style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: colors.text.primary,
+                        }}
+                    >
+                        {mapping.u_impact_technology}
+                    </div>
+                </div>
             </div>
 
             {/* Custom Fields Display */}

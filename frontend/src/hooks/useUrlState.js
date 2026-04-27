@@ -53,7 +53,7 @@ export const useExplorerFilters = () => {
       }
 
       return next;
-    }, { replace: true });
+    });
   }, [setSearchParams]);
 
   const setPage = useCallback((page) => {
@@ -65,7 +65,7 @@ export const useExplorerFilters = () => {
         next.set('page', String(page));
       }
       return next;
-    }, { replace: true });
+    });
   }, [setSearchParams]);
 
   const clearFilters = useCallback(() => {
@@ -78,7 +78,7 @@ export const useExplorerFilters = () => {
       if (start) next.set('start_date', start);
       if (end) next.set('end_date', end);
       return next;
-    }, { replace: true });
+    });
   }, [setSearchParams]);
 
   return { filters, setFilters, setPage, clearFilters };

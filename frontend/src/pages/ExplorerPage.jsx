@@ -1,6 +1,5 @@
 // pages/ExplorerPage.jsx — Main alert exploration interface with filtering and visualization
 import { useMemo, useEffect, useState, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Download, RefreshCw, X, AlertCircle } from 'lucide-react';
 
 import { useTheme } from '../contexts/ThemeContext';
@@ -29,22 +28,6 @@ const ExplorerPage = () => {
   const { colors, styles: S } = useTheme();
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { colorByDuration } = useDurationBands(config);
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // Hydrate global Date context strictly from navigation URL parameters
-  useEffect(() => {
-      const urlStart = searchParams.get('start_date');
-      const urlEnd = searchParams.get('end_date');
-      if (urlStart && urlEnd) {
-          setDateRange({ start_date: urlStart, end_date: urlEnd });
-          setSearchParams(prev => {
-              const next = new URLSearchParams(prev);
-              next.delete('start_date');
-              next.delete('end_date');
-              return next;
-          }, { replace: true });
-      }
-  }, [searchParams, setDateRange, setSearchParams]);
 
   // No need to format dates - backend handles Israeli timezone conversion
   const adjustedDateRange = dateRange;
@@ -116,6 +99,22 @@ const ExplorerPage = () => {
       }
     }
 
+    // Map duration_category to min/max duration
+    if (f.duration_category) {
+      if (f.duration_category === 'short') {
+        serverFilters.max_duration = config.bands?.[0]?.max || 59;
+      } else if (f.duration_category === 'medium') {
+        serverFilters.min_duration = config.bands?.[1]?.min || 60;
+        serverFilters.max_duration = config.bands?.[1]?.max || 299;
+      } else if (f.duration_category === 'long') {
+        serverFilters.min_duration = config.bands?.[2]?.min || 300;
+      }
+    }
+
+    if (f.search) {
+      serverFilters.search = f.search;
+    }
+
     return {
       ...serverFilters,
       sort_by: f.sort_by || 'time_fired',
@@ -126,13 +125,16 @@ const ExplorerPage = () => {
 
   // useApiData automatically injects dateRange and getApiParams()
   const { data: alerts, loading, error, refetch } = useApiData('/alerts', apiParams);
+  const { data: globalPanels } = useApiData('/stats/by-panel', { limit: 2000 });
 
   const dropdownOptions = useMemo(() => {
-    if (!alerts || !Array.isArray(alerts)) return {};
-
-    const uniquePanels = [...new Set(alerts.map((a) => a.panel_title).filter(Boolean))].sort();
-    const uniqueApps = [...new Set(alerts.map((a) => a.application).filter(Boolean))].sort();
-    const uniqueOperators = [...new Set(alerts.map((a) => a.operator).filter(Boolean))].sort();
+    const panelsData = Array.isArray(globalPanels) ? globalPanels : [];
+    const uniquePanels = [...new Set(panelsData.map((p) => p.panel_title).filter(Boolean))].sort();
+    const uniqueApps = [...new Set(panelsData.map((p) => p.application).filter(Boolean))].sort();
+    
+    // Operators are still inferred from current view since we don't have a /stats/operators endpoint
+    const alertsData = Array.isArray(alerts) ? alerts : [];
+    const uniqueOperators = [...new Set(alertsData.map((a) => a.operator).filter(Boolean))].sort();
 
     return {
       panels: [
@@ -160,31 +162,14 @@ const ExplorerPage = () => {
         },
       ],
     };
-  }, [alerts, config.bands]);
+  }, [globalPanels, alerts, config.bands]);
 
   const processedAlerts = useMemo(() => {
     if (!alerts || !Array.isArray(alerts)) return [];
     const f = debouncedFilters || {};
     let filtered = [...alerts];
 
-    // Search in messages
-    if (f.search) {
-      const q = String(f.search).toLowerCase();
-      filtered = filtered.filter((a) => (a.message || '').toLowerCase().includes(q));
-    }
 
-    // Duration category filter
-    if (f.duration_category) {
-      const cat = String(f.duration_category);
-      filtered = filtered.filter((a) => {
-        const d = Number(a.duration_sec) || 0;
-        if (cat === 'short') return d <= (config.bands?.[0]?.max || 59);
-        if (cat === 'medium')
-          return d >= (config.bands?.[1]?.min || 60) && d <= (config.bands?.[1]?.max || 299);
-        if (cat === 'long') return d >= (config.bands?.[2]?.min || 300);
-        return true;
-      });
-    }
 
     // Sorting
     const sortKey = f.sort_by || 'time_fired';
@@ -210,7 +195,7 @@ const ExplorerPage = () => {
     });
 
     return filtered;
-  }, [alerts, debouncedFilters, config.bands]);
+  }, [alerts, debouncedFilters]);
 
   const totalItems = processedAlerts.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -444,38 +429,39 @@ const ExplorerPage = () => {
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'space-between',
-            marginBottom: 20,
+            marginBottom: 24,
             gap: 16,
-            flexWrap: 'nowrap',
+            flexWrap: 'wrap',
           }}
         >
-          {/* LEFT: Alert Count */}
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: colors.text.secondary,
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {loading
-              ? 'Loading alerts…'
-              : `${processedAlerts.length.toLocaleString()} ${processedAlerts.length === 1 ? 'alert' : 'alerts'
-              } found`}
+          <div>
+            <h2
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                margin: 0,
+                color: colors.text.primary,
+              }}
+            >
+              Alert Explorer
+            </h2>
+            <p
+              style={{
+                fontSize: 14,
+                color: colors.text.secondary,
+                margin: '6px 0 0 0',
+              }}
+            >
+              {loading
+                ? 'Loading alerts…'
+                : `${processedAlerts.length.toLocaleString()} ${processedAlerts.length === 1 ? 'alert' : 'alerts'
+                } found`}
+            </p>
           </div>
 
-          {/* RIGHT: Actions */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'nowrap' }}>
-            <div style={{ marginRight: 12 }}>
-              <DateRangePicker
-                dateRange={dateRange}
-                onChange={setDateRange}
-                setPresetRange={setPresetRange}
-              />
-            </div>
-
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <ColumnVisibilityPanel
               visibleColumns={visibleColumns}
               onToggle={handleToggleColumn}
@@ -512,6 +498,22 @@ const ExplorerPage = () => {
               </span>
             </button>
           </div>
+        </div>
+
+        {/* DATE RANGE */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 16,
+          }}
+        >
+          <DateRangePicker
+            dateRange={dateRange}
+            onChange={setDateRange}
+            setPresetRange={setPresetRange}
+          />
         </div>
 
         {/* FILTERS CARD */}

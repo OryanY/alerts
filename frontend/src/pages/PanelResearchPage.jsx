@@ -13,6 +13,7 @@ import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
+import { formatDuration } from '../utils/formatters';
 
 
 // New Components
@@ -23,6 +24,7 @@ import TopNoisyAlertsList from '../components/PanelResearch/TopNoisyAlertsList';
 import TopApplicationsChart from '../components/PanelResearch/TopApplicationsChart';
 import ConsecutiveDaysTable from '../components/PanelResearch/ConsecutiveDaysTable';
 import TopNoisyNodesTable from '../components/PanelResearch/TopNoisyNodesTable';
+import TopObjectsTable from '../components/PanelResearch/TopObjectsTable';
 // Replaced RecentAlertsTable with shared AlertTable
 import { AlertTable } from '../components/dashboard/AlertTable';
 import { useDurationBands } from '../hooks/useDurationBands';
@@ -161,6 +163,11 @@ const PanelResearchPage = () => {
     data: topNodes,
     loading: topNodesLoading
   } = useApiData('/stats/top-nodes-by-app', panelApiParams, { skip: !selectedPanel });
+
+  const {
+    data: topObjects,
+    loading: topObjectsLoading
+  } = useApiData('/stats/top-objects-by-app', panelApiParams, { skip: !selectedPanel });
 
   const {
     data: consecutiveNodes,
@@ -456,7 +463,7 @@ const PanelResearchPage = () => {
                             marginTop: 4
                           }}
                         >
-                          {p.avg_duration}s
+                          {formatDuration(p.avg_duration)}
                         </div>
                         <div
                           style={{
@@ -604,13 +611,21 @@ const PanelResearchPage = () => {
                 />
               </div>
 
-              {/* Top Nodes Table */}
-              <TopNoisyNodesTable
-                nodes={topNodes}
-                loading={topNodesLoading}
-                selectedNode={selectedNode}
-                onSelectNode={setSelectedNode}
-              />
+              {/* Top Nodes & Objects Tables */}
+              <div style={S.grid('1fr 1fr')}>
+                <TopNoisyNodesTable
+                  nodes={topNodes}
+                  loading={topNodesLoading}
+                  selectedNode={selectedNode}
+                  onSelectNode={setSelectedNode}
+                />
+                <TopObjectsTable
+                  objects={topObjects}
+                  loading={topObjectsLoading}
+                  selectedObject={null}
+                  onSelectObject={() => {}}
+                />
+              </div>
 
               {/* Recent Alerts - Reused AlertTable for Clustering Support */}
               <div style={{ marginTop: 24 }}>

@@ -3,7 +3,7 @@
 // Handles only HTTP request/response – all business logic lives
 // in the services that are injected via the constructor.
 // ---------------------------------------------------------------
-const { getErrorHtml } = require('../utils/htmlTemplates');
+const { getErrorHtml } = require('./htmlTemplates');
 
 class IncidentController {
   constructor(incidentService, mappingService, ruleService) {

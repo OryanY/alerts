@@ -1,4 +1,6 @@
-// routes/alertRoutes.js - Consolidated endpoints using the unified AlertController
+// routes/alertRoutes.js
+// AlertController was removed — all handlers are thin wrappers so they live here directly.
+// Real logic (orchestration, error handling) lives in AlertService.
 const express = require('express');
 const {
   alertsSchema,
@@ -8,36 +10,53 @@ const {
   panelResearchSchema
 } = require('../schemas/alertSchemas');
 const AlertService = require('../services/alert/AlertService');
-const { AlertController } = require('../controllers/AlertController');
 const { validateQuery } = require('../middleware/validation');
 
 const router = express.Router();
-
-// Initialize service and controller (Dependency Injection)
 const alertService = new AlertService();
-const controller = new AlertController(alertService);
 
-// ================== ALERT ENDPOINTS ==================
-router.get('/alerts', validateQuery(alertsSchema), controller.getAlerts);
+const handle = (serviceFn) => async (req, res, next) => {
+  try {
+    const result = await serviceFn(req.validatedQuery || req.query);
+    if (result.success === false) return res.status(500).json(result);
+    res.json({ success: true, data: result.data, meta: result.meta || {} });
+  } catch (err) {
+    next(err);
+  }
+};
 
-// ================== EXECUTIVE/SUMMARY STATS ==================
-router.get('/stats/executive-kpis', validateQuery(statsSchema), controller.getExecutiveKPIs);
+// ================== ALERTS ==================
+router.get('/alerts', validateQuery(alertsSchema), async (req, res, next) => {
+  try {
+    const result = await alertService.getAlerts(req.validatedQuery || req.query);
+    res.json({
+      success: result.success,
+      data: result.data,
+      meta: result.meta || {},
+      count: result.data?.length || 0
+    });
+  } catch (err) { next(err); }
+});
 
-// ================== TEMPORAL ANALYSIS ==================
-router.get('/stats/hourly-heatmap', validateQuery(statsSchema), controller.getHourlyHeatmap);
-router.get('/stats/timeseries', validateQuery(timeseriesSchema), controller.getTimeseriesStats);
+// ================== EXECUTIVE/SUMMARY ==================
+router.get('/stats/executive-kpis', validateQuery(statsSchema), handle((q) => alertService.getExecutiveKPIs(q)));
 
-// ================== CATEGORICAL ANALYSIS ==================
-router.get('/stats/duration-histogram', validateQuery(statsSchema), controller.getDurationHistogram);
-router.get('/stats/shift-analysis', validateQuery(statsSchema), controller.getShiftAnalysis);
+// ================== TEMPORAL ==================
+router.get('/stats/hourly-heatmap', validateQuery(statsSchema), handle((q) => alertService.getHourlyHeatmap(q)));
+router.get('/stats/timeseries', validateQuery(timeseriesSchema), handle((q) => alertService.getTimeseriesStats(q)));
 
-// ================== ENTITY-BASED ANALYSIS ==================
-router.get('/stats/by-panel', validateQuery(panelStatsSchema), controller.getPanelStats);
-router.get('/stats/panels', validateQuery(panelResearchSchema), controller.getPanelList);
-router.get('/stats/panel-analysis', validateQuery(panelResearchSchema), controller.getPanelAnalysis);
-router.get('/stats/top-applications', validateQuery(statsSchema), controller.getTopApplications);
-router.get('/stats/top-nodes-by-app', validateQuery(statsSchema), controller.getTopNodesByApp);
-router.get('/stats/consecutive-days', validateQuery(statsSchema), controller.getConsecutiveDaysNodes);
-router.get('/stats/incident-stats', validateQuery(statsSchema), controller.getIncidentStats);
+// ================== CATEGORICAL ==================
+router.get('/stats/duration-histogram', validateQuery(statsSchema), handle((q) => alertService.getDurationHistogram(q)));
+router.get('/stats/shift-analysis', validateQuery(statsSchema), handle((q) => alertService.getShiftAnalysis(q)));
+
+// ================== ENTITY ==================
+router.get('/stats/by-panel', validateQuery(panelStatsSchema), handle((q) => alertService.getPanelStats(q)));
+router.get('/stats/panels', validateQuery(panelResearchSchema), handle((q) => alertService.getPanelList(q)));
+router.get('/stats/panel-analysis', validateQuery(panelResearchSchema), handle((q) => alertService.getPanelAnalysis(q)));
+router.get('/stats/top-applications', validateQuery(statsSchema), handle((q) => alertService.getTopApplications(q)));
+router.get('/stats/top-nodes-by-app', validateQuery(statsSchema), handle((q) => alertService.getTopNodesByApp(q)));
+router.get('/stats/top-objects-by-app', validateQuery(statsSchema), handle((q) => alertService.getTopObjectsByApp(q)));
+router.get('/stats/consecutive-days', validateQuery(statsSchema), handle((q) => alertService.getConsecutiveDaysNodes(q)));
+router.get('/stats/incident-stats', validateQuery(statsSchema), handle((q) => alertService.getIncidentStats(q)));
 
 module.exports = router;

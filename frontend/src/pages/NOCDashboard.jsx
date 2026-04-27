@@ -32,12 +32,10 @@ import {
   Filter,
   X,
 } from '../icons';
-import { Download } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 import { createChartConfig } from '../utils/chartConfig';
 import { formatDuration } from '../utils/formatters';
-import { exportNocStatsToPPTX } from '../utils/exportPptx';
 
 const NocDashboard = () => {
 
@@ -55,10 +53,6 @@ const NocDashboard = () => {
   const { colors, styles: S } = useTheme(); // ✅ Get pre-computed styles
   const chartConfig = useMemo(() => createChartConfig(colors), [colors]);
 
-
-  // No need to format dates - backend handles Israeli timezone conversion
-  const adjustedDateRange = dateRange;
-
   const panelListParams = useMemo(
     () => ({
       limit: 1000
@@ -75,11 +69,10 @@ const NocDashboard = () => {
   const duration = useApiData('/stats/duration-histogram', customParams);
   const heatmap = useApiData('/stats/hourly-heatmap', customParams);
   const timeseries = useApiData('/stats/timeseries', customParams);
-  const incidentStats = useApiData('/stats/incident-stats', customParams);
 
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
-  // Only fetch detailed panel stats if we are not filtered by a specific panel
-  const panelStats = useApiData('/stats/by-panel', selectedPanel ? null : { limit: 20 });
+  // Always fetch detailed panel stats un-filtered, so the widget stays consistent
+  const panelStats = useApiData('/stats/by-panel', { limit: 20 });
 
   // Handlers
   const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);
@@ -198,26 +191,9 @@ const NocDashboard = () => {
                     ? "Alerts are grouped by source and time - Click to change in Settings"
                     : "Showing all individual alerts - Click to enable grouping in Settings"}
                 >
-                  <Network size={14} />
-                  {config.clusteringEnabled ? 'Clustered' : 'Raw Alerts'}
+                  {config.clusteringEnabled ? '🔗' : '📋'}
+                  {config.clusteringEnabled ? 'Grouped' : 'All Alerts'}
                 </a>
-
-                {/* Export Button */}
-                <button
-                  onClick={() => exportNocStatsToPPTX(exec.data, shifts.data, panelsList, dateRange, config.clusteringEnabled, heatmap.data, duration.data, incidentStats.data)}
-                  disabled={exec.loading || !exec.data}
-                  title="Export Dashboard Insights to PowerPoint"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '6px 12px', borderRadius: 16,
-                    background: colors.brand.primary, color: '#fff',
-                    border: 'none', fontWeight: 600, fontSize: 13,
-                    cursor: exec.loading ? 'not-allowed' : 'pointer',
-                    opacity: (exec.loading || !exec.data) ? 0.6 : 1, transition: 'all 0.2s',
-                    marginLeft: 8
-                  }}>
-                  <Download size={16} />
-                </button>
               </div>
             }
           />
@@ -367,7 +343,24 @@ const NocDashboard = () => {
                 <CartesianGrid {...chartConfig.grid} />
                 <XAxis dataKey="range" {...chartConfig.axis} />
                 <YAxis {...chartConfig.axis} />
-                <Tooltip {...chartConfig.tooltip} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const entry = payload[0];
+                      // get the bar color from getDurationColorFromBands
+                      const barColor = getDurationColorFromBands(entry.payload, config.bands);
+                      return (
+                        <div style={{ ...chartConfig.tooltip.contentStyle }}>
+                          <p style={{ margin: 0, color: colors.text.secondary, marginBottom: 4 }}>{label}</p>
+                          <p style={{ margin: 0, color: barColor, fontWeight: 'bold' }}>
+                            Count: {entry.value}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
                 <Bar
                   dataKey="count"
                   radius={[4, 4, 0, 0]}
@@ -407,7 +400,30 @@ const NocDashboard = () => {
                 <XAxis dataKey="hour_display" {...chartConfig.axis} />
                 <YAxis yAxisId="left" {...chartConfig.axis} />
                 <YAxis yAxisId="right" orientation="right" {...chartConfig.axis} />
-                <Tooltip {...chartConfig.tooltip} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      return (
+                        <div style={{ ...chartConfig.tooltip.contentStyle }}>
+                          <p style={{ margin: 0, color: colors.text.secondary, marginBottom: 4 }}>{label}</p>
+                          {payload.map((entry, index) => {
+                            const isCount = entry.dataKey === 'count';
+                            const barColor = entry.payload?.is_night ? colors.brand.purple : colors.chart.primary;
+                            const color = isCount ? barColor : entry.color;
+                            const value = isCount ? entry.value : formatDuration(entry.value);
+                            const name = isCount ? 'Count' : (config.durationMetric === 'average' ? 'Average Duration' : 'Median Duration');
+                            return (
+                              <p key={index} style={{ margin: 0, color: color, fontWeight: 'bold' }}>
+                                {name}: {value}
+                              </p>
+                            );
+                          })}
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
                 <Bar yAxisId="left" dataKey="count" name="Count">
                   {(heatmap.data || []).map((entry, idx) => (
                     <Cell
@@ -419,80 +435,62 @@ const NocDashboard = () => {
                 <Line
                   yAxisId="right"
                   type="monotone"
+                  dataKey={config.durationMetric === 'average' ? 'avg_duration' : 'median_duration'}
                   stroke={colors.chart.quaternary}
                   strokeWidth={2}
                   name={config.durationMetric === 'average' ? 'Average Duration' : 'Median Duration'}
+                  dot={{ r: 4, fill: colors.chart.quaternary }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
 
           {/* Top Alert Sources List */}
-          {!selectedPanel && (
-            <ChartCard
-              title="Top Alert Sources"
-              icon={Network}
-              loading={panelStats.loading}
-              error={panelStats.error}
-            >
-              <div style={styles.listContainer}>
-                {(panelStats.data || []).slice(0, 12).map((p, idx) => {
-                  const isTop = idx < 3;
-                  return (
-                    <div
-                      key={`${p.panel_title}-${idx}`}
-                      style={{
-                        ...styles.listItem,
-                        background: isTop ? colors.semantic.errorBg : colors.bg.tertiary,
-                        borderColor: isTop ? colors.semantic.error : colors.border.primary,
-                      }}
-                      onClick={() => setSelectedPanel(p.panel_title)}
-                      title="Click to filter dashboard by this panel"
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ ...styles.listItemTitle, color: colors.text.primary }}>
-                          {p.panel_title}
-                        </div>
-                        <div style={{ fontSize: 11, color: colors.text.secondary }}>
-                          {p.application}
-                        </div>
+          <ChartCard
+            title="Top Alert Sources"
+            icon={Network}
+            loading={panelStats.loading}
+            error={panelStats.error}
+          >
+            <div style={styles.listContainer}>
+              {(panelStats.data || []).slice(0, 12).map((p, idx) => {
+                const isTop = idx < 3;
+                return (
+                  <div
+                    key={`${p.panel_title}-${idx}`}
+                    style={{
+                      ...styles.listItem,
+                      background: isTop ? colors.semantic.errorBg : colors.bg.tertiary,
+                      borderColor: isTop ? colors.semantic.error : colors.border.primary,
+                    }}
+                    onClick={() => setSelectedPanel(p.panel_title)}
+                    title="Click to filter dashboard by this panel"
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ ...styles.listItemTitle, color: colors.text.primary }}>
+                        {p.panel_title}
                       </div>
-                      <div style={{ textAlign: 'right', marginLeft: 8 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, color: colors.text.primary }}>
-                          {p.alert_count}
-                        </div>
-                        <div style={{ fontSize: 10, color: colors.text.secondary }}>
-                          {formatDuration(p.avg_duration)} avg
-                        </div>
+                      <div style={{ fontSize: 11, color: colors.text.secondary }}>
+                        {p.application}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </ChartCard>
-          )}
+                    <div style={{ textAlign: 'right', marginLeft: 8 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: colors.text.primary }}>
+                        {p.alert_count}
+                      </div>
+                      <div style={{ fontSize: 10, color: colors.text.secondary }}>
+                        {formatDuration(p.avg_duration)} avg | {formatDuration(p.median_duration)} med
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ChartCard>
         </div>
 
-        {/* Charts Row 3: Team Breakdown + Timeseries */}
-        <div style={S.grid(!selectedPanel ? '1fr 1.5fr' : '1fr')} className="fade-in">
-          {!selectedPanel && (
-            <ChartCard
-              title="פילוח התראות לפי צוות"
-              icon={Network}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[...(panelsList || [])].sort((a, b) => b.alert_count - a.alert_count).slice(0, 10).reverse()} layout="vertical" margin={{ left: 10, right: 30 }}>
-                  <CartesianGrid {...chartConfig.grid} horizontal={false} />
-                  <XAxis type="number" {...chartConfig.axis} />
-                  <YAxis type="category" dataKey="panel_title" width={110} tick={{ fill: colors.text.secondary, fontSize: 11 }} tickLine={false} axisLine={false} />
-                  <Tooltip {...chartConfig.tooltip} />
-                  <Bar dataKey="alert_count" name='סה"כ התראות' fill={colors.brand.primary} radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="false_positive_count" name="התראות שווא" fill={colors.semantic.error} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          )}
-
+        {/* Charts Row 3 */}
+        <div style={S.grid('2fr 1fr')}>
           <ChartCard
             title="כמות התראות לאורך זמן + ממוצע זמן התראה"
             icon={TrendingUp}
@@ -524,6 +522,10 @@ const NocDashboard = () => {
                       return d;
                     }
                   }}
+                  formatter={(value, name) => [
+                    name.includes('Duration') ? formatDuration(value) : value,
+                    name
+                  ]}
                 />
                 <Area
                   yAxisId="left"
@@ -557,16 +559,14 @@ const styles = {
   headerContainer: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     marginBottom: 20,
     gap: 16,
     flexWrap: 'wrap',
   },
   controlsWrapper: {
     flex: '1 1 auto',
-    minWidth: 300,
-    display: 'flex',
-    justifyContent: 'center'
+    minWidth: 300
   },
   filterGroup: {
     display: 'flex',

@@ -19,7 +19,7 @@ class IncidentService {
                 assignmentGroups: mdb.collection(mongoConfig.collections.assignmentGroups),
                 incidentLogs: mdb.collection(mongoConfig.collections.incidentLogs)
             };
-            this._collections.incidentLogs.createIndex({ created_at: 1 }, { expireAfterSeconds: 7776000, background: true }).catch(() => { });
+            this._collections.incidentLogs.createIndex({ created_at: 1 }, { expireAfterSeconds: 7776000, background: true }).catch(() => {});
         }
         return this._collections;
     }
@@ -31,42 +31,34 @@ class IncidentService {
         return this._serviceNowClient;
     }
 
-    // ================== PRIVATE HELPERS ==================
+    // ================== INCIDENT CREATION ==================
 
-    async _resolveIncidentContext(alertData) {
+    
+    async createIncidentFromAlert(alertData) {
         const { application } = alertData;
         if (!application) throw new Error('Alert must have an application field');
 
         const systemMapping = await this.mappingService.getMappingByApplication(application);
         if (!systemMapping) throw new Error(`No system mapping found for application: ${application}`);
 
-        const allRules    = await this.ruleService.getIncidentRules(application);
+        const allRules = await this.ruleService.getIncidentRules(application);
         const enabledRules = allRules.filter(r => r.enabled !== false);
 
-        const allMatches     = helpers.findAllMatches(alertData, enabledRules);
-        const matchingRules  = [...allMatches].reverse().map(m => m.rule);
+        const allMatches = helpers.findAllMatches(alertData, enabledRules);
+        const matchingRules = allMatches.reverse().map(m => m.rule);
 
-        // Merge all matching rule overrides (specific rules win — they are last)
-        const finalOverrides = matchingRules.reduce(
-            (acc, rule) => ({ ...acc, ...rule.incident_overrides }),
-            {}
-        );
-
-        return { systemMapping, matchingRules, finalOverrides, enabledRules };
-    }
-
-    // ================== INCIDENT CREATION ==================
-
-    async createIncidentFromAlert(alertData) {
-        const { systemMapping, matchingRules, finalOverrides } = await this._resolveIncidentContext(alertData);
+        let finalOverrides = {};
+        matchingRules.forEach(rule => {
+            finalOverrides = { ...finalOverrides, ...rule.incident_overrides };
+        });
 
         const incidentData = helpers.buildIncidentData(systemMapping, finalOverrides, alertData);
-        const result       = await this.serviceNowClient.createIncident(incidentData);
+        const result = await this.serviceNowClient.createIncident(incidentData);
 
-        const matchedRule = matchingRules.at(-1) ?? null;
+        const matchedRule = matchingRules.length > 0 ? matchingRules[matchingRules.length - 1] : null;
 
         this.db.incidentLogs.insertOne({
-            application: alertData.application,
+            application,
             alert_source: alertData,
             incident_payload: incidentData,
             servicenow_result: result,
@@ -83,52 +75,17 @@ class IncidentService {
             incidentData,
             serviceNowResult: result,
             mapping_used: systemMapping._id,
-            rule_used: matchedRule?._id ?? null,
+            rule_used: matchedRule?._id || null,
             rule_name: matchingRules.length > 0 ? matchingRules.map(r => r.rule_name).join(' + ') : 'Base Mapping',
             applied_rules: matchingRules.map(r => r.rule_name),
             matched_applications: systemMapping.grafana_names
         };
     }
 
-    // ================== SIMULATION & DEBUGGING ==================
-
-    async simulateIncidentCreation(alertData) {
-        const { systemMapping, matchingRules, finalOverrides, enabledRules } = await this._resolveIncidentContext(alertData);
-
-        return {
-            system_mapping: systemMapping,
-            applied_rules: matchingRules.map(r => ({ rule_name: r.rule_name, incident_overrides: r.incident_overrides, is_global: r.is_global })),
-            total_rules_checked: enabledRules.length,
-            generated_incident: helpers.buildIncidentData(systemMapping, finalOverrides, alertData),
-            hierarchy_explanation: [
-                "1. Specific Rules (Applied Last / High Priority)",
-                "2. Global Rules (Applied First / Low Priority)",
-                "3. Base System Mapping (Defaults)"
-            ]
-        };
-    }
-
     // ================== ASSIGNMENT GROUPS ==================
 
     async getAssignmentGroups() {
-        const REFRESH_THRESHOLD = 7 * 24 * 60 * 60 * 1000; // 7 days
         const doc = await this.db.assignmentGroups.findOne({ _id: 'assignment_groups_store' });
-
-        const isStale = !doc || !doc.lastSynced || (Date.now() - new Date(doc.lastSynced).getTime() > REFRESH_THRESHOLD);
-
-        if (isStale) {
-            console.log('🔄 Assignment groups are stale or missing, triggering auto-sync...');
-            if (!doc) {
-                // If no data exists at all, wait for the first sync
-                return await this.syncAssignmentGroups();
-            } else {
-                // If data exists but is stale, sync in background to avoid blocking the user
-                this.syncAssignmentGroups().catch(err => 
-                    console.error('❌ Background auto-sync of assignment groups failed:', err.message)
-                );
-            }
-        }
-
         return doc ? doc.groups : [];
     }
 
@@ -145,49 +102,73 @@ class IncidentService {
     // ================== SERVICENOW ALERT SHORTCUTS ==================
 
     async createServiceNowAlert(alertData) {
+        try {
+        // ---------- 1️⃣  Basic validation & destructuring ----------
         const {
             application,
             message,
             node_name,
             user,
             prevented,
-            incident_number,    // legacy field, optional
-            incident_sys_id     // newer field, optional
+            incident_number,   // legacy field, optional
+            incident_sys_id    // newer field, optional
         } = alertData;
 
-        if (!application) throw new Error('Alert must have an application field');
+        if (!application) {
+            throw new Error('Alert must have an application field');
+        }
 
+        // ---------- 2️⃣  Mapping lookup ----------
         const systemMapping = await this.mappingService.getMappingByApplication(application);
         if (!systemMapping) {
             const allMappings = await this.mappingService.getSystemMappings();
             throw new Error(
-                `No system mapping found for application: ${application}. ` +
-                `Available: ${allMappings.map(m => m.grafana_names.map(p => p.value).join(', ')).join(' | ')}`
+            `No system mapping found for application: ${application}. ` +
+            `Available: ${allMappings
+                .map(m => m.grafana_names.map(p => p.value).join(', '))
+                .join(' | ')}`
             );
         }
 
-        const userSysId = await this.serviceNowClient.getSysIdByUser(user);
+        // ---------- 3️⃣  Resolve caller → ServiceNow sys_id ----------
+        const userSysId = user ? await this.serviceNowClient.getSysIdByUser(user) : null;
 
+        // ---------- 4️⃣  Build the TIUD‑specific payload ----------
         const alertPayload = {
-            u_jump_comm:        message,
-            u_cluster:          node_name,
-            assignment_group:   systemMapping.assignment_group,
-            u_network:          systemMapping.u_network,
+            // Core custom fields (match the log you posted)
+            u_jump_comm:      message,
+            u_cluster:        node_name,
+            assignment_group: systemMapping.assignment_group,
+            u_network:        systemMapping.u_network,
             u_service_offering: systemMapping.service_offering,
-            u_opened:           userSysId,
-            caller_id:          userSysId,
+            u_opened:         userSysId,
+
+            // Optional linking to an existing incident (legacy)
             ...(incident_number && { parent_incident: incident_number })
         };
 
-        // sys_id overrides legacy incident_number when prevented
+        // ---------- 5️⃣  Back‑compatibility helpers ----------
+        if (user)               alertPayload.u_opened = user;               // fallback raw name
         if (prevented && incident_sys_id) {
-            alertPayload.parent_incident = incident_sys_id;
+            alertPayload.parent_incident = incident_sys_id;                     // overrides legacy number
         }
 
+        // ---------- 6️⃣  Send to ServiceNow ----------
         const serviceNowResult = await this.serviceNowClient.createTiudAlert(alertPayload);
-        return { alertPayload, serviceNowResult, matched_applications: systemMapping.grafana_names, mapping_used: systemMapping._id };
-    }
 
+        // ---------- 7️⃣  Return useful info ----------
+        return {
+            alertPayload,
+            serviceNowResult,
+            matched_applications: systemMapping.grafana_names,
+            mapping_used: systemMapping._id
+        };
+        } catch (error) {
+        console.error('❌ Error creating ServiceNow alert:', error);
+        throw error;               // let the controller turn it into HTML/JSON
+        }
+    }
+    
     async createIncidentWithAlert(alertData, createAlert = true, linkToIncident = true) {
         const incidentResult = await this.createIncidentFromAlert(alertData);
         if (!createAlert) return incidentResult;
@@ -198,6 +179,38 @@ class IncidentService {
             incident_sys_id: linkToIncident ? incidentResult.serviceNowResult?.sys_id : undefined
         });
         return { incident: incidentResult, alert: alertResult };
+    }
+
+    // ================== SIMULATION & DEBUGGING ==================
+
+    async simulateIncidentCreation(alertData) {
+        const { application } = alertData;
+        if (!application) throw new Error('Alert must have an application field');
+
+        const systemMapping = await this.mappingService.getMappingByApplication(application);
+        const allRules = await this.ruleService.getIncidentRules(application);
+        const enabledRules = allRules.filter(r => r.enabled !== false);
+
+        const allMatches = helpers.findAllMatches(alertData, enabledRules);
+        const matchingRules = allMatches.reverse().map(m => m.rule);
+
+        let finalOverrides = {};
+        matchingRules.forEach(rule => {
+            finalOverrides = { ...finalOverrides, ...rule.incident_overrides };
+        });
+
+        let incidentData = null;
+        if (systemMapping) {
+            incidentData = helpers.buildIncidentData(systemMapping, finalOverrides, alertData);
+        }
+
+        return {
+            system_mapping: systemMapping || null,
+            applied_rules: matchingRules.map(r => ({ rule_name: r.rule_name, incident_overrides: r.incident_overrides, is_global: r.is_global })),
+            total_rules_checked: enabledRules.length,
+            generated_incident: incidentData,
+            hierarchy_explanation: ["1. Specific Rules (Applied Last / High Priority)", "2. Global Rules (Applied First / Low Priority)", "3. Base System Mapping (Defaults)"]
+        };
     }
 
     // ================== HISTORY / LOGS ==================
@@ -211,7 +224,7 @@ class IncidentService {
             ];
         }
         const total = await this.db.incidentLogs.countDocuments(query);
-        const logs  = await this.db.incidentLogs.find(query).sort({ created_at: -1 }).skip(skip).limit(limit).toArray();
+        const logs = await this.db.incidentLogs.find(query).sort({ created_at: -1 }).skip(skip).limit(limit).toArray();
         return { logs, total };
     }
 }

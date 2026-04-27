@@ -1,6 +1,10 @@
 import { formatHourAndDay } from "../../utils/dateUtils";
 import { useState, Fragment } from 'react';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
+import { formatDuration } from '../../utils/formatters';
+
+// ServiceNow instance URL (without trailing slash)
+const SERVICE_NOW_BASE_URL = 'https://servicenow.com';
 
 export const AlertTable = ({
   alerts,
@@ -9,7 +13,8 @@ export const AlertTable = ({
   onSort,
   colorByDuration,
   colors,
-  renderShiftBadge
+  renderShiftBadge,
+  serviceNowBaseUrl = SERVICE_NOW_BASE_URL
 }) => {
   const [expandedRows, setExpandedRows] = useState(new Set());
 
@@ -24,6 +29,7 @@ export const AlertTable = ({
       return next;
     });
   };
+
   const renderCell = (alert, col, isFirstColumn) => {
     const key = col.key;
     const value = alert[key];
@@ -31,12 +37,9 @@ export const AlertTable = ({
     // Helper to render clustering UI if this is the first visible column
     const renderClusteringUI = () => {
       if (!isFirstColumn) return null;
-
       const isCluster = alert.is_cluster;
       const isExpanded = expandedRows.has(alert.history_id || alert.incident_number);
-
       if (!isCluster) return null;
-
       return (
         <div
           onClick={(e) => {
@@ -68,9 +71,7 @@ export const AlertTable = ({
       case 'incident_number': {
         const formatted = alert.incident_number;
         const sysId = alert.incident_sys_id;
-
-        // If incident_number is visible but NOT first, it's just text
-        // If it IS first, renderClusteringUI handles the chevron
+        const isLinked = !!sysId;
 
         return (
           <td
@@ -85,23 +86,21 @@ export const AlertTable = ({
           >
             <div style={wrapperStyle}>
               {renderClusteringUI()}
-              {formatted ? (
-                  <a
-                    href={`${process.env.REACT_APP_SERVICENOW_URL || 'https://servicenow.com'}/nav_to.do?uri=incident.do?${sysId ? `sys_id=${sysId}` : `sysparm_query=number=${formatted}`}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      color: colors.brand.primary,
-                      textDecoration: 'none',
-                      borderBottom: `1px dashed ${colors.brand.primary}50`,
-                      transition: 'border-bottom-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.borderBottomStyle = 'solid')}
-                    onMouseLeave={(e) => (e.currentTarget.style.borderBottomStyle = 'dashed')}
-                    title={sysId ? `Open Incident in ServiceNow (sys_id: ${sysId})` : `Search Incident in ServiceNow (${formatted})`}
-                  >
-                    {formatted}
-                  </a>
+              {isLinked ? (
+                <a
+                  href={`${serviceNowBaseUrl}/now/sow/record/incident/${sysId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: colors.brand.primary,
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  title={`Open incident ${formatted || sysId} in ServiceNow`}
+                >
+                  {formatted || sysId}
+                </a>
               ) : (
                 <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
               )}
@@ -230,7 +229,6 @@ export const AlertTable = ({
 
       case 'duration_sec': {
         const d = value;
-        // Duration is a bit small for the chevron, but we support it just in case
         if (d === null || d === undefined || d === '') {
           return (
             <td key={key} style={{ padding: '16px' }}>
@@ -257,7 +255,7 @@ export const AlertTable = ({
                   display: 'inline-block',
                 }}
               >
-                {d}s
+                {formatDuration(d)}
               </span>
             </div>
           </td>
@@ -347,7 +345,6 @@ export const AlertTable = ({
               const isSorted = sortConfig.sort_by === key;
               const colDef = visibleColumns.find((c) => c.key === key);
               const sortable = colDef?.sortable;
-
               return (
                 <th
                   key={key}
@@ -406,6 +403,7 @@ export const AlertTable = ({
                 >
                   {visibleColumns.map((col, idx) => renderCell(alert, col, idx === 0))}
                 </tr>
+
                 {isExpanded && alert.is_cluster && alert.raw_alerts && (
                   <tr key={`${uniqueKey}-expanded`}>
                     <td colSpan={visibleColumns.length} style={{ padding: 0, borderBottom: `1px solid ${colors.border.primary}` }}>
@@ -422,12 +420,14 @@ export const AlertTable = ({
                           textTransform: 'uppercase',
                           letterSpacing: '0.05em'
                         }}>
-                          CLustered Incident Details ({alert.cluster_count} alerts)
+                          Clustered Incident Details ({alert.cluster_count} alerts)
                         </div>
                         <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                           <thead>
                             <tr>
                               <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Time</th>
+                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Node</th>
+                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Object</th>
                               <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Duration</th>
                               <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Message</th>
                             </tr>
@@ -438,12 +438,18 @@ export const AlertTable = ({
                                 <td style={{ padding: '8px 0', color: colors.text.primary, fontFamily: 'monospace' }}>
                                   {formatHourAndDay(sub.time_fired)}
                                 </td>
+                                <td style={{ padding: '8px 0', color: colors.text.primary }}>
+                                  {sub.node_name || 'N/A'}
+                                </td>
+                                <td style={{ padding: '8px 0', color: colors.text.primary }}>
+                                  {sub.object || 'N/A'}
+                                </td>
                                 <td style={{ padding: '8px 0' }}>
                                   <span style={{
                                     color: colorByDuration(sub.duration_sec),
                                     fontWeight: 600
                                   }}>
-                                    {sub.duration_sec}s
+                                    {formatDuration(sub.duration_sec)}
                                   </span>
                                 </td>
                                 <td style={{ padding: '8px 0', color: colors.text.secondary }}>
@@ -465,4 +471,3 @@ export const AlertTable = ({
     </div>
   );
 };
-

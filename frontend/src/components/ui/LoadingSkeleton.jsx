@@ -1,6 +1,12 @@
-export const LoadingSkeleton = ({ width = '100%', height = 20, style = {} }) => (
+export const LoadingSkeleton = ({ width = '100%', height = 20, style }) => (
   <div
-    className="skeleton"
-    style={{ width, height, borderRadius: 6, ...style }}
+    style={{
+      backgroundColor: '#F3F4F6',
+      height,
+      width,
+      borderRadius: 4,
+      animation: 'pulse 2s ease-in-out infinite',
+      ...style
+    }}
   />
 );

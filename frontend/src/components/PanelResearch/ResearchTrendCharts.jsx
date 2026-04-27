@@ -81,7 +81,27 @@ const ResearchTrendCharts = ({ daily_trend, duration_distribution, loading }) =>
                         <CartesianGrid {...chartProps.grid} />
                         <XAxis dataKey="category" {...chartProps.xAxis} />
                         <YAxis {...chartProps.yAxis} />
-                        <Tooltip {...chartProps.tooltip} />
+                        <Tooltip
+                            content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                    const entry = payload[0];
+                                    const index = payload[0].payload.category === 'Short' ? 0 : payload[0].payload.category === 'Medium' ? 1 : 2;
+                                    let barColor = colors.semantic.error;
+                                    if (index === 1) barColor = colors.semantic.warning;
+                                    if (index >= 2) barColor = colors.semantic.success;
+                                    
+                                    return (
+                                        <div style={{...chartProps.tooltip.contentStyle}}>
+                                            <p style={{ margin: 0, color: colors.text.secondary, marginBottom: 4 }}>{label}</p>
+                                            <p style={{ margin: 0, color: barColor, fontWeight: 'bold' }}>
+                                                Count: {entry.value}
+                                            </p>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            }}
+                        />
                         <Bar dataKey="count" radius={[8, 8, 0, 0]}>
                             {(duration_distribution || []).map(
                                 (entry, index) => {

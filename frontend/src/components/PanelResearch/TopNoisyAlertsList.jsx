@@ -3,6 +3,7 @@ import { Zap } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
 import { ChartCard } from '../ui/ChartCard';
+import { formatDuration } from '../../utils/formatters';
 
 import { useClientConfig } from '../../contexts/ClientConfigContext';
 
@@ -23,8 +24,6 @@ const TopNoisyAlertsList = ({ alerts, loading }) => {
                 style={{
                     maxHeight: 300,
                     overflowY: 'auto',
-                    overflowX: 'hidden',
-                    paddingRight: 16,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 8,
@@ -74,7 +73,7 @@ const TopNoisyAlertsList = ({ alerts, loading }) => {
                                     }}
                                 >
                                     <span>{alert.count} occurrences</span>
-                                    <span>{durationMetric === 'median' ? alert.median_duration : alert.avg_duration}s {durationMetric === 'median' ? 'med' : 'avg'}</span>
+                                    <span>{formatDuration(durationMetric === 'median' ? alert.median_duration : alert.avg_duration)} {durationMetric === 'median' ? 'med' : 'avg'}</span>
                                 </div>
                                 <div
                                     style={{

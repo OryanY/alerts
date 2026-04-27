@@ -18,6 +18,7 @@ export const EXCLUDED_MAPPING_FIELDS = [
     'service_offering',
     'business_service',
     'u_network',
+    'u_impact_technology',
     'assignment_group',
     'u_system_failure',
     'created_at',

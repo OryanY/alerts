@@ -29,7 +29,7 @@ function validateGrafanaPatterns(patterns) {
     for (const pattern of sanitized) {
         if (!pattern.value) throw new Error('Pattern value cannot be empty');
         if (pattern.type === 'regex') {
-            try { new RegExp(pattern.value, 'i'); }
+            try { new RegExp(pattern.value, 'i'); } 
             catch (e) { throw new Error(`Invalid regex pattern "${pattern.value}": ${e.message}`); }
         } else if (pattern.type === 'exact') {
             if (!/^[a-z0-9_-]+$/.test(pattern.value)) {
@@ -48,67 +48,70 @@ function replaceTemplateVariables(template, alertData) {
         const regex = new RegExp(`\\{\\{\\s*${field}\\s*\\}\\}`, 'g');
         result = result.replace(regex, alertData[field] || '');
     });
-    // Strip any remaining unmapped template variables to avoid passing literal "{{...}}" to ServiceNow
-    result = result.replace(/\{\{.*?\}\}/g, '');
     return result;
-}
-
-function applyDefaultValues(incidentData, alertData) {
-    // defaults go FIRST → any value already in incidentData naturally wins
-    return {
-        u_phone_voip: "1234",
-        u_mobile_phone: "1234",
-        u_computer_name: "incident-api",
-        category: "8",
-        contact_type: "טלפון",
-        impact: "מניעת תקלה",
-        urgency: "1",
-        state: "חדש",
-        location: "",
-        u_department: "מרכז אבטחת מידע",
-        u_perational_impact: "בבדיקה",
-        short_description: `קפצה התראה על: ${alertData.object_name} בניטור של - ${alertData.application}`,
-        description: `ההתראה:\n        ${alertData.message}`,
-        ...incidentData   // overrides everything above
-    };
 }
 
 function buildIncidentData(systemMapping, ruleOverrides = {}, alertData) {
     const baseRequired = ['service_offering', 'business_service', 'u_network', 'assignment_group', 'u_system_failure'];
-    const skipTemplates = new Set(['assignment_group', 'service_offering', 'business_service']);
     const excludeFields = new Set(['_id', 'grafana_names', 'created_at', 'updated_at']);
-
     const incidentData = {};
 
-    // 1. Merge mapping and overrides (overrides win if explicitly defined)
-    const mergedData = { ...systemMapping };
-    Object.entries(ruleOverrides).forEach(([key, value]) => {
-        if (value !== undefined) {
-            mergedData[key] = value;
-        }
-    });
-
-    // 2. Process all fields dynamically
-    Object.entries(mergedData).forEach(([key, value]) => {
-        if (excludeFields.has(key) || value == null || String(value).trim() === '') return;
-
-        if (key === 'u_system_failure') {
-            incidentData[key] = parseBoolean(value);
-        } else {
-            incidentData[key] = (typeof value === 'string' && !skipTemplates.has(key))
-                ? replaceTemplateVariables(value, alertData) : value;
-        }
-    });
-
-    // 3. Validate required fields
     baseRequired.forEach(field => {
-        if (incidentData[field] === undefined || incidentData[field] === '') {
-            throw new Error(`Required field '${field}' is missing (or empty after template)`);
+        let value = ruleOverrides[field] !== undefined ? ruleOverrides[field] : systemMapping[field];
+        if (field === 'u_system_failure') {
+            incidentData[field] = parseBoolean(value);
+        } else {
+            const skipTemplates = ['assignment_group', 'service_offering', 'business_service'];
+            if (value && typeof value === 'string' && !skipTemplates.includes(field)) {
+                value = replaceTemplateVariables(value, alertData);
+            }
+            if (!value && field !== 'u_system_failure') {
+                throw new Error(`Required field '${field}' is missing (or empty after template)`);
+            }
+            incidentData[field] = value;
         }
     });
 
-    // 4. Apply all default/fallback values
-    return applyDefaultValues(incidentData, alertData);
+    Object.entries(systemMapping).forEach(([key, value]) => {
+        if (!excludeFields.has(key) && !baseRequired.includes(key) && value != null && String(value).trim() !== '') {
+            incidentData[key] = typeof value === 'string' ? replaceTemplateVariables(value, alertData) : value;
+        }
+    });
+
+    Object.entries(ruleOverrides).forEach(([key, value]) => {
+        if (!excludeFields.has(key) && !baseRequired.includes(key)) {
+            if (key === 'u_system_failure') {
+                incidentData[key] = parseBoolean(value);
+            } else if (value != null && String(value).trim() !== '') {
+                incidentData[key] = replaceTemplateVariables(value, alertData);
+            }
+        }
+    });
+
+    if (!incidentData.short_description) {
+        incidentData.short_description = `קפצה התראה על: ${alertData.object_name} בניטור של - ${alertData.application}`;
+    }
+
+    if (!incidentData.description) {
+        incidentData.description = `ההתראה:\n        ${alertData.message}`;
+    }
+
+    if (!incidentData.u_perational_impact) {
+        incidentData.u_perational_impact = "בבדיקה";
+    }
+    if (!incidentData.u_perational_impact) {
+        incidentData.u_perational_impact = "בבדיקה";
+    }
+    if (!incidentData.u_phone_voip) {
+        incidentData.u_phone_voip = "1234";
+    }
+    if (!incidentData.u_mobile_phone) {
+        incidentData.u_mobile_phone = "1234";
+    }
+    if (!incidentData.u_computer_name) {
+        incidentData.u_computer_name = "My Computer";
+    }
+    return incidentData;
 }
 
 // ================== RULE HELPERS ==================
@@ -120,7 +123,7 @@ function matchesGrafanaPattern(applicationName, pattern) {
         case 'exact': return normalizedApp === normalizedPattern;
         case 'contains': return normalizedApp.includes(normalizedPattern);
         case 'regex':
-            try { return new RegExp(normalizedPattern, 'i').test(applicationName); }
+            try { return new RegExp(normalizedPattern, 'i').test(applicationName); } 
             catch (e) { return false; }
         default: return normalizedApp === normalizedPattern;
     }
@@ -161,7 +164,7 @@ function checkFieldConditions(value, conditions, fieldPrefix) {
 
 function evaluateFieldResults(results, logicOperator) {
     if (results.length === 0) return null;
-    if (logicOperator === 'AND') return results.every(r => r === true);
+    if (logicOperator === 'AND' && results.length > 1) return results.every(r => r === true);
     return results.some(r => r === true);
 }
 
@@ -198,7 +201,7 @@ function validateRuleConditions(conditions) {
     const regexFields = ['message_regex', 'node_name_regex', 'object_name_regex', 'network_regex', 'operator_regex'];
     regexFields.forEach(field => {
         if (conditions[field]) {
-            try { new RegExp(conditions[field]); }
+            try { new RegExp(conditions[field]); } 
             catch (e) { throw new Error(`Invalid regex pattern in ${field}: ${e.message}`); }
         }
     });
@@ -209,7 +212,6 @@ module.exports = {
     sanitizeGrafanaPattern,
     validateGrafanaPatterns,
     replaceTemplateVariables,
-    applyDefaultValues,
     buildIncidentData,
     matchesGrafanaPattern,
     calculateRuleSpecificity,

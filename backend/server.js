@@ -12,11 +12,11 @@ const { initializeSqlDatabase, initializeMongoDatabase, closeConnections } = req
 
 const alertRoutes = require('./routes/alertRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
-
+const metricsRoutes = require('./routes/metrics'); 
 // No external error handler needed
 
 // Import utilities
-const { validateEnvironmentVariables } = require('./utils/validateEnv');
+const { validateEnvironmentVariables } = require('./config/validateEnv');
 const { queryLogger } = require('./middleware/queryLogger');
 
 // Setup global handlers
@@ -49,10 +49,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 
-// Dev query logger: logs endpoint, params, result count, and duration
-if (process.env.NODE_ENV === 'development') {
-  app.use('/api', queryLogger);
-}
+// Query logger: filters internally by env and route (see middleware/queryLogger.js)
+app.use(queryLogger);
 
 // ================== API ROUTES ==================
 
@@ -73,6 +71,9 @@ app.use('/from-grafana', publicCors, incidentRoutes);
 
 app.use('/api', restrictedCors, alertRoutes);
 app.use('/api/incidents', publicCors, incidentRoutes);
+
+app.use('/metrics', metricsRoutes);
+
 
 // ================== ERROR HANDLING ==================
 

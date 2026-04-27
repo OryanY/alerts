@@ -1,9 +1,9 @@
 // services/alert/AlertService.js
 const sql = require('mssql');
+const { DateTime } = require('luxon');
 const { getSqlPool } = require('../../database/connection');
 const queries = require('../../database/queries/alertQueries');
 const { CONFIG } = require('../../config');
-const { TimeUtils } = require('../../utils/TimeUtils');
 
 class AlertService {
     constructor(sqlPool = null) {
@@ -28,8 +28,6 @@ class AlertService {
 
     _buildWhereClause(params, request) {
         const conditions = [];
-
-        const { DateTime } = require('luxon');
 
         if (params.start_date) {
             const utcStart = DateTime.fromISO(params.start_date, { zone: 'Asia/Jerusalem' })
@@ -58,6 +56,11 @@ class AlertService {
                 conditions.push(`${field} LIKE @${field}`);
             }
         });
+
+        if (params.search) {
+            request.input('search', sql.NVarChar, `%${params.search}%`);
+            conditions.push('message LIKE @search');
+        }
 
         if (params.min_duration) {
             request.input('min_duration', sql.Int, params.min_duration);
@@ -213,8 +216,11 @@ class AlertService {
 
             let shift = 'Unknown';
             if (r.time_fired) {
-                const hr = TimeUtils.getILHour(r.time_fired);
-                shift = (hr >= ds && hr < de) ? 'Day' : 'Night';
+                // time_fired is now a pre-converted IL time string (varchar from SQL CONVERT)
+                // Parse the hour directly from the string — no UTC→IL conversion needed
+                const hrMatch = String(r.time_fired).match(/T(\d{2}):/);
+                const hr = hrMatch ? parseInt(hrMatch[1], 10) : null;
+                if (hr !== null) shift = (hr >= ds && hr < de) ? 'Day' : 'Night';
             }
 
             return {
@@ -228,11 +234,12 @@ class AlertService {
                 time_fired: r.time_fired,
                 time_resolved: r.time_resolved,
                 duration_sec: duration_sec,
-                duration_category: duration_sec <= 30 ? 'short' : (duration_sec <= 300 ? 'medium' : 'long'),
+                duration_category: duration_sec <= (this.constants.DUR_SHORT_MAX || 59) ? 'short' : (duration_sec <= (this.constants.DUR_MEDIUM_MAX || 299) ? 'medium' : 'long'),
                 shift: shift,
                 message: r.message,
                 key_field: r.key_field,
                 incident_number: r.incident_number,
+                incident_sys_id: r.incident_sys_id,
                 history_id: r.history_id,
                 is_cluster: r.cluster_count > 1,
                 cluster_count: r.cluster_count || 1,
@@ -443,7 +450,10 @@ class AlertService {
     }
 
     async getPanelStats(params) {
-        const records = await this._execute(queries.PANEL_STATS, params, {
+        const { enabled } = this._getClusteringConfig(params);
+        const queryTarget = enabled ? queries.CLUSTERED_PANEL_STATS : queries.PANEL_STATS;
+        
+        const records = await this._execute(queryTarget, params, {
             limit: params.limit || 20,
             replace: { TOP_CLAUSE: params.limit ? 'TOP (@limit_param)' : '' }
         });
@@ -451,17 +461,30 @@ class AlertService {
     }
 
     async getTopApplications(params) {
-        const records = await this._execute(queries.TOP_APPLICATIONS, params, { limit: params.limit || 10 });
+        const { enabled } = this._getClusteringConfig(params);
+        const queryTarget = enabled ? queries.CLUSTERED_TOP_APPLICATIONS : queries.TOP_APPLICATIONS;
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
         return { success: true, data: records };
     }
 
     async getTopNodesByApp(params) {
-        const records = await this._execute(queries.TOP_NODES_BY_APP, params, { limit: params.limit || 10 });
+        const { enabled } = this._getClusteringConfig(params);
+        const queryTarget = enabled ? queries.CLUSTERED_TOP_NODES_BY_APP : queries.TOP_NODES_BY_APP;
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
+        return { success: true, data: records };
+    }
+
+    async getTopObjectsByApp(params) {
+        const { enabled } = this._getClusteringConfig(params);
+        const queryTarget = enabled ? queries.CLUSTERED_TOP_OBJECTS_BY_APP : queries.TOP_OBJECTS_BY_APP;
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
         return { success: true, data: records };
     }
 
     async getConsecutiveDaysNodes(params) {
-        const records = await this._execute(queries.CONSECUTIVE_DAYS_NODES, params, { limit: params.limit || 10 });
+        const { enabled } = this._getClusteringConfig(params);
+        const queryTarget = enabled ? queries.CLUSTERED_CONSECUTIVE_DAYS_NODES : queries.CONSECUTIVE_DAYS_NODES;
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
         return { success: true, data: records };
     }
 

@@ -13,6 +13,7 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
             { key: 'service_offering', label: 'Service Offering', placeholder: 'Override service offering' },
             { key: 'business_service', label: 'Business Service', placeholder: 'Override business service' },
             { key: 'u_network', label: 'Network', placeholder: 'Override network (e.g., PROD, QA)' },
+            { key: 'u_impact_technology', label: 'Impact Technology', placeholder: 'Override impact technology' },
             { key: 'u_operational_impact', label: 'Operational Impact', placeholder: 'Override operational impact (default: בבדיקה)' },
             { key: 'u_system_failure', label: 'System Failure', type: 'checkbox' },
             { key: 'description', label: 'Description (Full)', type: 'textarea', placeholder: 'Full incident description...' }

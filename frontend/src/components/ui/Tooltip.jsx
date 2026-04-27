@@ -1,79 +1,62 @@
-import { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { createPortal } from 'react-dom';
 
-const Tooltip = ({ content, children, width = 220, placement = 'top' }) => {
+const Tooltip = ({ content, children, width = 200 }) => {
     const { colors } = useTheme();
-    const [visible, setVisible] = useState(false);
-    const [pos, setPos] = useState({ x: 0, y: 0 });
-    const wrapRef = useRef(null);
-
-    if (!content) return <>{children}</>;
-
-    const show = () => {
-        if (!wrapRef.current) return;
-        const rect = wrapRef.current.getBoundingClientRect();
-        setPos({
-            x: rect.left + rect.width / 2,
-            y: placement === 'bottom' ? rect.bottom + 8 : rect.top - 8,
-        });
-        setVisible(true);
-    };
+    const [isVisible, setIsVisible] = useState(false);
 
     return (
-        <>
-            {/* Real div wrapper — not display:contents — so getBoundingClientRect works */}
-            <div
-                ref={wrapRef}
-                style={{ display: 'inline-flex', position: 'relative' }}
-                onMouseEnter={show}
-                onMouseLeave={() => setVisible(false)}
-            >
-                {children}
-            </div>
-
-            {visible && createPortal(
+        <div
+            style={{ position: 'relative', display: 'inline-flex' }}
+            onMouseEnter={() => setIsVisible(true)}
+            onMouseLeave={() => setIsVisible(false)}
+        >
+            {children}
+            {isVisible && (
                 <div style={{
-                    position: 'fixed',
-                    left: pos.x,
-                    top: pos.y,
-                    transform: placement === 'bottom'
-                        ? 'translateX(-50%)'
-                        : 'translateX(-50%) translateY(-100%)',
-                    zIndex: 9999,
-                    maxWidth: width,
+                    position: 'absolute',
+                    bottom: '100%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    marginBottom: 8,
                     padding: '8px 12px',
-                    background: colors.bg.elevated || colors.bg.secondary,
-                    border: `1px solid ${colors.border.secondary}`,
-                    borderRadius: 8,
-                    boxShadow: colors.shadow.lg,
+                    background: colors.bg.primary,
+                    border: `1px solid ${colors.border.primary}`,
+                    borderRadius: 6,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    zIndex: 1000,
+                    width: width,
                     fontSize: 12,
                     color: colors.text.primary,
                     textAlign: 'center',
                     pointerEvents: 'none',
                     whiteSpace: 'normal',
-                    lineHeight: 1.5,
-                    animation: 'fadeIn 0.12s ease',
-                    marginBottom: placement === 'top' ? 8 : 0,
-                    marginTop:    placement === 'bottom' ? 8 : 0,
+                    lineHeight: 1.4
                 }}>
                     {content}
                     {/* Arrow */}
                     <div style={{
                         position: 'absolute',
+                        top: '100%',
                         left: '50%',
-                        transform: 'translateX(-50%)',
-                        width: 0, height: 0,
-                        border: '5px solid transparent',
-                        ...(placement === 'bottom'
-                            ? { bottom: '100%', borderBottomColor: colors.border.secondary }
-                            : { top: '100%',    borderTopColor:    colors.border.secondary }
-                        ),
+                        marginLeft: -5,
+                        borderWidth: 5,
+                        borderStyle: 'solid',
+                        borderColor: `${colors.border.primary} transparent transparent transparent`
                     }} />
-                </div>,
-                document.body
+                    <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: '50%',
+                        marginLeft: -4,
+                        borderWidth: 4,
+                        borderStyle: 'solid',
+                        borderColor: `${colors.bg.primary} transparent transparent transparent`,
+                        marginTop: -1
+                    }} />
+                </div>
             )}
-        </>
+        </div>
     );
 };
 

@@ -89,8 +89,6 @@ const statsSchema = Joi.object({
   panel_title: Joi.string().trim().max(100).optional()
 
 }).custom((value, helpers) => {
-  // Note: Date range validation is handled by TimeUtils.validateDateRange() with timezone awareness
-
   // Validate shift hours
   if (value.day_start >= value.day_end) {
     return helpers.error('any.invalid', { message: 'day_start must be less than day_end' });
@@ -120,32 +118,14 @@ const timeseriesSchema = Joi.object({
     });
   }
 
-  // Note: Date range validation is handled by TimeUtils.validateDateRange() with timezone awareness
   return value;
 });
 
-// Schema for pattern analysis
-const patternSchema = Joi.object({
-  ...baseSchema,
-
-  // Pattern specific parameters
-  storm_window_minutes: Joi.number().integer().min(1).max(60).default(10),
-  storm_threshold: Joi.number().integer().min(2).max(50).default(5),
-  correlation_window_seconds: Joi.number().integer().min(30).max(3600).default(300),
-  min_correlation_count: Joi.number().integer().min(2).max(100).default(3)
-});
-
-// Schema for statistics endpoints that REQUIRE panel_title
-const statsSchemaRequiredPanel = statsSchema.keys({
-  panel_title: Joi.string().trim().max(100).required()
-});
 
 module.exports = {
   alertsSchema,
   statsSchema,
-  statsSchemaRequiredPanel,
   panelStatsSchema,
   timeseriesSchema,
   panelResearchSchema,
-  patternSchema
 };

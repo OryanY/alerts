@@ -13,6 +13,6 @@ export const DEFAULT_CLIENT_CFG = {
   bands: [
     { key: 'short', label: 'Short', min: 0, max: 59, color: '#10B981' },
     { key: 'medium', label: 'Medium ', min: 60, max: 299, color: '#F59E0B' },
-    { key: 'long', label: 'Long ', min: 300, max: 899, color: '#EF4444' },
+    { key: 'long', label: 'Long ', min: 300, max: Number.MAX_SAFE_INTEGER, color: '#EF4444' },
   ],
 };
