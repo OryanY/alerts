@@ -12,7 +12,7 @@ const { initializeSqlDatabase, initializeMongoDatabase, closeConnections } = req
 
 const alertRoutes = require('./routes/alertRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
-const metricsRoutes = require('./routes/metrics'); 
+const metricsRoutes = require('./routes/metrics');
 // No external error handler needed
 
 // Import utilities
@@ -118,6 +118,11 @@ async function startServer() {
     await initializeSqlDatabase();
     await initializeMongoDatabase();
     console.log('Databases initialized.');
+    // Pre-warm the ServiceNow reference data cache in the background
+    console.log('Pre-warming ServiceNow reference caches...');
+    incidentRoutes.incidentService.getAssignmentGroups().catch(e => console.error('Failed to pre-cache groups:', e.message));
+    incidentRoutes.incidentService.getServiceOfferings().catch(e => console.error('Failed to pre-cache offerings:', e.message));
+    incidentRoutes.incidentService.getBusinessServices().catch(e => console.error('Failed to pre-cache business services:', e.message));
 
     server = app.listen(PORT, () => {
       console.log(`Alert Management API Server Started on Port ${PORT}`);

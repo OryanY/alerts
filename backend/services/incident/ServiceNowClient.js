@@ -11,6 +11,14 @@ class ServiceNowClient {
         this.username = config.username || process.env.SERVICENOW_USERNAME;
         this.password = config.password || process.env.SERVICENOW_PASSWORD;
         this.enabled = Boolean(this.url);
+
+        // Cache configuration
+        this.CACHE_TTL = 86400000; // 24 hours
+        this.caches = {
+            assignmentGroups: { data: null, time: null },
+            serviceOfferings: { data: null, time: null },
+            businessServices: { data: null, time: null }
+        };
     }
 
     /**
@@ -64,26 +72,32 @@ class ServiceNowClient {
         }
     }
 
-    async fetchAssignmentGroups() {
-        if (!this.isEnabled()) {
-            return [];
+    async _fetchCachedReferenceData(cacheKey, tableEnv, queryEnv, fieldsEnv, defaultTable, defaultQuery, defaultFields, valueField = 'sys_id', labelField = 'name') {
+        if (!this.isEnabled()) return [];
+
+        const now = Date.now();
+        const cacheObj = this.caches[cacheKey];
+
+        if (cacheObj && cacheObj.data && cacheObj.time && (now - cacheObj.time) < this.CACHE_TTL) {
+            return cacheObj.data;
         }
 
-        // Check cache
-        const now = Date.now();
-        if (this.assignmentGroupsCache &&
-            this.assignmentGroupsCacheTime &&
-            (now - this.assignmentGroupsCacheTime) < this.CACHE_TTL) {
-            return this.assignmentGroupsCache;
+        const table = process.env[tableEnv] || defaultTable;
+        const query = process.env[queryEnv] || defaultQuery;
+        const fields = process.env[fieldsEnv] || defaultFields;
+
+        if (!table) {
+            console.warn(`⚠️ Warning: No ServiceNow table configured for ${cacheKey}`);
+            return [];
         }
 
         try {
             const response = await axios({
                 method: 'GET',
-                url: `${this.url}/api/now/table/sys_user_group`,
+                url: `${this.url}/api/now/table/${table}`,
                 params: {
-                    sysparm_query: 'active=true^u_unit=80',
-                    sysparm_fields: 'sys_id,name',
+                    sysparm_query: query,
+                    sysparm_fields: fields,
                     sysparm_limit: 1000
                 },
                 headers: { 'Accept': 'application/json' },
@@ -94,78 +108,99 @@ class ServiceNowClient {
                 timeout: 10000
             });
 
-            const groups = response.data.result.map(group => ({
-                value: group.sys_id,
-                label: group.name
-            }));
+            const items = response.data.result.map(item => ({
+                value: item[valueField] || item.sys_id || item.name, 
+                label: item[labelField] ? item[labelField].trim() : 'Unknown'
+            })).sort((a, b) => a.label.localeCompare(b.label));
 
-            // Update cache
-            this.assignmentGroupsCache = groups;
-            this.assignmentGroupsCacheTime = Date.now();
+            this.caches[cacheKey] = { data: items, time: Date.now() };
+            console.log(`✅ Cached ${items.length} ${cacheKey}`);
 
-            console.log(`✅ Cached ${groups.length} assignment groups`);
-            return groups;
-
+            return items;
         } catch (error) {
-            console.error('❌ Error fetching assignment groups:', error.message);
+            console.error(`❌ Error fetching ${cacheKey}:`, error.message);
+            if (cacheObj && cacheObj.data) {
+                console.warn(`⚠️ Using stale cache for ${cacheKey} due to API error`);
+                return cacheObj.data;
+            }
+            return [];
+        }
+    }
 
-            // Return stale cache if available
-            if (this.assignmentGroupsCache) {
-                console.warn('⚠️  Using stale cache due to API error');
-                return this.assignmentGroupsCache;
+    async fetchAssignmentGroups() {
+        return this._fetchCachedReferenceData(
+            'assignmentGroups',
+            'SN_GROUP_TABLE', 'SN_GROUP_QUERY', 'SN_GROUP_FIELDS',
+            'sys_user_group', 'active=true^u_unit=80', 'sys_id,name',
+            'sys_id', 'name' // Use sys_id for the value
+        );
+    }
+
+    async fetchServiceOfferings() {
+        return this._fetchCachedReferenceData(
+            'serviceOfferings',
+            'SN_OFFERING_TABLE', 'SN_OFFERING_QUERY', 'SN_OFFERING_FIELDS',
+            'service_offering', 'active=true', 'sys_id,name',
+            'name', 'name' // Use name for the value
+        );
+    }
+
+    async fetchBusinessServices() {
+        return this._fetchCachedReferenceData(
+            'businessServices',
+            'SN_BUSINESS_TABLE', 'SN_BUSINESS_QUERY', 'SN_BUSINESS_FIELDS',
+            'cmdb_ci_service', 'active=true', 'sys_id,name',
+            'name', 'name' // Use name for the value
+        );
+    }
+
+    async getSysIdByUser(username) {
+        if (!this.isEnabled()) {
+            return [];
+        }
+
+        const email = username + "@domain.com";
+        try {
+            const response = await axios({
+                method: 'GET',
+                url: `${this.url}/api/now/table/sys_user`,
+                params: {
+                    sysparm_query: `email=${email}`,
+                    sysparm_fields: 'sys_id',
+                },
+                headers: { 'Accept': 'application/json' },
+                auth: {
+                    username: this.username,
+                    password: this.password
+                },
+                timeout: 10000
+            });
+
+            const result = response.data.result;
+
+            // Handle possible empty result
+            if (!result || (Array.isArray(result) && result.length === 0)) {
+                console.log("No user found with email:", email);
+                return [];
             }
 
+            // If result is an array (multiple items), take first one
+            const userRecord = Array.isArray(result) ? result[0] : result;
+
+            if (!userRecord || !userRecord.sys_id) {
+                console.log("User found, but no sys_id present");
+                return [];
+            }
+
+            const sysId = userRecord.sys_id;
+            return sysId; // Return just the ID
+
+        } catch (error) {
+            console.error('❌ Error fetching user by email:', error.message);
             return [];
         }
     }
-    
-    async getSysIdByUser(username) {
-    if (!this.isEnabled()) {
-        return [];
-    }
 
-    const email = username + "@domain.com";
-    try {
-        const response = await axios({
-            method: 'GET',
-            url: `${this.url}/api/now/table/sys_user`,
-            params: {
-                sysparm_query: `email=${email}`,
-                sysparm_fields: 'sys_id',
-            },
-            headers: { 'Accept': 'application/json' },
-            auth: {
-                username: this.username,
-                password: this.password
-            },
-            timeout: 10000
-        });
-
-        const result = response.data.result;
-        
-        // Handle possible empty result
-        if (!result || (Array.isArray(result) && result.length === 0)) {
-            console.log("No user found with email:", email);
-            return [];
-        }
-
-        // If result is an array (multiple items), take first one
-        const userRecord = Array.isArray(result) ? result[0] : result;
-
-        if (!userRecord || !userRecord.sys_id) {
-            console.log("User found, but no sys_id present");
-            return [];
-        }
-
-        const sysId = userRecord.sys_id;
-        return sysId; // Return just the ID
-
-    } catch (error) {
-        console.error('❌ Error fetching user by email:', error.message);
-        return [];
-    }
-    }
-    
     async createTiudAlert(alertData) {
         if (!this.isEnabled()) {
             console.log('❌ ServiceNow integration disabled or not configured');

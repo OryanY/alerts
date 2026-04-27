@@ -18,7 +18,8 @@ class IncidentController {
     // Bind every handler so Express can call it directly
     // -----------------------------------------------------------
     this.getAssignmentGroups         = this.getAssignmentGroups.bind(this);
-    this.syncAssignmentGroups        = this.syncAssignmentGroups.bind(this);
+    this.getServiceOfferings         = this.getServiceOfferings.bind(this);
+    this.getBusinessServices         = this.getBusinessServices.bind(this);
     this.createIncidentFromAlertGET  = this.createIncidentFromAlertGET.bind(this);
     this.createIncidentFromAlertPOST = this.createIncidentFromAlertPOST.bind(this);
     this.createIncidentWithAlertGET  = this.createIncidentWithAlertGET.bind(this);
@@ -66,23 +67,23 @@ class IncidentController {
     }
   }
 
-  async syncAssignmentGroups(req, res, next) {
+  // ====================== OTHER REFERENCE DATA ======================
+  async getServiceOfferings(req, res, next) {
     try {
-      console.log('🔄 Syncing assignment groups from ServiceNow...');
-      const groups = await this.incidentService.syncAssignmentGroups();
-      if (!Array.isArray(groups)) {
-        console.error('❌ Sync returned invalid data:', typeof groups);
-        return res.status(500).json({ success: false, error: 'Sync failed' });
-      }
-      res.json({
-        success: true,
-        message: `Successfully synced ${groups.length} groups`,
-        data: groups,
-        count: groups.length,
-        meta: { syncedAt: new Date().toISOString(), source: 'servicenow' }
-      });
+      const offerings = await this.incidentService.getServiceOfferings();
+      res.json({ success: true, data: offerings, count: offerings.length });
     } catch (err) {
-      console.error('❌ Error syncing groups:', err);
+      console.error('❌ Error fetching service offerings:', err);
+      next(err);
+    }
+  }
+
+  async getBusinessServices(req, res, next) {
+    try {
+      const services = await this.incidentService.getBusinessServices();
+      res.json({ success: true, data: services, count: services.length });
+    } catch (err) {
+      console.error('❌ Error fetching business services:', err);
       next(err);
     }
   }

@@ -33,6 +33,7 @@ import {
   X,
 } from '../icons';
 import { useTheme } from '../contexts/ThemeContext';
+import SearchableSelect from '../components/common/SearchableSelect';
 
 import { createChartConfig } from '../utils/chartConfig';
 import { formatDuration } from '../utils/formatters';
@@ -115,53 +116,17 @@ const NocDashboard = () => {
             setPresetRange={setPresetRange}
             rightSlot={
               <div style={styles.filterGroup}>
-                {/* Panel Filter Select */}
-                <div style={styles.selectWrapper}>
-                  <Filter
-                    size={16}
-                    style={{ ...styles.filterIcon, color: colors.text.secondary }}
-                  />
-                  <select
+                <div style={{ minWidth: 220 }}>
+                  <SearchableSelect
+                    options={(panelsList || []).map(p => ({
+                      value: p.panel_title,
+                      label: `${p.panel_title} (${p.alert_count})`
+                    }))}
                     value={selectedPanel || ''}
-                    onChange={handlePanelChange}
-                    style={{
-                      ...S.select,
-                      paddingLeft: 36,
-                      minWidth: 200,
-                      background: selectedPanel
-                        ? colors.semantic.infoBg
-                        : colors.bg.secondary,
-                      borderColor: selectedPanel
-                        ? colors.semantic.info
-                        : colors.border.secondary,
-                      fontWeight: selectedPanel ? 600 : 400,
-                    }}
-                  >
-                    <option value="">All Panels</option>
-                    {(panelsList || []).map((panel) => (
-                      <option key={panel.panel_title} value={panel.panel_title}>
-                        {panel.panel_title} ({panel.alert_count})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedPanel(val || null)}
+                    placeholder="All Panels"
+                  />
                 </div>
-
-                {/* Clear panel filter button */}
-                {selectedPanel && (
-                  <button
-                    onClick={handleClearPanel}
-                    style={{
-                      ...styles.clearButton,
-                      background: colors.bg.secondary,
-                      borderColor: colors.semantic.error,
-                      color: colors.semantic.error,
-                    }}
-                    title="Clear panel filter"
-                  >
-                    <X size={16} />
-                    Clear
-                  </button>
-                )}
 
                 {/* Clustering Status Badge */}
                 <a

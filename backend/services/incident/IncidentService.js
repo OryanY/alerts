@@ -16,7 +16,6 @@ class IncidentService {
         if (!this._collections) {
             const mdb = getMongoDb();
             this._collections = {
-                assignmentGroups: mdb.collection(mongoConfig.collections.assignmentGroups),
                 incidentLogs: mdb.collection(mongoConfig.collections.incidentLogs)
             };
             this._collections.incidentLogs.createIndex({ created_at: 1 }, { expireAfterSeconds: 7776000, background: true }).catch(() => {});
@@ -85,18 +84,17 @@ class IncidentService {
     // ================== ASSIGNMENT GROUPS ==================
 
     async getAssignmentGroups() {
-        const doc = await this.db.assignmentGroups.findOne({ _id: 'assignment_groups_store' });
-        return doc ? doc.groups : [];
+        return await this.serviceNowClient.fetchAssignmentGroups();
     }
 
-    async syncAssignmentGroups() {
-        const groups = await this.serviceNowClient.fetchAssignmentGroups();
-        await this.db.assignmentGroups.updateOne(
-            { _id: 'assignment_groups_store' },
-            { $set: { groups, lastSynced: new Date(), count: groups.length } },
-            { upsert: true }
-        );
-        return groups;
+    // ================== OTHER REFERENCE DATA ==================
+
+    async getServiceOfferings() {
+        return await this.serviceNowClient.fetchServiceOfferings();
+    }
+
+    async getBusinessServices() {
+        return await this.serviceNowClient.fetchBusinessServices();
     }
 
     // ================== SERVICENOW ALERT SHORTCUTS ==================

@@ -44,6 +44,12 @@ const IncidentMappings = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [assignmentGroups, setAssignmentGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  
+  const [serviceOfferings, setServiceOfferings] = useState([]);
+  const [loadingOfferings, setLoadingOfferings] = useState(false);
+  
+  const [businessServices, setBusinessServices] = useState([]);
+  const [loadingBusiness, setLoadingBusiness] = useState(false);
 
   const fetchMappings = async () => {
     try {
@@ -72,14 +78,10 @@ const IncidentMappings = () => {
   const fetchAssignmentGroups = async () => {
     try {
       setLoadingGroups(true);
-      setLoadingGroups(true);
       const res = await fetch(`${API_BASE}/incidents/assignment-groups`, { credentials: 'include' });
       const data = await safeJson(res);
       if (data.success) {
-        const sortedGroups = (data.data || []).sort((a, b) =>
-          String(a.name || '').localeCompare(String(b.name || ''))
-        );
-        setAssignmentGroups(sortedGroups);
+        setAssignmentGroups(data.data || []);
       }
     } catch (e) {
       console.warn('Could not fetch assignment groups:', e.message);
@@ -88,9 +90,41 @@ const IncidentMappings = () => {
     }
   };
 
+  const fetchServiceOfferings = async () => {
+    try {
+      setLoadingOfferings(true);
+      const res = await fetch(`${API_BASE}/incidents/service-offerings`, { credentials: 'include' });
+      const data = await safeJson(res);
+      if (data.success) {
+        setServiceOfferings(data.data || []);
+      }
+    } catch (e) {
+      console.warn('Could not fetch service offerings:', e.message);
+    } finally {
+      setLoadingOfferings(false);
+    }
+  };
+
+  const fetchBusinessServices = async () => {
+    try {
+      setLoadingBusiness(true);
+      const res = await fetch(`${API_BASE}/incidents/business-services`, { credentials: 'include' });
+      const data = await safeJson(res);
+      if (data.success) {
+        setBusinessServices(data.data || []);
+      }
+    } catch (e) {
+      console.warn('Could not fetch business services:', e.message);
+    } finally {
+      setLoadingBusiness(false);
+    }
+  };
+
   useEffect(() => {
     fetchMappings();
     fetchAssignmentGroups();
+    fetchServiceOfferings();
+    fetchBusinessServices();
   }, []);
 
   const handleCreateClick = () => {
@@ -300,6 +334,10 @@ const IncidentMappings = () => {
             PATTERN_COLORS={PATTERN_COLORS}
             assignmentGroups={assignmentGroups}
             loadingGroups={loadingGroups}
+            serviceOfferings={serviceOfferings}
+            loadingOfferings={loadingOfferings}
+            businessServices={businessServices}
+            loadingBusiness={loadingBusiness}
             editingItem={editingItem}
             onSaved={handleSaved}
             onCancel={handleCancelForm}

@@ -11,6 +11,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { withAlpha } from '../../utils/formatters';
 import { safeJson } from '../../utils/api';
 import MappingFormPatternBuilder from './MappingFormPatternBuilder';
+import SearchableSelect from '../common/SearchableSelect';
 
 const baseMandatoryFields = [
     'service_offering',
@@ -81,6 +82,10 @@ const MappingForm = ({
     PATTERN_COLORS,
     assignmentGroups,
     loadingGroups,
+    serviceOfferings,
+    loadingOfferings,
+    businessServices,
+    loadingBusiness,
     editingItem,
     onSaved,
     onCancel,
@@ -350,30 +355,13 @@ const MappingForm = ({
                             >
                                 Assignment Group
                             </label>
-                            <select
+                            <SearchableSelect
+                                options={assignmentGroups}
                                 value={form.assignment_group}
-                                onChange={(e) =>
-                                    setForm({ ...form, assignment_group: e.target.value })
-                                }
-                                disabled={loadingGroups}
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    borderRadius: 8,
-                                    border: `1px solid ${colors.border.primary}`,
-                                    background: colors.bg.primary,
-                                    color: colors.text.primary,
-                                    fontSize: 14,
-                                    outline: 'none',
-                                }}
-                            >
-                                <option value="">Select Group...</option>
-                                {assignmentGroups.map((g) => (
-                                    <option key={g.id} value={g.id}>
-                                        {g.label}
-                                    </option>
-                                ))}
-                            </select>
+                                onChange={(val) => setForm({ ...form, assignment_group: val })}
+                                placeholder="Select Group..."
+                                loading={loadingGroups}
+                            />
                         </div>
 
                         <div>
@@ -388,22 +376,12 @@ const MappingForm = ({
                             >
                                 Business Service
                             </label>
-                            <input
-                                type="text"
+                            <SearchableSelect
+                                options={businessServices}
                                 value={form.business_service}
-                                onChange={(e) =>
-                                    setForm({ ...form, business_service: e.target.value })
-                                }
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    borderRadius: 8,
-                                    border: `1px solid ${colors.border.primary}`,
-                                    background: colors.bg.primary,
-                                    color: colors.text.primary,
-                                    fontSize: 14,
-                                    outline: 'none',
-                                }}
+                                onChange={(val) => setForm({ ...form, business_service: val })}
+                                placeholder="Select Business Service..."
+                                loading={loadingBusiness}
                             />
                         </div>
 
@@ -419,22 +397,12 @@ const MappingForm = ({
                             >
                                 Service Offering
                             </label>
-                            <input
-                                type="text"
+                            <SearchableSelect
+                                options={serviceOfferings}
                                 value={form.service_offering}
-                                onChange={(e) =>
-                                    setForm({ ...form, service_offering: e.target.value })
-                                }
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    borderRadius: 8,
-                                    border: `1px solid ${colors.border.primary}`,
-                                    background: colors.bg.primary,
-                                    color: colors.text.primary,
-                                    fontSize: 14,
-                                    outline: 'none',
-                                }}
+                                onChange={(val) => setForm({ ...form, service_offering: val })}
+                                placeholder="Select Service Offering..."
+                                loading={loadingOfferings}
                             />
                         </div>
 

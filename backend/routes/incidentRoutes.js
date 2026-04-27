@@ -21,9 +21,10 @@ const ruleService = new IncidentRuleService();
 const incidentService = new IncidentService(mappingService, ruleService);
 const controller = new IncidentController(incidentService, mappingService, ruleService);
 
-// ================== ASSIGNMENT GROUPS ==================
+// ================== REFERENCE DATA ==================
 router.get('/assignment-groups', controller.getAssignmentGroups);
-router.get('/assignment-groups/sync', controller.syncAssignmentGroups);
+router.get('/service-offerings', controller.getServiceOfferings);
+router.get('/business-services', controller.getBusinessServices);
 
 router.get(
   '/incident-with-alert',
@@ -85,4 +86,6 @@ router.get('/incident-logs', controller.getIncidentLogs);
 // ================== GRAFANA WEBHOOK ==================
 router.get('/', controller.createIncidentFromGrafana);
 
+// Expose the service so server.js can trigger startup caching
+router.incidentService = incidentService;
 module.exports = router;

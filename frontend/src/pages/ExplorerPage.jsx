@@ -14,7 +14,7 @@ import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { LazyInput } from '../components/ui/LazyInput';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
-import { CustomSelect } from '../components/ui/CustomSelect';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { ColumnVisibilityPanel, getDefaultVisibleColumns, getAllColumns } from '../components/layout/ColumnVisibilityPanel';
 import { AlertTable } from '../components/dashboard/AlertTable';
 
@@ -125,13 +125,12 @@ const ExplorerPage = () => {
 
   // useApiData automatically injects dateRange and getApiParams()
   const { data: alerts, loading, error, refetch } = useApiData('/alerts', apiParams);
-  const { data: globalPanels } = useApiData('/stats/by-panel', { limit: 2000 });
+  const { data: filterOptions } = useApiData('/stats/filter-options', {});
 
   const dropdownOptions = useMemo(() => {
-    const panelsData = Array.isArray(globalPanels) ? globalPanels : [];
-    const uniquePanels = [...new Set(panelsData.map((p) => p.panel_title).filter(Boolean))].sort();
-    const uniqueApps = [...new Set(panelsData.map((p) => p.application).filter(Boolean))].sort();
-    
+    const panels = filterOptions?.panels || [];
+    const apps = filterOptions?.applications || [];
+
     // Operators are still inferred from current view since we don't have a /stats/operators endpoint
     const alertsData = Array.isArray(alerts) ? alerts : [];
     const uniqueOperators = [...new Set(alertsData.map((a) => a.operator).filter(Boolean))].sort();
@@ -139,11 +138,11 @@ const ExplorerPage = () => {
     return {
       panels: [
         { value: '', label: 'All Panels' },
-        ...uniquePanels.map((p) => ({ value: p, label: p })),
+        ...panels.map((p) => ({ value: p, label: p })),
       ],
       applications: [
         { value: '', label: 'All Applications' },
-        ...uniqueApps.map((a) => ({ value: a, label: a })),
+        ...apps.map((a) => ({ value: a, label: a })),
       ],
       operators: [
         { value: '', label: 'All Operators' },
@@ -162,7 +161,7 @@ const ExplorerPage = () => {
         },
       ],
     };
-  }, [globalPanels, alerts, config.bands]);
+  }, [filterOptions, alerts, config.bands]);
 
   const processedAlerts = useMemo(() => {
     if (!alerts || !Array.isArray(alerts)) return [];
@@ -645,13 +644,12 @@ const ExplorerPage = () => {
               >
                 Panel
               </label>
-              <CustomSelect
+              <SearchableSelect
                 value={filters.panel_title || ''}
                 onChange={(val) => setFilters({ panel_title: val })}
                 options={dropdownOptions.panels || []}
                 placeholder="All Panels"
-                disabled={loading}
-                colors={colors}
+                loading={loading}
               />
             </div>
 
@@ -668,13 +666,12 @@ const ExplorerPage = () => {
               >
                 Application
               </label>
-              <CustomSelect
+              <SearchableSelect
                 value={filters.application || ''}
                 onChange={(val) => setFilters({ application: val })}
                 options={dropdownOptions.applications || []}
                 placeholder="All Applications"
-                disabled={loading}
-                colors={colors}
+                loading={loading}
               />
             </div>
 
@@ -691,7 +688,7 @@ const ExplorerPage = () => {
               >
                 Incident Status
               </label>
-              <CustomSelect
+              <SearchableSelect
                 value={filters.has_incident || ''}
                 onChange={(val) => setFilters({ has_incident: val })}
                 options={[
@@ -700,8 +697,7 @@ const ExplorerPage = () => {
                   { value: 'false', label: 'No Incident' }
                 ]}
                 placeholder="All Alerts"
-                disabled={loading}
-                colors={colors}
+                loading={loading}
               />
             </div>
 
@@ -718,13 +714,12 @@ const ExplorerPage = () => {
               >
                 Operator
               </label>
-              <CustomSelect
+              <SearchableSelect
                 value={filters.operator || ''}
                 onChange={(val) => setFilters({ operator: val })}
                 options={dropdownOptions.operators || []}
                 placeholder="All Operators"
-                disabled={loading}
-                colors={colors}
+                loading={loading}
               />
             </div>
 
@@ -741,13 +736,12 @@ const ExplorerPage = () => {
               >
                 Duration
               </label>
-              <CustomSelect
+              <SearchableSelect
                 value={filters.duration_category || ''}
                 onChange={(val) => setFilters({ duration_category: val })}
                 options={dropdownOptions.durations || []}
                 placeholder="All Durations"
-                disabled={loading}
-                colors={colors}
+                loading={loading}
               />
             </div>
 

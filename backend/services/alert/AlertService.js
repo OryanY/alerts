@@ -254,6 +254,17 @@ class AlertService {
         return response;
     }
 
+    async getFilterOptions() {
+        const pool = this.getPool();
+        const result = await pool.request().query(queries.DISTINCT_FILTER_OPTIONS);
+        const rows = result.recordset || [];
+
+        const panels = [...new Set(rows.map(r => r.panel_title).filter(Boolean))].sort();
+        const applications = [...new Set(rows.map(r => r.application).filter(Boolean))].sort();
+
+        return { success: true, data: { panels, applications } };
+    }
+
     async getPanelList(params) {
         const { enabled } = this._getClusteringConfig(params);
         const queryTarget = enabled ? queries.CLUSTERED_PANEL_LIST : queries.PANEL_LIST;

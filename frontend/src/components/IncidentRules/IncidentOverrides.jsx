@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Trash2, X, Globe } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import SearchableSelect from '../common/SearchableSelect';
 
 const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMapping, assignmentGroups }) => {
     const { colors, gradients } = useTheme();
@@ -59,14 +60,49 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
     // Component for adding new overrides
     const AddOverrideDropdown = () => {
         const [isOpen, setIsOpen] = useState(false);
+        const btnRef = React.useRef(null);
+        const [dropStyle, setDropStyle] = useState({});
 
         if (unusedFields.length === 0) return null;
+
+        const openDropdown = () => {
+            if (!btnRef.current) return;
+            const rect = btnRef.current.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const dropH = Math.min(unusedFields.length * 44, 280);
+
+            if (spaceBelow < dropH + 16) {
+                // Open upward
+                setDropStyle({
+                    position: 'fixed',
+                    bottom: window.innerHeight - rect.top + 4,
+                    left: rect.left,
+                    width: Math.max(rect.width, 240),
+                    zIndex: 9999,
+                    maxHeight: 280,
+                    overflowY: 'auto',
+                });
+            } else {
+                // Open downward
+                setDropStyle({
+                    position: 'fixed',
+                    top: rect.bottom + 4,
+                    left: rect.left,
+                    width: Math.max(rect.width, 240),
+                    zIndex: 9999,
+                    maxHeight: 280,
+                    overflowY: 'auto',
+                });
+            }
+            setIsOpen(true);
+        };
 
         return (
             <div style={{ position: 'relative', display: 'inline-block', marginBottom: 20 }}>
                 <button
+                    ref={btnRef}
                     type="button"
-                    onClick={() => setIsOpen(!isOpen)}
+                    onClick={() => isOpen ? setIsOpen(false) : openDropdown()}
                     style={{
                         background: colors.bg.secondary,
                         color: colors.brand.primary,
@@ -89,23 +125,16 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
                 {isOpen && (
                     <>
                         <div
-                            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                            style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
                             onClick={() => setIsOpen(false)}
                         />
                         <div
                             style={{
-                                position: 'absolute',
-                                top: '100%',
-                                left: 0,
-                                marginTop: 8,
+                                ...dropStyle,
                                 background: colors.bg.primary,
                                 border: `1px solid ${colors.border.primary}`,
                                 borderRadius: 8,
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                                width: 240,
-                                zIndex: 100,
-                                maxHeight: 300,
-                                overflowY: 'auto'
+                                boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
                             }}
                         >
                             {unusedFields.map(field => (
@@ -128,6 +157,8 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
                                         cursor: 'pointer',
                                         borderBottom: `1px solid ${colors.border.secondary}`
                                     }}
+                                    onMouseEnter={e => e.currentTarget.style.background = colors.bg.secondary}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                 >
                                     {field.label} {field.isCustom && <span style={{ fontSize: 11, opacity: 0.6 }}>(Custom)</span>}
                                 </button>
@@ -314,27 +345,15 @@ const IncidentOverrides = ({ form, setForm, selectedMapping, customFieldsInMappi
                                         placeholder={fieldConfig.placeholder}
                                     />
                                 ) : fieldConfig.type === 'select' ? (
-                                    <select
-                                        style={{
-                                            width: '100%',
-                                            padding: '10px',
-                                            border: `1px solid ${colors.border.secondary}`,
-                                            borderRadius: 6,
-                                            fontSize: 14,
-                                            background: colors.bg.primary,
-                                            color: colors.text.primary
-                                        }}
+                                    <SearchableSelect
+                                        options={fieldConfig.options || []}
                                         value={form.incident_overrides[key] || ''}
-                                        onChange={(e) => setForm(p => ({
+                                        onChange={(val) => setForm(p => ({
                                             ...p,
-                                            incident_overrides: { ...p.incident_overrides, [key]: e.target.value }
+                                            incident_overrides: { ...p.incident_overrides, [key]: val }
                                         }))}
-                                    >
-                                        <option value="">Select Option...</option>
-                                        {fieldConfig.options?.map(opt => (
-                                            <option key={opt.id} value={opt.id}>{opt.label}</option>
-                                        ))}
-                                    </select>
+                                        placeholder="Select Option..."
+                                    />
                                 ) : fieldConfig.type === 'checkbox' ? (
                                     <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
                                         <input

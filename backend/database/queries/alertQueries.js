@@ -1,5 +1,12 @@
 // database/queries/alertQueries.js
 module.exports = {
+  // Returns all distinct panel/application names — no date range, used for dropdown population only
+  DISTINCT_FILTER_OPTIONS: `
+    SELECT DISTINCT panel_title, application
+    FROM dbo.historicalAlerts
+    WHERE panel_title IS NOT NULL AND application IS NOT NULL
+    ORDER BY panel_title ASC
+  `,
   SELECT_ALERTS: `
     SELECT {TOP_CLAUSE}
       incident_id, panel_title, application, node_name, network, object, operator,
