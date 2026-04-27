@@ -6,7 +6,7 @@ const validateQuery = (schema) => (req, res, next) => {
     return res.status(400).json({
       success: false,
       error: 'Request validation failed',
-      details: error.details.map(d => d.message)
+      details: error.details.map(d => d.context?.message || d.message)
     });
   }
   req.validatedQuery = value;
@@ -19,7 +19,7 @@ const validateBody = (schema) => (req, res, next) => {
     return res.status(400).json({
       success: false,
       error: 'Request body validation failed',
-      details: error.details.map(d => d.message)
+      details: error.details.map(d => d.context?.message || d.message)
     });
   }
   req.validatedBody = value;
@@ -32,7 +32,7 @@ const validateParams = (schema) => (req, res, next) => {
     return res.status(400).json({
       success: false,
       error: 'Request parameters validation failed',
-      details: error.details.map(d => d.message)
+      details: error.details.map(d => d.context?.message || d.message)
     });
   }
   req.validatedParams = value;

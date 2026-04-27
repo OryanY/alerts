@@ -50,10 +50,11 @@ router.get('/stats/duration-histogram', validateQuery(statsSchema), handle((q) =
 router.get('/stats/shift-analysis', validateQuery(statsSchema), handle((q) => alertService.getShiftAnalysis(q)));
 
 // ================== ENTITY ==================
-// Distinct panel/app names for UI dropdown population — no date range applied
+// Distinct panel/app/operator names for UI dropdown population — no date range applied
+// Optional ?panel_title= scopes applications and operators to that panel
 router.get('/stats/filter-options', async (req, res, next) => {
   try {
-    const result = await alertService.getFilterOptions();
+    const result = await alertService.getFilterOptions({ panel_title: req.query.panel_title });
     res.json(result);
   } catch (err) { next(err); }
 });

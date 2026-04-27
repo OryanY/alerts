@@ -24,7 +24,7 @@ const ALL_COLUMNS = getAllColumns();
 
 
 const ExplorerPage = () => {
-  const { config, getApiParams, dateRange, setDateRange, setPresetRange } = useClientConfig();
+  const { config, dateRange, setDateRange, setPresetRange } = useClientConfig();
   const { colors, styles: S } = useTheme();
   const { filters, setFilters, setPage } = useExplorerFilters();
   const { colorByDuration } = useDurationBands(config);
@@ -121,19 +121,20 @@ const ExplorerPage = () => {
       sort_order: normalizedSortOrder,
       limit: 1000,
     };
-  }, [debouncedFilters]);
+  }, [debouncedFilters, config.bands]);
 
   // useApiData automatically injects dateRange and getApiParams()
   const { data: alerts, loading, error, refetch } = useApiData('/alerts', apiParams);
-  const { data: filterOptions } = useApiData('/stats/filter-options', {});
+  const filterParams = useMemo(
+    () => filters.panel_title ? { panel_title: filters.panel_title } : {},
+    [filters.panel_title]
+  );
+  const { data: filterOptions } = useApiData('/stats/filter-options', filterParams);
 
   const dropdownOptions = useMemo(() => {
     const panels = filterOptions?.panels || [];
     const apps = filterOptions?.applications || [];
-
-    // Operators are still inferred from current view since we don't have a /stats/operators endpoint
-    const alertsData = Array.isArray(alerts) ? alerts : [];
-    const uniqueOperators = [...new Set(alertsData.map((a) => a.operator).filter(Boolean))].sort();
+    const operators = filterOptions?.operators || [];
 
     return {
       panels: [
@@ -141,12 +142,12 @@ const ExplorerPage = () => {
         ...panels.map((p) => ({ value: p, label: p })),
       ],
       applications: [
-        { value: '', label: 'All Applications' },
+        { value: '', label: filters.panel_title ? `All Applications in Panel` : 'All Applications' },
         ...apps.map((a) => ({ value: a, label: a })),
       ],
       operators: [
-        { value: '', label: 'All Operators' },
-        ...uniqueOperators.map((o) => ({ value: o, label: o })),
+        { value: '', label: filters.panel_title ? `All Operators in Panel` : 'All Operators' },
+        ...operators.map((o) => ({ value: o, label: o })),
       ],
       durations: [
         { value: '', label: 'All Durations' },
@@ -161,7 +162,7 @@ const ExplorerPage = () => {
         },
       ],
     };
-  }, [filterOptions, alerts, config.bands]);
+  }, [filterOptions, filters.panel_title, config.bands]);
 
   const processedAlerts = useMemo(() => {
     if (!alerts || !Array.isArray(alerts)) return [];
@@ -763,7 +764,14 @@ const ExplorerPage = () => {
                   type="number"
                   placeholder="Min"
                   value={filters.min_duration || ''}
-                  onChange={(e) => setFilters({ min_duration: e.target.value })}
+                  min={0}
+                  max={filters.max_duration ? Number(filters.max_duration) - 1 : undefined}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const max = Number(filters.max_duration);
+                    if (val !== '' && max && Number(val) >= max) return; // min must be strictly < max
+                    setFilters({ min_duration: val });
+                  }}
                   style={{ ...S.input, flex: 1 }}
                 />
                 <span style={{ color: colors.text.tertiary }}>—</span>
@@ -771,7 +779,13 @@ const ExplorerPage = () => {
                   type="number"
                   placeholder="Max"
                   value={filters.max_duration || ''}
-                  onChange={(e) => setFilters({ max_duration: e.target.value })}
+                  min={filters.min_duration ? Number(filters.min_duration) + 1 : 1}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const min = Number(filters.min_duration);
+                    if (val !== '' && Number(val) <= min) return; // max must be strictly > min
+                    setFilters({ max_duration: val });
+                  }}
                   style={{ ...S.input, flex: 1 }}
                 />
               </div>

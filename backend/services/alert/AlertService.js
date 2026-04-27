@@ -254,15 +254,19 @@ class AlertService {
         return response;
     }
 
-    async getFilterOptions() {
+    async getFilterOptions(params = {}) {
         const pool = this.getPool();
-        const result = await pool.request().query(queries.DISTINCT_FILTER_OPTIONS);
+        const req = pool.request();
+        req.input('panel_title', sql.NVarChar, params.panel_title || null);
+
+        const result = await req.query(queries.DISTINCT_FILTER_OPTIONS);
         const rows = result.recordset || [];
 
         const panels = [...new Set(rows.map(r => r.panel_title).filter(Boolean))].sort();
         const applications = [...new Set(rows.map(r => r.application).filter(Boolean))].sort();
+        const operators = [...new Set(rows.map(r => r.operator).filter(Boolean))].sort();
 
-        return { success: true, data: { panels, applications } };
+        return { success: true, data: { panels, applications, operators } };
     }
 
     async getPanelList(params) {

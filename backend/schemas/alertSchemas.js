@@ -54,7 +54,7 @@ const alertsSchema = Joi.object({
   // Validate duration range
   if (value.min_duration !== undefined && value.max_duration !== undefined) {
     if (value.min_duration >= value.max_duration) {
-      return helpers.error('any.invalid', { message: 'min_duration must be less than max_duration' });
+      return helpers.error('any.invalid', { message: 'min_duration must be strictly less than max_duration' });
     }
   }
 

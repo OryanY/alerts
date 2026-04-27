@@ -30,7 +30,6 @@ import {
   Shield,
   Network,
   Filter,
-  X,
 } from '../icons';
 import { useTheme } from '../contexts/ThemeContext';
 import SearchableSelect from '../components/common/SearchableSelect';
@@ -42,7 +41,6 @@ const NocDashboard = () => {
 
   const {
     config,
-    getApiParams,
     dateRange,
     setDateRange,
     setPresetRange,
@@ -77,7 +75,6 @@ const NocDashboard = () => {
 
   // Handlers
   const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);
-  const handlePanelChange = useCallback((e) => setSelectedPanel(e.target.value || null), [setSelectedPanel]);
 
 
   // Calculate threshold in minutes for display

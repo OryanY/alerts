@@ -1,11 +1,14 @@
 // database/queries/alertQueries.js
 module.exports = {
-  // Returns all distinct panel/application names — no date range, used for dropdown population only
+  // Distinct panel/app/operator names — no date range, for dropdown population.
+  // When @panel_title is set, scopes applications + operators to that panel only.
   DISTINCT_FILTER_OPTIONS: `
-    SELECT DISTINCT panel_title, application
+    SELECT DISTINCT panel_title, application, operator
     FROM dbo.historicalAlerts
-    WHERE panel_title IS NOT NULL AND application IS NOT NULL
-    ORDER BY panel_title ASC
+    WHERE panel_title IS NOT NULL
+      AND application IS NOT NULL
+      AND (@panel_title IS NULL OR panel_title = @panel_title)
+    ORDER BY panel_title ASC, application ASC
   `,
   SELECT_ALERTS: `
     SELECT {TOP_CLAUSE}
