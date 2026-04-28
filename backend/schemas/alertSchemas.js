@@ -49,7 +49,10 @@ const alertsSchema = Joi.object({
 
   // Duration filters
   min_duration: Joi.number().integer().min(0).optional(),
-  max_duration: Joi.number().integer().min(0).optional()
+  max_duration: Joi.number().integer().min(0).optional(),
+  
+  // Text Search
+  search: Joi.string().trim().max(200).optional()
 }).custom((value, helpers) => {
   // Validate duration range
   if (value.min_duration !== undefined && value.max_duration !== undefined) {

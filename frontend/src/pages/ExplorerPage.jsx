@@ -42,21 +42,13 @@ const ExplorerPage = () => {
   const filtersKey = useMemo(() => JSON.stringify(filtersNoPage), [filtersNoPage]);
 
   useEffect(() => {
-    // Check if filters actually changed (not just a re-render)
-    const filtersChanged = JSON.stringify(previousFiltersRef.current) !== JSON.stringify(filtersNoPage);
-
-    if (!filtersChanged) {
-      return; // Don't debounce if filters didn't actually change
-    }
-
-    previousFiltersRef.current = filtersNoPage;
-
     if (debounceIdRef.current) {
       clearTimeout(debounceIdRef.current);
     }
 
     debounceIdRef.current = setTimeout(() => {
-      setDebouncedFilters(filtersNoPage);
+      // Parse the key back to get the object, ensuring we have the latest closure-independent values
+      setDebouncedFilters(JSON.parse(filtersKey));
       setPage(1);
       debounceIdRef.current = null;
     }, DEBOUNCE_MS);
@@ -67,7 +59,7 @@ const ExplorerPage = () => {
         debounceIdRef.current = null;
       }
     };
-  }, [filtersNoPage, filtersKey, setPage]);
+  }, [filtersKey, setPage]);
 
   const apiParams = useMemo(() => {
     const f = debouncedFilters || {};
@@ -169,8 +161,25 @@ const ExplorerPage = () => {
     const f = debouncedFilters || {};
     let filtered = [...alerts];
 
-
-
+    // Client-side filtering fallback
+    if (f.panel_title) {
+      filtered = filtered.filter(a => a.panel_title === f.panel_title);
+    }
+    if (f.application) {
+      filtered = filtered.filter(a => a.application && String(a.application).toLowerCase().startsWith(String(f.application).toLowerCase()));
+    }
+    if (f.operator) {
+      filtered = filtered.filter(a => a.operator && String(a.operator).toLowerCase().startsWith(String(f.operator).toLowerCase()));
+    }
+    if (f.has_incident) {
+      const hasInc = f.has_incident === 'true';
+      filtered = filtered.filter(a => hasInc ? !!a.incident_number : !a.incident_number);
+    }
+    if (f.search) {
+      const s = f.search.toLowerCase();
+      filtered = filtered.filter(a => a.message?.toLowerCase().includes(s));
+    }
+    
     // Sorting
     const sortKey = f.sort_by || 'time_fired';
     const dir = (f.sort_order || 'desc').toLowerCase() === 'asc' ? 1 : -1;
