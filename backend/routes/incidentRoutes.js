@@ -28,14 +28,14 @@ router.get('/business-services', controller.getBusinessServices);
 
 router.get(
   '/incident-with-alert',
-  validateQuery(combinedCreateSchema),  
-  controller.createIncidentWithAlertGET 
+  validateQuery(combinedCreateSchema),
+  controller.createIncidentWithAlertGET
 );
 
 router.post(
   '/incident-with-alert',
-  validateBody(combinedCreateSchema),    
-  controller.createIncidentWithAlertPOST 
+  validateBody(combinedCreateSchema),
+  controller.createIncidentWithAlertPOST
 );
 
 // ================== INCIDENT CREATION ==================

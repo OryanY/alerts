@@ -18,6 +18,7 @@ class IncidentController {
     // Bind every handler so Express can call it directly
     // -----------------------------------------------------------
     this.getAssignmentGroups         = this.getAssignmentGroups.bind(this);
+    this.getNetworks                 = this.getNetworks.bind(this);
     this.getServiceOfferings         = this.getServiceOfferings.bind(this);
     this.getBusinessServices         = this.getBusinessServices.bind(this);
     this.createIncidentFromAlertGET  = this.createIncidentFromAlertGET.bind(this);
@@ -68,9 +69,20 @@ class IncidentController {
   }
 
   // ====================== OTHER REFERENCE DATA ======================
+  async getNetworks(req, res, next) {
+    try {
+      const networks = await this.incidentService.getNetworks();
+      res.json({ success: true, data: networks, count: networks.length });
+    } catch (err) {
+      console.error('❌ Error fetching networks:', err);
+      next(err);
+    }
+  }
+
   async getServiceOfferings(req, res, next) {
     try {
-      const offerings = await this.incidentService.getServiceOfferings();
+      const { parent_service } = req.query;
+      const offerings = await this.incidentService.getServiceOfferings(parent_service);
       res.json({ success: true, data: offerings, count: offerings.length });
     } catch (err) {
       console.error('❌ Error fetching service offerings:', err);
@@ -80,7 +92,8 @@ class IncidentController {
 
   async getBusinessServices(req, res, next) {
     try {
-      const services = await this.incidentService.getBusinessServices();
+      const { network } = req.query;
+      const services = await this.incidentService.getBusinessServices(network);
       res.json({ success: true, data: services, count: services.length });
     } catch (err) {
       console.error('❌ Error fetching business services:', err);

@@ -17,7 +17,8 @@ class ServiceNowClient {
         this.caches = {
             assignmentGroups: { data: null, time: null },
             serviceOfferings: { data: null, time: null },
-            businessServices: { data: null, time: null }
+            businessServices: { data: null, time: null },
+            networks: { data: null, time: null }
         };
     }
 
@@ -72,18 +73,19 @@ class ServiceNowClient {
         }
     }
 
-    async _fetchCachedReferenceData(cacheKey, tableEnv, queryEnv, fieldsEnv, defaultTable, defaultQuery, defaultFields, valueField = 'sys_id', labelField = 'name') {
+    async _fetchCachedReferenceData(cacheKey, tableEnv, queryEnv, fieldsEnv, defaultTable, defaultQuery, defaultFields, valueField = 'sys_id', labelField = 'name', overrideQuery = null) {
         if (!this.isEnabled()) return [];
 
         const now = Date.now();
         const cacheObj = this.caches[cacheKey];
 
-        if (cacheObj && cacheObj.data && cacheObj.time && (now - cacheObj.time) < this.CACHE_TTL) {
+        // If we have an override query, skip cache to ensure we get filtered data
+        if (!overrideQuery && cacheObj && cacheObj.data && cacheObj.time && (now - cacheObj.time) < this.CACHE_TTL) {
             return cacheObj.data;
         }
 
         const table = process.env[tableEnv] || defaultTable;
-        const query = process.env[queryEnv] || defaultQuery;
+        const query = overrideQuery || process.env[queryEnv] || defaultQuery;
         const fields = process.env[fieldsEnv] || defaultFields;
 
         if (!table) {
@@ -110,16 +112,18 @@ class ServiceNowClient {
 
             const items = response.data.result.map(item => ({
                 value: item[valueField] || item.sys_id || item.name, 
-                label: item[labelField] ? item[labelField].trim() : 'Unknown'
+                label: (item[labelField] || item.label || item.name || 'Unknown').toString().trim()
             })).sort((a, b) => a.label.localeCompare(b.label));
 
-            this.caches[cacheKey] = { data: items, time: Date.now() };
-            console.log(`✅ Cached ${items.length} ${cacheKey}`);
+            if (!overrideQuery) {
+                this.caches[cacheKey] = { data: items, time: Date.now() };
+                console.log(`✅ Cached ${items.length} ${cacheKey}`);
+            }
 
             return items;
         } catch (error) {
             console.error(`❌ Error fetching ${cacheKey}:`, error.message);
-            if (cacheObj && cacheObj.data) {
+            if (!overrideQuery && cacheObj && cacheObj.data) {
                 console.warn(`⚠️ Using stale cache for ${cacheKey} due to API error`);
                 return cacheObj.data;
             }
@@ -136,21 +140,45 @@ class ServiceNowClient {
         );
     }
 
-    async fetchServiceOfferings() {
+    async fetchNetworks() {
         return this._fetchCachedReferenceData(
-            'serviceOfferings',
-            'SN_OFFERING_TABLE', 'SN_OFFERING_QUERY', 'SN_OFFERING_FIELDS',
-            'service_offering', 'active=true', 'sys_id,name',
-            'name', 'name' // Use name for the value
+            'networks',
+            'SN_NETWORK_TABLE', 'SN_NETWORK_QUERY', 'SN_NETWORK_FIELDS',
+            'sys_choice', 'name=incident^element=u_network^inactive=false', 'value,label',
+            'value', 'label'
         );
     }
 
-    async fetchBusinessServices() {
+    async fetchServiceOfferings(parentService = null) {
+        let query = 'active=true';
+        if (parentService) {
+            // This is a guess on field name, often 'parent_service' or via cmdb_rel_ci
+            // Using a simple query if it's a field on the offering
+            query += `^parent_service.name=${parentService}`;
+        }
+
+        return this._fetchCachedReferenceData(
+            'serviceOfferings',
+            'SN_OFFERING_TABLE', 'SN_OFFERING_QUERY', 'SN_OFFERING_FIELDS',
+            'service_offering', query, 'sys_id,name',
+            'name', 'name',
+            parentService ? query : null
+        );
+    }
+
+    async fetchBusinessServices(network = null) {
+        let query = 'active=true';
+        if (network) {
+            // Again, guessing the relationship field name
+            query += `^u_network=${network}`;
+        }
+
         return this._fetchCachedReferenceData(
             'businessServices',
             'SN_BUSINESS_TABLE', 'SN_BUSINESS_QUERY', 'SN_BUSINESS_FIELDS',
-            'cmdb_ci_service', 'active=true', 'sys_id,name',
-            'name', 'name' // Use name for the value
+            'cmdb_ci_service', query, 'sys_id,name',
+            'name', 'name',
+            network ? query : null
         );
     }
 

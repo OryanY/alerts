@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     Plus,
     Edit,
     Save,
     PlusCircle,
     MinusCircle,
+    ChevronLeft
 } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -29,6 +30,8 @@ const excludeFromCustom = [
     'updated_at',
     ...baseMandatoryFields,
 ];
+
+const OTHER_VALUE = '___OTHER___';
 
 const TemplateHints = ({ colors }) => (
     <div
@@ -82,10 +85,6 @@ const MappingForm = ({
     PATTERN_COLORS,
     assignmentGroups,
     loadingGroups,
-    serviceOfferings,
-    loadingOfferings,
-    businessServices,
-    loadingBusiness,
     editingItem,
     onSaved,
     onCancel,
@@ -105,7 +104,23 @@ const MappingForm = ({
 
     const [customFields, setCustomFields] = useState({});
 
-    const resetLocal = () => {
+    // Reference Data State
+    const [networks, setNetworks] = useState([]);
+    const [loadingNetworks, setLoadingNetworks] = useState(false);
+    const [businessServices, setBusinessServices] = useState([]);
+    const [loadingBusiness, setLoadingBusiness] = useState(false);
+    const [serviceOfferings, setServiceOfferings] = useState([]);
+    const [loadingOfferings, setLoadingOfferings] = useState(false);
+
+    // "Other" manual input state
+    const [useOtherNetwork, setUseOtherNetwork] = useState(false);
+    const [otherNetwork, setOtherNetwork] = useState('');
+    const [useOtherBusiness, setUseOtherBusiness] = useState(false);
+    const [otherBusiness, setOtherBusiness] = useState('');
+    const [useOtherOffering, setUseOtherOffering] = useState(false);
+    const [otherOffering, setOtherOffering] = useState('');
+
+    const resetLocal = useCallback(() => {
         setForm({
             grafana_names: [],
             service_offering: '',
@@ -116,8 +131,82 @@ const MappingForm = ({
             u_system_failure: false,
         });
         setCustomFields({});
-    };
+        setUseOtherNetwork(false);
+        setOtherNetwork('');
+        setUseOtherBusiness(false);
+        setOtherBusiness('');
+        setUseOtherOffering(false);
+        setOtherOffering('');
+    }, []);
 
+    // Fetch initial data (Assignment groups come from parent, Networks we fetch here)
+    useEffect(() => {
+        const fetchNetworks = async () => {
+            try {
+                setLoadingNetworks(true);
+                const res = await fetch(`${API_BASE}/incidents/networks`, { credentials: 'include' });
+                const data = await safeJson(res);
+                if (data.success) {
+                    setNetworks(data.data || []);
+                }
+            } catch (e) {
+                console.warn('Could not fetch networks:', e.message);
+            } finally {
+                setLoadingNetworks(false);
+            }
+        };
+        fetchNetworks();
+    }, []);
+
+    // Cascade: Network -> Business Services
+    useEffect(() => {
+        if (!form.u_network || useOtherNetwork) {
+            setBusinessServices([]);
+            return;
+        }
+
+        const fetchBusinessServices = async () => {
+            try {
+                setLoadingBusiness(true);
+                const res = await fetch(`${API_BASE}/incidents/business-services?network=${encodeURIComponent(form.u_network)}`, { credentials: 'include' });
+                const data = await safeJson(res);
+                if (data.success) {
+                    setBusinessServices(data.data || []);
+                }
+            } catch (e) {
+                console.warn('Could not fetch business services:', e.message);
+            } finally {
+                setLoadingBusiness(false);
+            }
+        };
+        fetchBusinessServices();
+    }, [form.u_network, useOtherNetwork]);
+
+    // Cascade: Business Service -> Service Offerings
+    useEffect(() => {
+        if (!form.business_service || useOtherBusiness) {
+            setServiceOfferings([]);
+            return;
+        }
+
+        const fetchServiceOfferings = async () => {
+            try {
+                setLoadingOfferings(true);
+                const res = await fetch(`${API_BASE}/incidents/service-offerings?parent_service=${encodeURIComponent(form.business_service)}`, { credentials: 'include' });
+                const data = await safeJson(res);
+                if (data.success) {
+                    setServiceOfferings(data.data || []);
+                }
+            } catch (e) {
+                console.warn('Could not fetch service offerings:', e.message);
+            } finally {
+                setLoadingOfferings(false);
+            }
+        };
+        fetchServiceOfferings();
+    }, [form.business_service, useOtherBusiness]);
+
+    // Handle Edit Mode Initialization
     useEffect(() => {
         if (!editingItem) {
             resetLocal();
@@ -131,7 +220,7 @@ const MappingForm = ({
             return item;
         });
 
-        const formData = {
+        setForm({
             grafana_names: patterns,
             service_offering: editingItem.service_offering || '',
             business_service: editingItem.business_service || '',
@@ -139,9 +228,7 @@ const MappingForm = ({
             u_impact_technology: editingItem.u_impact_technology || '',
             assignment_group: editingItem.assignment_group || '',
             u_system_failure: Boolean(editingItem.u_system_failure),
-        };
-
-        setForm(formData);
+        });
 
         const custom = {};
         Object.keys(editingItem).forEach((key) => {
@@ -149,30 +236,23 @@ const MappingForm = ({
                 custom[key] = editingItem[key] || '';
             }
         });
-
         setCustomFields(custom);
-    }, [editingItem]);
+
+    }, [editingItem, resetLocal]);
 
     const addCustomField = () => {
         const fieldName = prompt('Enter field name (e.g., u_eck_name, u_oracle_error):');
         if (!fieldName) return;
-
         const sanitized = fieldName.trim().toLowerCase().replace(/\s+/g, '_');
-
         if (excludeFromCustom.includes(sanitized)) {
             alert('This field name is reserved or already exists as a base field');
             return;
         }
-
         if (customFields[sanitized] !== undefined) {
             alert('This custom field already exists');
             return;
         }
-
-        setCustomFields((prev) => ({
-            ...prev,
-            [sanitized]: '',
-        }));
+        setCustomFields((prev) => ({ ...prev, [sanitized]: '' }));
     };
 
     const removeCustomField = (fieldName) => {
@@ -184,30 +264,20 @@ const MappingForm = ({
     };
 
     const updateCustomField = (fieldName, value) => {
-        setCustomFields((prev) => ({
-            ...prev,
-            [fieldName]: value,
-        }));
+        setCustomFields((prev) => ({ ...prev, [fieldName]: value }));
     };
 
     const validateForm = () => {
         const errors = [];
-
         if (!form.grafana_names || form.grafana_names.length === 0) {
             errors.push('At least one Grafana application pattern is required');
         }
-
         form.grafana_names.forEach((pattern, idx) => {
             if (!pattern.value || !pattern.value.trim()) {
                 errors.push(`Pattern ${idx + 1}: Value is required`);
             }
-
             if (pattern.type === 'regex') {
-                try {
-                    new RegExp(pattern.value);
-                } catch (e) {
-                    errors.push(`Pattern ${idx + 1}: Invalid regex - ${e.message}`);
-                }
+                try { new RegExp(pattern.value); } catch (e) { errors.push(`Pattern ${idx + 1}: Invalid regex - ${e.message}`); }
             }
         });
 
@@ -220,7 +290,12 @@ const MappingForm = ({
         };
 
         Object.entries(requiredFields).forEach(([key, label]) => {
-            if (!form[key] || !form[key].trim()) {
+            const val = key === 'u_network' && useOtherNetwork ? otherNetwork :
+                       key === 'business_service' && useOtherBusiness ? otherBusiness :
+                       key === 'service_offering' && useOtherOffering ? otherOffering :
+                       form[key];
+            
+            if (!val || !val.toString().trim()) {
                 errors.push(`${label} is required`);
             }
         });
@@ -230,12 +305,9 @@ const MappingForm = ({
 
     const save = async (e) => {
         e.preventDefault();
-
         const validationErrors = validateForm();
         if (validationErrors.length > 0) {
-            const errorMessage = 'Please fix the following errors:\n\n' +
-                validationErrors.map((err, i) => `${i + 1}. ${err}`).join('\n');
-
+            const errorMessage = 'Please fix the following errors:\n\n' + validationErrors.map((err, i) => `${i + 1}. ${err}`).join('\n');
             onError?.(errorMessage);
             alert(errorMessage);
             return;
@@ -245,16 +317,14 @@ const MappingForm = ({
             const dataToSave = {
                 ...form,
                 ...customFields,
-                service_offering: form.service_offering?.trim(),
-                business_service: form.business_service?.trim(),
-                u_network: form.u_network?.trim(),
+                u_network: useOtherNetwork ? otherNetwork : form.u_network,
+                business_service: useOtherBusiness ? otherBusiness : form.business_service,
+                service_offering: useOtherOffering ? otherOffering : form.service_offering,
                 u_impact_technology: form.u_impact_technology?.trim(),
                 assignment_group: form.assignment_group?.trim(),
             };
 
-            const url = editingItem
-                ? `${API_BASE}/incidents/system-mappings/${editingItem._id}`
-                : `${API_BASE}/incidents/system-mappings`;
+            const url = editingItem ? `${API_BASE}/incidents/system-mappings/${editingItem._id}` : `${API_BASE}/incidents/system-mappings`;
             const method = editingItem ? 'PUT' : 'POST';
 
             const res = await fetch(url, {
@@ -265,7 +335,6 @@ const MappingForm = ({
             });
 
             const data = await safeJson(res);
-
             if (data.success) {
                 onSaved?.();
             } else {
@@ -274,6 +343,22 @@ const MappingForm = ({
         } catch (e2) {
             onError?.('Error saving mapping: ' + e2.message);
         }
+    };
+
+    const getOptionsWithOther = (options) => [
+        ...options,
+        { value: OTHER_VALUE, label: '+ Other (Manual Entry)' }
+    ];
+
+    const inputStyle = {
+        width: '100%',
+        padding: '10px 12px',
+        borderRadius: 8,
+        border: `1px solid ${colors.border.primary}`,
+        background: colors.bg.primary,
+        color: colors.text.primary,
+        fontSize: 14,
+        outline: 'none',
     };
 
     return (
@@ -322,7 +407,7 @@ const MappingForm = ({
                     onSubmit={save}
                     style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
                 >
-                    {/* Grafana Application Patterns (Decomposed) */}
+                    {/* Grafana Application Patterns */}
                     <MappingFormPatternBuilder
                         grafanaNames={form.grafana_names}
                         onPatternsChange={(newPatterns) =>
@@ -343,16 +428,137 @@ const MappingForm = ({
                             gap: 20,
                         }}
                     >
+                        {/* 1. Network (The Trigger) */}
                         <div>
-                            <label
-                                style={{
-                                    display: 'block',
-                                    marginBottom: 8,
-                                    fontSize: 13,
-                                    fontWeight: 600,
-                                    color: colors.text.secondary,
-                                }}
-                            >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
+                                    Network
+                                </label>
+                                {useOtherNetwork && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setUseOtherNetwork(false); setForm({...form, u_network: ''}); }}
+                                        style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                    >
+                                        <ChevronLeft size={12} /> Back to List
+                                    </button>
+                                )}
+                            </div>
+                            {useOtherNetwork ? (
+                                <input
+                                    type="text"
+                                    autoFocus
+                                    placeholder="Enter network manually..."
+                                    value={otherNetwork}
+                                    onChange={(e) => setOtherNetwork(e.target.value)}
+                                    style={inputStyle}
+                                />
+                            ) : (
+                                <SearchableSelect
+                                    options={getOptionsWithOther(networks)}
+                                    value={form.u_network}
+                                    onChange={(val) => {
+                                        if (val === OTHER_VALUE) {
+                                            setUseOtherNetwork(true);
+                                        } else {
+                                            setForm({ ...form, u_network: val, business_service: '', service_offering: '' });
+                                        }
+                                    }}
+                                    placeholder="Select Network..."
+                                    loading={loadingNetworks}
+                                />
+                            )}
+                        </div>
+
+                        {/* 2. Business Service (Depends on Network) */}
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
+                                    Business Service
+                                </label>
+                                {useOtherBusiness && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setUseOtherBusiness(false); setForm({...form, business_service: ''}); }}
+                                        style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                    >
+                                        <ChevronLeft size={12} /> Back to List
+                                    </button>
+                                )}
+                            </div>
+                            {useOtherBusiness ? (
+                                <input
+                                    type="text"
+                                    autoFocus
+                                    placeholder="Enter business service manually..."
+                                    value={otherBusiness}
+                                    onChange={(e) => setOtherBusiness(e.target.value)}
+                                    style={inputStyle}
+                                />
+                            ) : (
+                                <SearchableSelect
+                                    options={getOptionsWithOther(businessServices)}
+                                    value={form.business_service}
+                                    disabled={!form.u_network && !useOtherNetwork}
+                                    onChange={(val) => {
+                                        if (val === OTHER_VALUE) {
+                                            setUseOtherBusiness(true);
+                                        } else {
+                                            setForm({ ...form, business_service: val, service_offering: '' });
+                                        }
+                                    }}
+                                    placeholder={(!form.u_network && !useOtherNetwork) ? "Select Network First" : "Select Business Service..."}
+                                    loading={loadingBusiness}
+                                />
+                            )}
+                        </div>
+
+                        {/* 3. Service Offering (Depends on Business Service) */}
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
+                                    Service Offering
+                                </label>
+                                {useOtherOffering && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setUseOtherOffering(false); setForm({...form, service_offering: ''}); }}
+                                        style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                    >
+                                        <ChevronLeft size={12} /> Back to List
+                                    </button>
+                                )}
+                            </div>
+                            {useOtherOffering ? (
+                                <input
+                                    type="text"
+                                    autoFocus
+                                    placeholder="Enter service offering manually..."
+                                    value={otherOffering}
+                                    onChange={(e) => setOtherOffering(e.target.value)}
+                                    style={inputStyle}
+                                />
+                            ) : (
+                                <SearchableSelect
+                                    options={getOptionsWithOther(serviceOfferings)}
+                                    value={form.service_offering}
+                                    disabled={!form.business_service && !useOtherBusiness}
+                                    onChange={(val) => {
+                                        if (val === OTHER_VALUE) {
+                                            setUseOtherOffering(true);
+                                        } else {
+                                            setForm({ ...form, service_offering: val });
+                                        }
+                                    }}
+                                    placeholder={(!form.business_service && !useOtherBusiness) ? "Select Business Service First" : "Select Service Offering..."}
+                                    loading={loadingOfferings}
+                                />
+                            )}
+                        </div>
+
+                        {/* 4. Assignment Group (Standard Select) */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
                                 Assignment Group
                             </label>
                             <SearchableSelect
@@ -364,140 +570,30 @@ const MappingForm = ({
                             />
                         </div>
 
+                        {/* 5. Impact Technology */}
                         <div>
-                            <label
-                                style={{
-                                    display: 'block',
-                                    marginBottom: 8,
-                                    fontSize: 13,
-                                    fontWeight: 600,
-                                    color: colors.text.secondary,
-                                }}
-                            >
-                                Business Service
-                            </label>
-                            <SearchableSelect
-                                options={businessServices}
-                                value={form.business_service}
-                                onChange={(val) => setForm({ ...form, business_service: val })}
-                                placeholder="Select Business Service..."
-                                loading={loadingBusiness}
-                            />
-                        </div>
-
-                        <div>
-                            <label
-                                style={{
-                                    display: 'block',
-                                    marginBottom: 8,
-                                    fontSize: 13,
-                                    fontWeight: 600,
-                                    color: colors.text.secondary,
-                                }}
-                            >
-                                Service Offering
-                            </label>
-                            <SearchableSelect
-                                options={serviceOfferings}
-                                value={form.service_offering}
-                                onChange={(val) => setForm({ ...form, service_offering: val })}
-                                placeholder="Select Service Offering..."
-                                loading={loadingOfferings}
-                            />
-                        </div>
-
-                        <div>
-                            <label
-                                style={{
-                                    display: 'block',
-                                    marginBottom: 8,
-                                    fontSize: 13,
-                                    fontWeight: 600,
-                                    color: colors.text.secondary,
-                                }}
-                            >
-                                Network
-                            </label>
-                            <input
-                                type="text"
-                                value={form.u_network}
-                                onChange={(e) =>
-                                    setForm({ ...form, u_network: e.target.value })
-                                }
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    borderRadius: 8,
-                                    border: `1px solid ${colors.border.primary}`,
-                                    background: colors.bg.primary,
-                                    color: colors.text.primary,
-                                    fontSize: 14,
-                                    outline: 'none',
-                                }}
-                            />
-                        </div>
-
-                        <div>
-                            <label
-                                style={{
-                                    display: 'block',
-                                    marginBottom: 8,
-                                    fontSize: 13,
-                                    fontWeight: 600,
-                                    color: colors.text.secondary,
-                                }}
-                            >
+                            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
                                 Impact Technology
                             </label>
                             <input
                                 type="text"
                                 value={form.u_impact_technology}
-                                onChange={(e) =>
-                                    setForm({ ...form, u_impact_technology: e.target.value })
-                                }
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    borderRadius: 8,
-                                    border: `1px solid ${colors.border.primary}`,
-                                    background: colors.bg.primary,
-                                    color: colors.text.primary,
-                                    fontSize: 14,
-                                    outline: 'none',
-                                }}
+                                onChange={(e) => setForm({ ...form, u_impact_technology: e.target.value })}
+                                style={inputStyle}
+                                placeholder="e.g. {{ network }} Monitoring"
                             />
                         </div>
 
+                        {/* 6. System Failure */}
                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <label
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 12,
-                                    cursor: 'pointer',
-                                    userSelect: 'none',
-                                }}
-                            >
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', userSelect: 'none' }}>
                                 <input
                                     type="checkbox"
                                     checked={form.u_system_failure}
-                                    onChange={(e) =>
-                                        setForm({ ...form, u_system_failure: e.target.checked })
-                                    }
-                                    style={{
-                                        width: 18,
-                                        height: 18,
-                                        accentColor: colors.brand.primary,
-                                        cursor: 'pointer',
-                                    }}
+                                    onChange={(e) => setForm({ ...form, u_system_failure: e.target.checked })}
+                                    style={{ width: 18, height: 18, accentColor: colors.brand.primary, cursor: 'pointer' }}
                                 />
-                                <span
-                                    style={{
-                                        fontSize: 14,
-                                        fontWeight: 600,
-                                        color: colors.text.primary,
-                                    }}
-                                >
+                                <span style={{ fontSize: 14, fontWeight: 600, color: colors.text.primary }}>
                                     System Failure
                                 </span>
                             </label>
@@ -505,30 +601,9 @@ const MappingForm = ({
                     </div>
 
                     {/* Custom Fields */}
-                    <div
-                        style={{
-                            padding: 20,
-                            background: colors.bg.tertiary,
-                            borderRadius: 10,
-                            border: `1px solid ${colors.border.primary}`,
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                marginBottom: 16,
-                            }}
-                        >
-                            <h4
-                                style={{
-                                    margin: 0,
-                                    fontSize: 15,
-                                    fontWeight: 600,
-                                    color: colors.text.primary,
-                                }}
-                            >
+                    <div style={{ padding: 20, background: colors.bg.tertiary, borderRadius: 10, border: `1px solid ${colors.border.primary}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <h4 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: colors.text.primary }}>
                                 Additional Custom Fields
                             </h4>
                             <button
@@ -554,63 +629,21 @@ const MappingForm = ({
                         </div>
 
                         {Object.keys(customFields).length === 0 ? (
-                            <div
-                                style={{
-                                    textAlign: 'center',
-                                    padding: 20,
-                                    color: colors.text.tertiary,
-                                    fontSize: 13,
-                                    fontStyle: 'italic',
-                                }}
-                            >
+                            <div style={{ textAlign: 'center', padding: 20, color: colors.text.tertiary, fontSize: 13, fontStyle: 'italic' }}>
                                 No custom fields defined.
                             </div>
                         ) : (
-                            <div
-                                style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                                    gap: 12,
-                                }}
-                            >
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                                 {Object.entries(customFields).map(([key, value]) => (
-                                    <div
-                                        key={key}
-                                        style={{
-                                            background: colors.bg.secondary,
-                                            padding: 12,
-                                            borderRadius: 8,
-                                            border: `1px solid ${colors.border.primary}`,
-                                            position: 'relative',
-                                        }}
-                                    >
-                                        <div
-                                            style={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                marginBottom: 4,
-                                            }}
-                                        >
-                                            <label
-                                                style={{
-                                                    fontSize: 11,
-                                                    fontWeight: 600,
-                                                    color: colors.text.secondary,
-                                                    fontFamily: 'monospace',
-                                                }}
-                                            >
+                                    <div key={key} style={{ background: colors.bg.secondary, padding: 12, borderRadius: 8, border: `1px solid ${colors.border.primary}`, position: 'relative' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 600, color: colors.text.secondary, fontFamily: 'monospace' }}>
                                                 {key}
                                             </label>
                                             <button
                                                 type="button"
                                                 onClick={() => removeCustomField(key)}
-                                                style={{
-                                                    background: 'none',
-                                                    border: 'none',
-                                                    color: colors.text.tertiary,
-                                                    cursor: 'pointer',
-                                                    padding: 0,
-                                                }}
+                                                style={{ background: 'none', border: 'none', color: colors.text.tertiary, cursor: 'pointer', padding: 0 }}
                                                 title="Remove field"
                                             >
                                                 <MinusCircle size={14} />
@@ -621,15 +654,7 @@ const MappingForm = ({
                                             value={value}
                                             onChange={(e) => updateCustomField(key, e.target.value)}
                                             placeholder="Value"
-                                            style={{
-                                                width: '100%',
-                                                padding: '6px 10px',
-                                                borderRadius: 6,
-                                                border: `1px solid ${colors.border.secondary}`,
-                                                fontSize: 13,
-                                                background: colors.bg.primary,
-                                                color: colors.text.primary,
-                                            }}
+                                            style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: `1px solid ${colors.border.secondary}`, fontSize: 13, background: colors.bg.primary, color: colors.text.primary }}
                                         />
                                     </div>
                                 ))}
@@ -637,28 +662,11 @@ const MappingForm = ({
                         )}
                     </div>
 
-                    <div
-                        style={{
-                            display: 'flex',
-                            justifyContent: 'flex-end',
-                            gap: 12,
-                            marginTop: 12,
-                            paddingTop: 20,
-                            borderTop: `1px solid ${colors.border.secondary}`,
-                        }}
-                    >
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 12, paddingTop: 20, borderTop: `1px solid ${colors.border.secondary}` }}>
                         <button
                             type="button"
                             onClick={onCancel}
-                            style={{
-                                background: 'transparent',
-                                color: colors.text.secondary,
-                                border: 'none',
-                                padding: '10px 20px',
-                                fontSize: 14,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                            }}
+                            style={{ background: 'transparent', color: colors.text.secondary, border: 'none', padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
                         >
                             Cancel
                         </button>

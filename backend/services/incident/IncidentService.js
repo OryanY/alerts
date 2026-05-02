@@ -89,12 +89,16 @@ class IncidentService {
 
     // ================== OTHER REFERENCE DATA ==================
 
-    async getServiceOfferings() {
-        return await this.serviceNowClient.fetchServiceOfferings();
+    async getNetworks() {
+        return await this.serviceNowClient.fetchNetworks();
     }
 
-    async getBusinessServices() {
-        return await this.serviceNowClient.fetchBusinessServices();
+    async getServiceOfferings(parentService = null) {
+        return await this.serviceNowClient.fetchServiceOfferings(parentService);
+    }
+
+    async getBusinessServices(network = null) {
+        return await this.serviceNowClient.fetchBusinessServices(network);
     }
 
     // ================== SERVICENOW ALERT SHORTCUTS ==================

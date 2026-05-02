@@ -70,7 +70,7 @@ const dbConfig = {
     encrypt: process.env.SQL_ENCRYPT === 'true' || false,
     trustServerCertificate: true,
     connectTimeout: 30000,
-    requestTimeout: 30000
+    requestTimeout: 60000
   },
   pool: {
     max: process.env.SQL_POOL_MAX || 10,
@@ -86,9 +86,9 @@ const mongoPassword = process.env.MONGO_PASSWORD;
 const mongoHost = process.env.MONGO_HOST;
 const mongoDb = process.env.MONGO_DB;
 const mongoConfig = {
-    uri: mongoHost.includes('localhost') ? `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authSource=admin` : `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true&replicaSet=mgk-grafana2sn-znp`,
-    database: process.env.MONGO_DB,
-    collections: {
+  uri: mongoHost.includes('localhost') ? `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authSource=admin` : `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true&replicaSet=mgk-grafana2sn-znp`,
+  database: process.env.MONGO_DB,
+  collections: {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',
     assignmentGroups: 'assignment_groups',

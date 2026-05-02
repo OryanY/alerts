@@ -1,8 +1,14 @@
 // services/incident/SystemMappingService.js
 const { ObjectId } = require('mongodb');
+const { LRUCache } = require('lru-cache');
 const { getMongoDb } = require('../../database/connection');
 const { mongoConfig } = require('../../config');
 const helpers = require('./incidentHelpers');
+
+const mappingCache = new LRUCache({
+    max: 1,
+    ttl: 5 * 60 * 1000
+});
 
 class SystemMappingService {
     constructor() {
@@ -17,7 +23,16 @@ class SystemMappingService {
     }
 
     async getSystemMappings() {
-        return this.collection.find({}).toArray();
+        const CACHE_KEY = 'all';
+        const cached = mappingCache.get(CACHE_KEY);
+        if (cached) return cached;
+        const mappings = await this.collection.find({}).toArray();
+        mappingCache.set(CACHE_KEY, mappings);
+        return mappings;
+    }
+
+    _invalidateCache() {
+        mappingCache.clear();
     }
 
     async getMappingByApplication(grafanaName) {
@@ -64,6 +79,7 @@ class SystemMappingService {
         delete dataToInsert.grafana_name;
 
         const result = await this.collection.insertOne(dataToInsert);
+        this._invalidateCache();
         return { _id: result.insertedId, ...dataToInsert };
     }
 
@@ -83,19 +99,21 @@ class SystemMappingService {
         const objId = new ObjectId(id);
         const result = await this.collection.updateOne({ _id: objId }, { $set: updateData });
         if (result.matchedCount === 0) throw new Error('System mapping not found');
+        this._invalidateCache();
         return this.collection.findOne({ _id: objId });
     }
 
     async deleteSystemMapping(id) {
         const objId = new ObjectId(id);
-        // We handle dependency checking in the controller or via a shared db getter to avoid cyclic dependencies
         const db = getMongoDb();
         const rulesCount = await db.collection(mongoConfig.collections.incidentRules).countDocuments({ system_mapping_id: objId });
         if (rulesCount > 0) throw new Error(`Cannot delete mapping. ${rulesCount} incident rules depend on it.`);
 
         const result = await this.collection.deleteOne({ _id: objId });
         if (result.deletedCount === 0) throw new Error('System mapping not found');
-        return { deletedCount: result.deletedCount };
+        this._invalidateCache();
+        // Fix: return { message } so the controller's res.json({ message: result.message }) works correctly
+        return { message: 'System mapping deleted successfully' };
     }
 }
 

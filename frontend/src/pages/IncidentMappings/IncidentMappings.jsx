@@ -44,16 +44,9 @@ const IncidentMappings = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [assignmentGroups, setAssignmentGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
-  
-  const [serviceOfferings, setServiceOfferings] = useState([]);
-  const [loadingOfferings, setLoadingOfferings] = useState(false);
-  
-  const [businessServices, setBusinessServices] = useState([]);
-  const [loadingBusiness, setLoadingBusiness] = useState(false);
 
   const fetchMappings = async () => {
     try {
-      setLoading(true);
       setLoading(true);
       const res = await fetch(`${API_BASE}/incidents/system-mappings`, { credentials: 'include' });
       const data = await safeJson(res);
@@ -62,7 +55,6 @@ const IncidentMappings = () => {
       } else {
         const errorMsg = data.error?.message || 'Failed to fetch system mappings';
         if (Object.keys(data).length === 0) {
-          // Empty response (likely 401/403)
           setError('Authentication required');
         } else {
           setError(errorMsg);
@@ -90,41 +82,9 @@ const IncidentMappings = () => {
     }
   };
 
-  const fetchServiceOfferings = async () => {
-    try {
-      setLoadingOfferings(true);
-      const res = await fetch(`${API_BASE}/incidents/service-offerings`, { credentials: 'include' });
-      const data = await safeJson(res);
-      if (data.success) {
-        setServiceOfferings(data.data || []);
-      }
-    } catch (e) {
-      console.warn('Could not fetch service offerings:', e.message);
-    } finally {
-      setLoadingOfferings(false);
-    }
-  };
-
-  const fetchBusinessServices = async () => {
-    try {
-      setLoadingBusiness(true);
-      const res = await fetch(`${API_BASE}/incidents/business-services`, { credentials: 'include' });
-      const data = await safeJson(res);
-      if (data.success) {
-        setBusinessServices(data.data || []);
-      }
-    } catch (e) {
-      console.warn('Could not fetch business services:', e.message);
-    } finally {
-      setLoadingBusiness(false);
-    }
-  };
-
   useEffect(() => {
     fetchMappings();
     fetchAssignmentGroups();
-    fetchServiceOfferings();
-    fetchBusinessServices();
   }, []);
 
   const handleCreateClick = () => {
@@ -334,10 +294,6 @@ const IncidentMappings = () => {
             PATTERN_COLORS={PATTERN_COLORS}
             assignmentGroups={assignmentGroups}
             loadingGroups={loadingGroups}
-            serviceOfferings={serviceOfferings}
-            loadingOfferings={loadingOfferings}
-            businessServices={businessServices}
-            loadingBusiness={loadingBusiness}
             editingItem={editingItem}
             onSaved={handleSaved}
             onCancel={handleCancelForm}
