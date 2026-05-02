@@ -1,4 +1,4 @@
-import { Edit, Plus, Eye, Globe, Check } from 'lucide-react';
+import { Edit, Plus, Eye } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import ConditionBuilder from './ConditionBuilder';
 import IncidentOverrides from './IncidentOverrides';

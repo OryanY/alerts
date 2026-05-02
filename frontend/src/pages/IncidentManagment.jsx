@@ -1,36 +1,63 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Settings, Target } from 'lucide-react'; // Added History icon
 
 import IncidentMappings from './IncidentMappings/IncidentMappings.jsx';
 import IncidentRules from './IncidentRules.jsx';
 
 import { useTheme } from '../contexts/ThemeContext';
+import { useTopBar } from '../contexts/TopBarContext';
 import { createThemedStyles } from '../utils/themedStyles';
 
 const IncidentManagement = () => {
   const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules' 
 
   const { colors } = useTheme();
+  const { setTopBarSlots, clearTopBarSlots } = useTopBar();
   const S = createThemedStyles(colors);
 
   const isMappings = activeTab === 'mappings';
   const isRules = activeTab === 'rules';
-  // Helper for button style
-  const getButtonStyle = (isActive, baseColor) => ({
-    border: 'none',
-    borderRadius: 12,
-    padding: '12px 24px',
-    fontSize: 16,
-    fontWeight: 600,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    transition: 'all 0.2s ease',
-    background: isActive ? baseColor : 'transparent',
-    color: isActive ? colors.text.inverse : colors.text.secondary,
-    boxShadow: isActive ? colors.shadow.md : 'none'
-  });
+  const topBarSlots = useMemo(() => ({
+    controls: (
+      <div
+        className="ops-topbar-segmented"
+        style={{
+          background: colors.bg.tertiary,
+          border: `1px solid ${colors.border.primary}`,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setActiveTab('mappings')}
+          className="ops-topbar-segment"
+          style={{
+            background: isMappings ? colors.brand.primary : 'transparent',
+            color: isMappings ? colors.text.inverse : colors.text.secondary,
+          }}
+        >
+          <Settings size={14} />
+          System Mappings
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('rules')}
+          className="ops-topbar-segment"
+          style={{
+            background: isRules ? colors.semantic.info : 'transparent',
+            color: isRules ? colors.text.inverse : colors.text.secondary,
+          }}
+        >
+          <Target size={14} />
+          Smart Rules
+        </button>
+      </div>
+    ),
+  }), [colors, isMappings, isRules]);
+
+  useEffect(() => {
+    setTopBarSlots(topBarSlots);
+    return clearTopBarSlots;
+  }, [setTopBarSlots, clearTopBarSlots, topBarSlots]);
 
   return (
     <div style={{
@@ -39,43 +66,6 @@ const IncidentManagement = () => {
       padding: 24,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
-
-      {/* Tabs Wrapper */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        marginBottom: 32
-      }}>
-        <div style={{
-          background: colors.bg.secondary,
-          borderRadius: 16,
-          padding: 8,
-          display: 'flex',
-          gap: 8,
-          boxShadow: colors.shadow.md,
-          border: `1px solid ${colors.border.primary}`
-        }}>
-
-          {/* --- MAPPINGS TAB BUTTON --- */}
-          <button
-            onClick={() => setActiveTab('mappings')}
-            style={getButtonStyle(isMappings, colors.brand.primary)}
-          >
-            <Settings size={20} />
-            System Mappings
-          </button>
-
-          {/* --- RULES TAB BUTTON --- */}
-          <button
-            onClick={() => setActiveTab('rules')}
-            style={getButtonStyle(isRules, colors.semantic.info)}
-          >
-            <Target size={20} />
-            Smart Rules
-          </button>
-        </div>
-      </div>
-
       {/* Content Box */}
       <div style={{
         maxWidth: '1400px',

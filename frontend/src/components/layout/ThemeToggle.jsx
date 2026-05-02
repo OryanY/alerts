@@ -66,14 +66,12 @@ export const ThemeToggle = ({ variant = 'default' }) => {
   const handleMouseEnter = (e) => {
     if (variant !== 'switch') {
       e.currentTarget.style.background = colors.bg.tertiary;
-      e.currentTarget.style.transform = 'scale(1.05)';
     }
   };
 
   const handleMouseLeave = (e) => {
     if (variant !== 'switch') {
       e.currentTarget.style.background = colors.bg.secondary;
-      e.currentTarget.style.transform = 'scale(1)';
     }
   };
 

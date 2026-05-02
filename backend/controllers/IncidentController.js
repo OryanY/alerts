@@ -417,7 +417,7 @@ class IncidentController {
     try {
       const { id } = req.params;
       const result = await this.mappingService.deleteSystemMapping(id);
-      res.json({ success: true, message: result.message });
+      res.json({ success: true, message: result.message, deletedCount: result.deletedCount });
     } catch (err) {
       if (err.message.includes('not found')) {
         return res.status(404).json({
@@ -488,7 +488,7 @@ class IncidentController {
     try {
       const { id } = req.params;
       const result = await this.ruleService.deleteIncidentRule(id);
-      res.json({ success: true, message: result.message });
+      res.json({ success: true, message: result.message, deletedCount: result.deletedCount });
     } catch (err) {
       if (err.message.includes('not found')) {
         return res.status(404).json({

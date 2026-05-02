@@ -1,5 +1,4 @@
 import React from 'react';
-import { Edit, Trash2 } from 'lucide-react';
 
 const baseMandatoryFields = [
     'service_offering',

@@ -102,11 +102,11 @@ const baseThemes = {
       yellowBorder: '#F59E0B',
     },
     chart: {
-      primary: '#1c5aa6ff',
+      primary: '#1C5AA6',
       secondary: '#A78BFA',
-      tertiary: '#139346ff',
+      tertiary: '#139346',
       quaternary: '#FBBF24',
-      quinary: '#962121ff',
+      quinary: '#962121',
     },
     semantic: {
       success: '#34D399',
@@ -153,24 +153,11 @@ export const ThemeProvider = ({ children }) => {
   const computed = useMemo(() => {
     const base = baseThemes[theme];
 
-    // Gradients
     const gradients = {
-      infoGradient: `linear-gradient(135deg, ${base.semantic.infoBg} 0%, ${withAlpha(
-        base.semantic.info,
-        '10'
-      )} 100%)`,
-      warningGradient: `linear-gradient(135deg, ${base.semantic.warningBg} 0%, ${withAlpha(
-        base.semantic.warning,
-        '10'
-      )} 100%)`,
-      successGradient: `linear-gradient(135deg, ${base.semantic.successBg} 0%, ${withAlpha(
-        base.semantic.success,
-        '10'
-      )} 100%)`,
-      errorGradient: `linear-gradient(135deg, ${base.semantic.errorBg} 0%, ${withAlpha(
-        base.semantic.error,
-        '10'
-      )} 100%)`,
+      infoGradient: `linear-gradient(135deg, ${base.semantic.infoBg} 0%, ${withAlpha(base.semantic.info, '10')} 100%)`,
+      warningGradient: `linear-gradient(135deg, ${base.semantic.warningBg} 0%, ${withAlpha(base.semantic.warning, '10')} 100%)`,
+      successGradient: `linear-gradient(135deg, ${base.semantic.successBg} 0%, ${withAlpha(base.semantic.success, '10')} 100%)`,
+      errorGradient: `linear-gradient(135deg, ${base.semantic.errorBg} 0%, ${withAlpha(base.semantic.error, '10')} 100%)`,
       neutralSoftGradient: `linear-gradient(135deg, ${base.bg.secondary} 0%, ${base.bg.tertiary} 100%)`,
       headerBarGradient: `linear-gradient(90deg, ${base.brand.primary}, ${base.brand.purple}, ${base.semantic.info})`,
     };

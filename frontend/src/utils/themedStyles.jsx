@@ -74,34 +74,34 @@ export const createThemedStyles = (raw) => {
     header: {
       background: colors.bg.secondary,
       borderBottom: `1px solid ${colors.border.primary}`,
-      boxShadow: colors.shadow.sm,
+      boxShadow: 'none',
     },
 
-    headerInner: { maxWidth: 1200, margin: '0 auto', padding: '0 20px' },
-    headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 64 },
+    headerInner: { maxWidth: '100%', margin: 0, padding: '0 16px' },
+    headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 54, gap: 14 },
 
     navBtn: (active) => ({
       display: 'flex',
       alignItems: 'center',
-      gap: 6,
-      padding: '8px 16px',
-      border: 'none',
+      gap: 7,
+      padding: '7px 10px',
+      border: `1px solid ${active ? colors.brand.primary : 'transparent'}`,
       borderRadius: 6,
-      background: active ? colors.brand.primary : 'transparent',
-      color: active ? colors.text.inverse : colors.text.secondary,
-      fontSize: 14,
-      fontWeight: 500,
+      background: active ? `${colors.brand.primary}16` : 'transparent',
+      color: active ? colors.brand.primary : colors.text.secondary,
+      fontSize: 13,
+      fontWeight: 700,
       cursor: 'pointer'
     }),
 
-    main: { maxWidth: 1200, margin: '0 auto', padding: 20 },
+    main: { maxWidth: '100%', margin: 0, padding: 16 },
 
     card: (extra = {}) => ({
       background: colors.bg.secondary,
       border: `1px solid ${colors.border.primary}`,
-      borderRadius: 8,
-      padding: 20,
-      boxShadow: colors.shadow.md,
+      borderRadius: 6,
+      padding: 16,
+      boxShadow: 'none',
       ...extra,
     }),
 
@@ -125,11 +125,12 @@ export const createThemedStyles = (raw) => {
     }),
 
     input: {
-      padding: '8px 12px',
+      padding: '7px 10px',
       border: `1px solid ${colors.border.secondary}`,
       borderRadius: 6,
-      fontSize: 14,
+      fontSize: 13,
       width: '100%',
+      minHeight: 36,
       background: colors.bg.secondary,
       color: colors.text.primary,
     },
@@ -187,7 +188,7 @@ export const createThemedStyles = (raw) => {
       animation: 'pulse 2s ease-in-out infinite',
     }),
 
-    container: { maxWidth: '1400px', margin: '0 auto', padding: 20 },
+    container: { maxWidth: '100%', margin: 0, padding: 0 },
 
     headerBox: {
       background: colors.bg.tertiary,
@@ -221,10 +222,10 @@ export const createThemedStyles = (raw) => {
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '10px 20px',
+        padding: '8px 12px',
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: 600,
         background: disabled
           ? colors.brand.primary + '50'
@@ -238,7 +239,7 @@ export const createThemedStyles = (raw) => {
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '8px 16px',
+        padding: '8px 12px',
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 13,
@@ -258,7 +259,7 @@ export const createThemedStyles = (raw) => {
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '8px 16px',
+        padding: '8px 12px',
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 13,
@@ -275,7 +276,7 @@ export const createThemedStyles = (raw) => {
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '8px 16px',
+        padding: '8px 12px',
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 13,

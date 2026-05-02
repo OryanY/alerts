@@ -18,10 +18,14 @@ module.exports = {
       duration_sec, message, key_field, incident_number, incident_sys_id, history_id
     FROM dbo.historicalAlerts {WHERE_CLAUSE} {ORDER_CLAUSE} {PAGINATION_CLAUSE}
   `,
+  COUNT_ALERTS: `
+    SELECT COUNT_BIG(1) AS total
+    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+  `,
   CLUSTERED_ALERTS: `
     WITH Filtered AS (
-        SELECT {TOP_CLAUSE} incident_id, panel_title, application, node_name, network, object, operator, time_fired, time_resolved, duration_sec, message, key_field, incident_number, incident_sys_id, history_id
-        FROM dbo.historicalAlerts {WHERE_CLAUSE} {RAW_ORDER_CLAUSE} {PAGINATION_CLAUSE}
+        SELECT incident_id, panel_title, application, node_name, network, object, operator, time_fired, time_resolved, duration_sec, message, key_field, incident_number, incident_sys_id, history_id
+        FROM dbo.historicalAlerts {WHERE_CLAUSE}
     ),
     Marked AS (
         SELECT *,
@@ -60,7 +64,28 @@ module.exports = {
             ORDER BY g.time_fired ASC FOR JSON PATH
         ) AS raw_alerts_json
     FROM Clusters c
-    {ORDER_CLAUSE}
+    {ORDER_CLAUSE} {PAGINATION_CLAUSE}
+  `,
+  COUNT_CLUSTERED_ALERTS: `
+    WITH Filtered AS (
+        SELECT panel_title, application, time_fired
+        FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    ),
+    Marked AS (
+        SELECT *,
+        CASE WHEN ABS(DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired)) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        FROM Filtered
+    ),
+    Grouped AS (
+        SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked
+    ),
+    Clusters AS (
+        SELECT cluster_id, panel_title, application
+        FROM Grouped
+        GROUP BY cluster_id, panel_title, application
+    )
+    SELECT COUNT_BIG(1) AS total
+    FROM Clusters
   `,
   SELECT_BASIC_RECORDS: `SELECT TOP (@limit_param) {FIELDS} FROM dbo.historicalAlerts {WHERE_CLAUSE} ORDER BY time_fired DESC`,
   HOURLY_HEATMAP: `

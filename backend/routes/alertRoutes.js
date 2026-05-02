@@ -15,6 +15,28 @@ const { validateQuery } = require('../middleware/validation');
 const router = express.Router();
 const alertService = new AlertService();
 
+const ALERT_EXPORT_COLUMNS = [
+  ['incident_number', 'Incident'],
+  ['panel_title', 'Panel'],
+  ['application', 'Application'],
+  ['message', 'Message'],
+  ['time_fired', 'Time Fired'],
+  ['time_resolved', 'Time Resolved'],
+  ['duration_sec', 'Duration Seconds'],
+  ['operator', 'Operator'],
+  ['node_name', 'Node'],
+  ['network', 'Network'],
+  ['object', 'Object'],
+  ['shift', 'Shift'],
+  ['history_id', 'History ID']
+];
+
+const csvCell = (value) => {
+  if (value === null || value === undefined) return '';
+  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
 const handle = (serviceFn) => async (req, res, next) => {
   try {
     const result = await serviceFn(req.validatedQuery || req.query);
@@ -26,6 +48,37 @@ const handle = (serviceFn) => async (req, res, next) => {
 };
 
 // ================== ALERTS ==================
+router.get('/alerts/export.csv', validateQuery(alertsSchema), async (req, res, next) => {
+  try {
+    const baseQuery = req.validatedQuery || req.query;
+    const batchSize = 1000;
+    let page = 1;
+    let hasNext = true;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="alerts-export.csv"');
+    res.write(`${ALERT_EXPORT_COLUMNS.map(([, label]) => csvCell(label)).join(',')}\n`);
+
+    while (hasNext) {
+      const result = await alertService.getAlerts({
+        ...baseQuery,
+        page,
+        limit: batchSize,
+        include_count: false
+      });
+
+      for (const row of result.data || []) {
+        res.write(`${ALERT_EXPORT_COLUMNS.map(([key]) => csvCell(row[key])).join(',')}\n`);
+      }
+
+      hasNext = !!result.meta?.pagination?.hasNext;
+      page += 1;
+    }
+
+    res.end();
+  } catch (err) { next(err); }
+});
+
 router.get('/alerts', validateQuery(alertsSchema), async (req, res, next) => {
   try {
     const result = await alertService.getAlerts(req.validatedQuery || req.query);
@@ -33,7 +86,7 @@ router.get('/alerts', validateQuery(alertsSchema), async (req, res, next) => {
       success: result.success,
       data: result.data,
       meta: result.meta || {},
-      count: result.data?.length || 0
+      count: result.meta?.pagination?.total ?? result.data?.length ?? 0
     });
   } catch (err) { next(err); }
 });

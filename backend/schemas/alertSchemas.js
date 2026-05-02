@@ -29,6 +29,10 @@ const baseSchema = {
 const alertsSchema = Joi.object({
   ...baseSchema,
 
+  // Interactive table pages should stay small. Bulk data belongs to export.
+  limit: Joi.number().integer().min(1).max(1000).default(50),
+  include_count: Joi.boolean().default(false),
+
   // Pagination
   page: Joi.number().integer().min(1).optional(),
 

@@ -1,5 +1,28 @@
 // utils/constants.js — App-wide constants and configuration defaults
-export const API_BASE = "http://localhost:8080/api";
+const trimTrailingSlash = (value) => String(value || '').replace(/\/+$/, '');
+
+const resolveApiBase = () => {
+  if (typeof window !== 'undefined') {
+    const runtimeBase =
+      window.__ALERTS_API_BASE__ ||
+      window.__ALERTS_CONFIG__?.apiBase ||
+      window.__RUNTIME_CONFIG__?.apiBase;
+
+    if (runtimeBase) return trimTrailingSlash(runtimeBase);
+  }
+
+  if (process.env.REACT_APP_API_BASE) {
+    return trimTrailingSlash(process.env.REACT_APP_API_BASE);
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    return 'http://localhost:8080/api';
+  }
+
+  return '/api';
+};
+
+export const API_BASE = resolveApiBase();
 export const JERUSALEM_TZ = 'Asia/Jerusalem';
 export const DEFAULT_CLIENT_CFG = {
   dayStart: 8,

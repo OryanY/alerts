@@ -8,9 +8,11 @@ export const DateRangePicker = ({
   onChange,
   setPresetRange,
   rightSlot,
+  variant = 'default',
 }) => {
   const { colors } = useTheme();
   const S = createThemedStyles(colors);
+  const compact = variant === 'compact';
 
   const [localStart, setLocalStart] = useState(dateRange.start_date || '');
   const [localEnd, setLocalEnd] = useState(dateRange.end_date || '');
@@ -64,8 +66,8 @@ export const DateRangePicker = ({
   };
 
   const presetButtonStyle = {
-    padding: '6px 12px',
-    fontSize: 12,
+    padding: compact ? '5px 8px' : '6px 12px',
+    fontSize: compact ? 11 : 12,
     borderRadius: 6,
     cursor: 'pointer',
     background: colors.bg.secondary,
@@ -80,14 +82,14 @@ export const DateRangePicker = ({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
-        marginBottom: 16,
-        padding: '12px 16px',
+        gap: compact ? 8 : 12,
+        marginBottom: compact ? 0 : 16,
+        padding: compact ? 0 : '12px 16px',
 
-        background: colors.bg.secondary,
-        borderRadius: 8,
-        border: `1px solid ${colors.border.primary}`,
-        boxShadow: colors.shadow.sm,
+        background: compact ? 'transparent' : colors.bg.secondary,
+        borderRadius: compact ? 0 : 8,
+        border: compact ? 'none' : `1px solid ${colors.border.primary}`,
+        boxShadow: compact ? 'none' : colors.shadow.sm,
 
         direction: 'rtl',
         flexWrap: 'wrap',
@@ -107,6 +109,10 @@ export const DateRangePicker = ({
             onKeyDown={handleKeyDown}
             style={{
               ...S.input,
+              minHeight: compact ? 30 : S.input.minHeight,
+              width: compact ? 132 : S.input.width,
+              padding: compact ? '4px 8px' : S.input.padding,
+              fontSize: compact ? 12 : S.input.fontSize,
               borderColor: error ? '#EF4444' : S.input.borderColor,
             }}
           />
@@ -121,6 +127,10 @@ export const DateRangePicker = ({
             onKeyDown={handleKeyDown}
             style={{
               ...S.input,
+              minHeight: compact ? 30 : S.input.minHeight,
+              width: compact ? 132 : S.input.width,
+              padding: compact ? '4px 8px' : S.input.padding,
+              fontSize: compact ? 12 : S.input.fontSize,
               borderColor: error ? '#EF4444' : S.input.borderColor,
             }}
           />

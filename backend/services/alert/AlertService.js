@@ -157,53 +157,11 @@ class AlertService {
         return { success: true, data: kpis };
     }
 
-    async getAlerts(params) {
-        const { page, limit, sort_by = 'time_fired', sort_order = 'DESC' } = params;
-        const req = this.getPool().request();
-        const whereClause = this._buildWhereClause(params, req);
-
-        const { enabled } = this._getClusteringConfig(params);
-
-        if (enabled) {
-            this._bindThresholds(req, params);
-            req.input('cluster_threshold', sql.Int, params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : (CONFIG.clustering.defaultThreshold || 15));
-        }
-
-        let paginationClause = '', topClause = '';
-        if (page && limit) {
-            req.input('limit_param', sql.Int, limit + 1);
-            paginationClause = `OFFSET ${(page - 1) * limit} ROWS FETCH NEXT ${limit + 1} ROWS ONLY`;
-        } else {
-            req.input('limit_param', sql.Int, limit || this.constants.DEFAULT_CAP);
-            topClause = 'TOP (@limit_param)';
-        }
-
-        const baseQuery = enabled ? queries.CLUSTERED_ALERTS : queries.SELECT_ALERTS;
-
-        // Ensure sort_by has table prefix 'c.' for the final query if needed, but the RAW CTE needs raw names
-        const rawOrderClause = `ORDER BY ${sort_by} ${sort_order}`;
-        const finalOrderClause = enabled && sort_by === 'time_fired' ? `ORDER BY c.time_fired ${sort_order}` : `ORDER BY ${sort_by} ${sort_order}`;
-
-        const sqlQuery = baseQuery
-            .replace(/{TOP_CLAUSE}/g, topClause)
-            .replace(/{WHERE_CLAUSE}/g, whereClause)
-            .replace(/{RAW_ORDER_CLAUSE}/g, rawOrderClause)
-            .replace(/{ORDER_CLAUSE}/g, finalOrderClause)
-            .replace(/{PAGINATION_CLAUSE}/g, paginationClause);
-
-        const result = await req.query(sqlQuery);
-        let records = result.recordset;
-        let hasNext = false;
-
-        if (page && limit && records.length > limit) {
-            hasNext = true;
-            records = records.slice(0, limit);
-        }
-
+    _formatAlerts(records, enabled, params) {
         const ds = params.day_start ? parseInt(params.day_start, 10) : this.constants.DAY_START;
         const de = params.day_end ? parseInt(params.day_end, 10) : this.constants.DAY_END;
 
-        const formatted = records.map(r => {
+        return records.map(r => {
             const duration_sec = r.duration_sec || 0;
             let raw_alerts = null;
             if (enabled && r.raw_alerts_json) {
@@ -216,8 +174,6 @@ class AlertService {
 
             let shift = 'Unknown';
             if (r.time_fired) {
-                // time_fired is now a pre-converted IL time string (varchar from SQL CONVERT)
-                // Parse the hour directly from the string — no UTC→IL conversion needed
                 const hrMatch = String(r.time_fired).match(/T(\d{2}):/);
                 const hr = hrMatch ? parseInt(hrMatch[1], 10) : null;
                 if (hr !== null) shift = (hr >= ds && hr < de) ? 'Day' : 'Night';
@@ -246,11 +202,93 @@ class AlertService {
                 raw_alerts: raw_alerts
             };
         });
+    }
 
-        const response = { success: true, data: formatted };
-        if (page && limit) {
-            response.meta = { pagination: { page, limit, hasNext } };
+    _buildOrderClause(sortBy, sortOrder, enabled) {
+        const dir = String(sortOrder || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        const prefix = enabled ? 'c.' : '';
+        const sortExpr = `${prefix}${sortBy || 'time_fired'}`;
+        const timeExpr = `${prefix}time_fired`;
+        const idExpr = `${prefix}incident_id`;
+
+        if ((sortBy || 'time_fired') === 'time_fired') {
+            return `ORDER BY ${timeExpr} ${dir}, ${idExpr} ${dir}`;
         }
+        return `ORDER BY ${sortExpr} ${dir}, ${timeExpr} DESC, ${idExpr} DESC`;
+    }
+
+    async _getAlertsTotal(params, enabled) {
+        const req = this.getPool().request();
+        const whereClause = this._buildWhereClause(params, req);
+
+        if (enabled) {
+            req.input('cluster_threshold', sql.Int, params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : (CONFIG.clustering.defaultThreshold || 15));
+        }
+
+        const countQuery = (enabled ? queries.COUNT_CLUSTERED_ALERTS : queries.COUNT_ALERTS)
+            .replace(/{WHERE_CLAUSE}/g, whereClause);
+        const result = await req.query(countQuery);
+        const total = result.recordset?.[0]?.total || 0;
+        return Number(total);
+    }
+
+    async getAlerts(params) {
+        const {
+            page = 1,
+            limit = this.constants.MAX_PAGE_SIZE,
+            sort_by = 'time_fired',
+            sort_order = 'DESC',
+            include_count = false
+        } = params;
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const pageSize = Math.min(
+            this.constants.MAX_PAGE_SIZE,
+            Math.max(1, parseInt(limit, 10) || 50)
+        );
+        const offset = (pageNum - 1) * pageSize;
+        const req = this.getPool().request();
+        const whereClause = this._buildWhereClause(params, req);
+
+        const { enabled } = this._getClusteringConfig(params);
+
+        if (enabled) {
+            this._bindThresholds(req, params);
+            req.input('cluster_threshold', sql.Int, params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : (CONFIG.clustering.defaultThreshold || 15));
+        }
+
+        const paginationClause = `OFFSET ${offset} ROWS FETCH NEXT ${pageSize + 1} ROWS ONLY`;
+
+        const baseQuery = enabled ? queries.CLUSTERED_ALERTS : queries.SELECT_ALERTS;
+        const finalOrderClause = this._buildOrderClause(sort_by, sort_order, enabled);
+
+        const sqlQuery = baseQuery
+            .replace(/{TOP_CLAUSE}/g, '')
+            .replace(/{WHERE_CLAUSE}/g, whereClause)
+            .replace(/{RAW_ORDER_CLAUSE}/g, '')
+            .replace(/{ORDER_CLAUSE}/g, finalOrderClause)
+            .replace(/{PAGINATION_CLAUSE}/g, paginationClause);
+
+        const dataPromise = req.query(sqlQuery);
+        const countPromise = include_count ? this._getAlertsTotal(params, enabled) : Promise.resolve(null);
+        const [result, total] = await Promise.all([dataPromise, countPromise]);
+        let records = result.recordset;
+        let hasNext = records.length > pageSize;
+
+        if (hasNext) {
+            records = records.slice(0, pageSize);
+        }
+
+        const pagination = { page: pageNum, limit: pageSize, hasNext };
+        if (include_count) {
+            pagination.total = total;
+            pagination.hasNext = offset + records.length < total;
+        }
+
+        const response = {
+            success: true,
+            data: this._formatAlerts(records, enabled, params),
+            meta: { pagination }
+        };
         return response;
     }
 

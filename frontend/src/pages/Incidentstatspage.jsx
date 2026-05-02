@@ -4,11 +4,10 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Area, ComposedChart, Line
 } from 'recharts';
-import { FileText, AlertTriangle, Users, Zap, TrendingUp, Layers } from 'lucide-react';
+import { FileText, AlertTriangle, Zap, TrendingUp, Layers } from 'lucide-react';
 import { useApiData } from '../hooks/useApiData';
 import { useNavigate } from 'react-router-dom';
 import { useClientConfig } from '../contexts/ClientConfigContext';
-import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { ChartCard } from '../components/ui/ChartCard';
 import { MetricCard } from '../components/ui/MetricCard';
 import { useTheme } from '../contexts/ThemeContext';
@@ -116,7 +115,7 @@ const StatTable = ({ rows, nameKey, colors, onRowClick }) => (
 
 const IncidentStatsPage = () => {
     const navigate = useNavigate();
-    const { getApiParams, dateRange, setDateRange, setPresetRange } = useClientConfig();
+    const { getApiParams, dateRange } = useClientConfig();
     const { colors } = useTheme();
     const S = createThemedStyles(colors);
     const chartProps = getChartProps(colors);
@@ -204,9 +203,6 @@ const IncidentStatsPage = () => {
 
     return (
         <div dir="rtl">
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
-                <DateRangePicker dateRange={dateRange} onChange={setDateRange} setPresetRange={setPresetRange} />
-            </div>
             {/* KPIs */}
             <div style={{ ...S.grid('repeat(auto-fit, minmax(160px, 1fr))'), marginBottom: 24 }}>
                 <MetricCard

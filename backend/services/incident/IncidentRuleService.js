@@ -1,8 +1,14 @@
 // services/incident/IncidentRuleService.js
 const { ObjectId } = require('mongodb');
+const { LRUCache } = require('lru-cache');
 const { getMongoDb } = require('../../database/connection');
 const { mongoConfig } = require('../../config');
 const helpers = require('./incidentHelpers');
+
+const ruleCache = new LRUCache({
+    max: 3,
+    ttl: 5 * 60 * 1000
+});
 
 class IncidentRuleService {
     constructor() {
@@ -24,24 +30,59 @@ class IncidentRuleService {
         return this._mappingCollection;
     }
 
-    async getIncidentRules(grafanaName = null) {
-        const allRules = await this.collection.aggregate([
-            { $match: {} },
+    _aggregateRules(match = {}) {
+        return this.collection.aggregate([
+            { $match: match },
             { $lookup: { from: mongoConfig.collections.systemMappings, localField: 'system_mapping_id', foreignField: '_id', as: 'system_mapping' } },
             { $unwind: { path: '$system_mapping', preserveNullAndEmptyArrays: true } },
             { $sort: { created_at: -1 } }
         ]).toArray();
+    }
 
-        if (!grafanaName) return allRules;
+    _invalidateCache() {
+        ruleCache.clear();
+    }
 
-        return allRules.filter(rule => {
+    async getNonExactRules() {
+        const CACHE_KEY = 'non-exact';
+        const cached = ruleCache.get(CACHE_KEY);
+        if (cached) return cached;
+
+        const rules = await this._aggregateRules({
+            is_global: { $ne: true },
+            'grafana_names.type': { $in: ['contains', 'regex'] }
+        });
+        ruleCache.set(CACHE_KEY, rules);
+        return rules;
+    }
+
+    async getIncidentRules(grafanaName = null) {
+        if (!grafanaName) return this._aggregateRules({});
+
+        const normalizedName = String(grafanaName).trim().toLowerCase();
+        const indexedRules = await this._aggregateRules({
+            $or: [
+                { is_global: true },
+                { grafana_names: normalizedName },
+                { grafana_names: { $elemMatch: { type: 'exact', value: normalizedName } } }
+            ]
+        });
+
+        const nonExactRules = await this.getNonExactRules();
+        const matchedNonExactRules = nonExactRules.filter(rule => {
             if (rule.is_global) return true;
             if (!rule.grafana_names || !Array.isArray(rule.grafana_names)) return false;
             return rule.grafana_names.some(pattern => {
                 const patternObj = typeof pattern === 'string' ? { value: pattern, type: 'exact' } : pattern;
-                return helpers.matchesGrafanaPattern(grafanaName, patternObj);
+                return patternObj.type !== 'exact' && helpers.matchesGrafanaPattern(normalizedName, patternObj);
             });
         });
+
+        const byId = new Map();
+        [...indexedRules, ...matchedNonExactRules].forEach(rule => {
+            byId.set(String(rule._id), rule);
+        });
+        return [...byId.values()].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     }
 
     async createIncidentRule(ruleData) {
@@ -68,6 +109,7 @@ class IncidentRuleService {
         };
 
         const result = await this.collection.insertOne(dataToInsert);
+        this._invalidateCache();
         return { _id: result.insertedId, ...dataToInsert };
     }
 
@@ -90,19 +132,22 @@ class IncidentRuleService {
         const objId = new ObjectId(id);
         const result = await this.collection.updateOne({ _id: objId }, { $set: updateData });
         if (result.matchedCount === 0) throw new Error('Incident rule not found');
+        this._invalidateCache();
         return this.collection.findOne({ _id: objId });
     }
 
     async deleteIncidentRule(id) {
         const result = await this.collection.deleteOne({ _id: new ObjectId(id) });
         if (result.deletedCount === 0) throw new Error('Incident rule not found');
-        return { deletedCount: result.deletedCount };
+        this._invalidateCache();
+        return { message: 'Incident rule deleted successfully', deletedCount: result.deletedCount };
     }
 
     async toggleIncidentRule(id, enabled) {
         const objId = new ObjectId(id);
         const result = await this.collection.updateOne({ _id: objId }, { $set: { enabled, updated_at: new Date() } });
         if (result.matchedCount === 0) throw new Error('Incident rule not found');
+        this._invalidateCache();
         return { message: `Incident rule ${enabled ? 'enabled' : 'disabled'} successfully` };
     }
 }

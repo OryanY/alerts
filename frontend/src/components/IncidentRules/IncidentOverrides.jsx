@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, X, Globe } from 'lucide-react';
+import { Plus, Trash2, Globe } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import SearchableSelect from '../common/SearchableSelect';
 

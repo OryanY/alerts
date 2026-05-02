@@ -1,5 +1,6 @@
 import { formatHourAndDay } from "../../utils/dateUtils";
-import { useState, Fragment } from 'react';
+import { useMemo, useState, Fragment } from 'react';
+import { getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { formatDuration } from '../../utils/formatters';
 
@@ -17,6 +18,21 @@ export const AlertTable = ({
   serviceNowBaseUrl = SERVICE_NOW_BASE_URL
 }) => {
   const [expandedRows, setExpandedRows] = useState(new Set());
+  const tableColumns = useMemo(
+    () => visibleColumns.map((col) => ({
+      id: col.key,
+      accessorKey: col.key,
+      header: col.label,
+    })),
+    [visibleColumns]
+  );
+  const table = useReactTable({
+    data: alerts,
+    columns: tableColumns,
+    getCoreRowModel: getCoreRowModel(),
+    manualSorting: true,
+    manualPagination: true,
+  });
 
   const toggleRow = (id) => {
     setExpandedRows(prev => {
@@ -380,7 +396,8 @@ export const AlertTable = ({
           </tr>
         </thead>
         <tbody>
-          {alerts.map((alert, i) => {
+          {table.getRowModel().rows.map((row, i) => {
+            const alert = row.original;
             const rawId = alert.history_id || alert.incident_number || i;
             const uniqueKey = `${rawId}_${i}`;
             const isExpanded = expandedRows.has(rawId);

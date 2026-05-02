@@ -8,7 +8,6 @@ import {
 
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useApiData } from '../hooks/useApiData';
-import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { useTheme } from '../contexts/ThemeContext';
@@ -33,10 +32,7 @@ import { Table } from 'lucide-react';
 const PanelResearchPage = () => {
   const {
     config,
-    getApiParams,
     dateRange,
-    setDateRange,
-    setPresetRange,
   } = useClientConfig();
 
   const { colors } = useTheme();
@@ -250,35 +246,6 @@ const PanelResearchPage = () => {
           marginBottom: 20,
         }}
       >
-        <div>
-          <h2
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              margin: 0,
-              color: colors.text.primary,
-            }}
-          >
-            Panel Research & Analysis
-          </h2>
-        </div>
-      </div>
-
-      {/* Date Range Picker */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: 20,
-          position: 'relative',
-        }}
-      >
-        <DateRangePicker
-          dateRange={dateRange}
-          onChange={setDateRange}
-          setPresetRange={setPresetRange}
-        />
       </div>
 
       {/* Panel Selection Grid (no panel selected) */}

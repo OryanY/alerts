@@ -6,7 +6,7 @@ const { mongoConfig } = require('../../config');
 const helpers = require('./incidentHelpers');
 
 const mappingCache = new LRUCache({
-    max: 1,
+    max: 3,
     ttl: 5 * 60 * 1000
 });
 
@@ -31,18 +31,40 @@ class SystemMappingService {
         return mappings;
     }
 
+    async getNonExactMappings() {
+        const CACHE_KEY = 'non-exact';
+        const cached = mappingCache.get(CACHE_KEY);
+        if (cached) return cached;
+
+        const mappings = await this.collection.find({
+            'grafana_names.type': { $in: ['contains', 'regex'] }
+        }).toArray();
+        mappingCache.set(CACHE_KEY, mappings);
+        return mappings;
+    }
+
     _invalidateCache() {
         mappingCache.clear();
     }
 
     async getMappingByApplication(grafanaName) {
         if (!grafanaName) return null;
-        const allMappings = await this.getSystemMappings();
-        for (const mapping of allMappings) {
+
+        const normalizedName = String(grafanaName).trim().toLowerCase();
+        const exactMapping = await this.collection.findOne({
+            $or: [
+                { grafana_names: normalizedName },
+                { grafana_names: { $elemMatch: { type: 'exact', value: normalizedName } } }
+            ]
+        });
+        if (exactMapping) return exactMapping;
+
+        const nonExactMappings = await this.getNonExactMappings();
+        for (const mapping of nonExactMappings) {
             if (!mapping.grafana_names) continue;
             for (const pattern of mapping.grafana_names) {
                 const patternObj = typeof pattern === 'string' ? { value: pattern, type: 'exact' } : pattern;
-                if (helpers.matchesGrafanaPattern(grafanaName, patternObj)) return mapping;
+                if (patternObj.type !== 'exact' && helpers.matchesGrafanaPattern(normalizedName, patternObj)) return mapping;
             }
         }
         return null;
@@ -112,8 +134,7 @@ class SystemMappingService {
         const result = await this.collection.deleteOne({ _id: objId });
         if (result.deletedCount === 0) throw new Error('System mapping not found');
         this._invalidateCache();
-        // Fix: return { message } so the controller's res.json({ message: result.message }) works correctly
-        return { message: 'System mapping deleted successfully' };
+        return { message: 'System mapping deleted successfully', deletedCount: result.deletedCount };
     }
 }
 

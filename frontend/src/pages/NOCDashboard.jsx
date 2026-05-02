@@ -1,5 +1,5 @@
 // pages/NOCDashboard.jsx — High-level dashboard for NOC operations
-import { useMemo, Suspense, useCallback } from 'react';
+import { useMemo, Suspense, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -17,7 +17,6 @@ import { useApiData } from '../hooks/useApiData';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
-import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { MetricCard } from '../components/ui/MetricCard';
 import { ChartCard } from '../components/ui/ChartCard';
 import { WakeupGauge } from '../components/dashboard/WakeupGauge';
@@ -29,27 +28,32 @@ import {
   TrendingUp,
   Shield,
   Network,
-  Filter,
 } from '../icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTopBar } from '../contexts/TopBarContext';
 import SearchableSelect from '../components/common/SearchableSelect';
 
 import { createChartConfig } from '../utils/chartConfig';
 import { formatDuration } from '../utils/formatters';
+
+const asArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  return [];
+};
 
 const NocDashboard = () => {
 
   const {
     config,
     dateRange,
-    setDateRange,
-    setPresetRange,
     selectedPanel,
     setSelectedPanel,
   } = useClientConfig();
 
   const { Legend, getDurationColorFromBands } = useDurationBands(config);
   const { colors, styles: S } = useTheme(); // ✅ Get pre-computed styles
+  const { setTopBarSlots, clearTopBarSlots } = useTopBar();
   const chartConfig = useMemo(() => createChartConfig(colors), [colors]);
 
   const panelListParams = useMemo(
@@ -72,10 +76,12 @@ const NocDashboard = () => {
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
   // Always fetch detailed panel stats un-filtered, so the widget stays consistent
   const panelStats = useApiData('/stats/by-panel', { limit: 20 });
-
-  // Handlers
-  const handleClearPanel = useCallback(() => setSelectedPanel(null), [setSelectedPanel]);
-
+  const panelOptions = asArray(panelsList);
+  const panelStatsRows = asArray(panelStats.data);
+  const shiftRows = asArray(shifts.data);
+  const durationRows = asArray(duration.data);
+  const heatmapRows = asArray(heatmap.data);
+  const timeseriesRows = asArray(timeseries.data);
 
   // Calculate threshold in minutes for display
   const thresholdMinutes = Math.round((config.falseWakeupThreshold || 120) / 60);
@@ -102,105 +108,49 @@ const NocDashboard = () => {
     }
   }, [dateRange]);
 
-  return (
-    <div>
-      <div style={styles.headerContainer}>
-        {/* ... existing header controls ... */}
-        <div style={styles.controlsWrapper}>
-          <DateRangePicker
-            dateRange={dateRange}
-            onChange={setDateRange}
-            setPresetRange={setPresetRange}
-            rightSlot={
-              <div style={styles.filterGroup}>
-                <div style={{ minWidth: 220 }}>
-                  <SearchableSelect
-                    options={(panelsList || []).map(p => ({
-                      value: p.panel_title,
-                      label: `${p.panel_title} (${p.alert_count})`
-                    }))}
-                    value={selectedPanel || ''}
-                    onChange={(val) => setSelectedPanel(val || null)}
-                    placeholder="All Panels"
-                  />
-                </div>
-
-                {/* Clustering Status Badge */}
-                <a
-                  href="/settings"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '6px 12px',
-                    borderRadius: 16,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    textDecoration: 'none',
-                    background: config.clusteringEnabled
-                      ? colors.semantic.successBg
-                      : colors.bg.tertiary,
-                    color: config.clusteringEnabled
-                      ? colors.semantic.success
-                      : colors.text.secondary,
-                    border: `1px solid ${config.clusteringEnabled
-                      ? colors.semantic.success
-                      : colors.border.secondary}`,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                  }}
-                  title={config.clusteringEnabled
-                    ? "Alerts are grouped by source and time - Click to change in Settings"
-                    : "Showing all individual alerts - Click to enable grouping in Settings"}
-                >
-                  {config.clusteringEnabled ? '🔗' : '📋'}
-                  {config.clusteringEnabled ? 'Grouped' : 'All Alerts'}
-                </a>
-              </div>
-            }
+  const topBarSlots = useMemo(() => ({
+    controls: (
+      <div className="ops-topbar-control-group">
+        <a
+          href="/settings"
+          className="ops-topbar-pill"
+          style={{
+            textDecoration: 'none',
+            background: config.clusteringEnabled ? colors.semantic.successBg : colors.bg.tertiary,
+            color: config.clusteringEnabled ? colors.semantic.successText : colors.text.secondary,
+            border: `1px solid ${config.clusteringEnabled ? colors.semantic.success : colors.border.secondary}`,
+          }}
+          title={config.clusteringEnabled
+            ? "Alerts are grouped by source and time - Click to change in Settings"
+            : "Showing all individual alerts - Click to enable grouping in Settings"}
+        >
+          {config.clusteringEnabled ? 'Grouped' : 'All Alerts'}
+        </a>
+                <div style={{ width: 220 }}>
+          <SearchableSelect
+            options={panelOptions.map(p => ({
+              value: p.panel_title,
+              label: `${p.panel_title} (${p.alert_count})`
+            }))}
+            value={selectedPanel || ''}
+            onChange={(val) => setSelectedPanel(val || null)}
+            placeholder="All Panels"
           />
         </div>
       </div>
+    ),
+  }), [panelOptions, selectedPanel, setSelectedPanel, config.clusteringEnabled, colors]);
 
-      {/* Active Filter Indicator */}
-      {selectedPanel && (
-        <div
-          style={{
-            marginBottom: 20,
-            padding: 12,
-            background: colors.semantic.infoBg,
-            border: `2px solid ${colors.semantic.info}`,
-            borderRadius: 8,
-          }}
-        >
-          <div
-            dir="rtl"
-            style={{ display: 'flex', gap: 8, alignItems: 'center', color: colors.semantic.infoText }}
-          >
-            <Filter size={16} style={{ color: colors.semantic.info }} />
-            <span style={{ fontSize: 14, fontWeight: 600 }}>
+  useEffect(() => {
+    setTopBarSlots(topBarSlots);
+    return clearTopBarSlots;
+  }, [setTopBarSlots, clearTopBarSlots, topBarSlots]);
+
+  return (
+    <div>
+      {/*
               נתונים לפי <strong>{selectedPanel}</strong>
-            </span>
-            <button
-              onClick={handleClearPanel}
-              style={{
-                marginInlineStart: 12,
-                padding: '4px 12px',
-                borderRadius: 4,
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-                background: colors.semantic.info,
-                color: colors.text.inverse,
-              }}
-            >
-              View All Panels
-            </button>
-          </div>
-        </div>
-      )}
-
+      */}
       {/* Main Dashboard Grid */}
       <Suspense fallback={<div style={styles.suspenseFallback}><LoadingSpinner /></div>}>
 
@@ -271,7 +221,7 @@ const NocDashboard = () => {
             error={shifts.error}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={shifts.data || []}>
+              <BarChart data={shiftRows}>
                 <CartesianGrid {...chartConfig.grid} />
                 <XAxis dataKey="shift" {...chartConfig.axis} />
                 <YAxis {...chartConfig.axis} />
@@ -301,7 +251,7 @@ const NocDashboard = () => {
             error={duration.error}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={duration.data || []}>
+              <BarChart data={durationRows}>
                 <CartesianGrid {...chartConfig.grid} />
                 <XAxis dataKey="range" {...chartConfig.axis} />
                 <YAxis {...chartConfig.axis} />
@@ -328,7 +278,7 @@ const NocDashboard = () => {
                   radius={[4, 4, 0, 0]}
                   name="Count"
                 >
-                  {(duration.data || []).map((entry, index) => (
+                  {durationRows.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
                       fill={getDurationColorFromBands(entry, config.bands)}
@@ -341,7 +291,7 @@ const NocDashboard = () => {
 
 
           <WakeupGauge
-            shiftData={shifts.data}
+            shiftData={shiftRows}
             loading={shifts.loading}
             error={shifts.error}
             falseWakeupThreshold={config.falseWakeupThreshold || 120}
@@ -357,7 +307,7 @@ const NocDashboard = () => {
             error={heatmap.error}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={heatmap.data || []}>
+              <ComposedChart data={heatmapRows}>
                 <CartesianGrid {...chartConfig.grid} />
                 <XAxis dataKey="hour_display" {...chartConfig.axis} />
                 <YAxis yAxisId="left" {...chartConfig.axis} />
@@ -387,7 +337,7 @@ const NocDashboard = () => {
                   }}
                 />
                 <Bar yAxisId="left" dataKey="count" name="Count">
-                  {(heatmap.data || []).map((entry, idx) => (
+                  {heatmapRows.map((entry, idx) => (
                     <Cell
                       key={idx}
                       fill={entry?.is_night ? colors.brand.purple : colors.chart.primary}
@@ -415,7 +365,7 @@ const NocDashboard = () => {
             error={panelStats.error}
           >
             <div style={styles.listContainer}>
-              {(panelStats.data || []).slice(0, 12).map((p, idx) => {
+              {panelStatsRows.slice(0, 12).map((p, idx) => {
                 const isTop = idx < 3;
                 return (
                   <div
@@ -460,7 +410,7 @@ const NocDashboard = () => {
             error={timeseries.error}
           >
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={timeseries.data || []}>
+              <ComposedChart data={timeseriesRows}>
                 <CartesianGrid {...chartConfig.grid} />
                 <XAxis
                   dataKey="date_il"

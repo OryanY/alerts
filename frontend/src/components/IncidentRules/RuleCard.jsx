@@ -3,8 +3,6 @@ import {
     XCircle,
     ToggleLeft,
     ToggleRight,
-    Edit,
-    Trash2,
     AlertTriangle
 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
