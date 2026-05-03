@@ -3,7 +3,7 @@ module.exports = {
   // Distinct panel/app/operator names — no date range, for dropdown population.
   // When @panel_title is set, scopes applications + operators to that panel only.
   DISTINCT_FILTER_OPTIONS: `
-    SELECT DISTINCT panel_title, application, operator
+    SELECT DISTINCT panel_title, application, operator, ISNULL(object, 'Unknown') AS object
     FROM dbo.historicalAlerts
     WHERE panel_title IS NOT NULL
       AND application IS NOT NULL
@@ -289,6 +289,7 @@ module.exports = {
   `,
   TIMESERIES: `
     SELECT CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
+      COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
       COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
       COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
     FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il
@@ -342,6 +343,7 @@ module.exports = {
     Grouped AS (SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
     Clusters AS (SELECT MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application)
     SELECT CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+      COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
       COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
       COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
     FROM Clusters GROUP BY CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il
@@ -419,6 +421,7 @@ module.exports = {
 
     -- 2. Timeseries
     SELECT CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+      COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
       COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
       COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
     FROM #TempClusters GROUP BY CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il;
@@ -461,6 +464,7 @@ module.exports = {
 
     -- 2. Timeseries
     SELECT CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
+      COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
       COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
       COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
     FROM #TempRaw GROUP BY CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il;

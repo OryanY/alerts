@@ -14,11 +14,12 @@ class ServiceNowClient {
 
         // Cache configuration
         this.CACHE_TTL = 86400000; // 24 hours
+        // Dynamic cache object that can store multiple query results per category
         this.caches = {
-            assignmentGroups: { data: null, time: null },
-            serviceOfferings: { data: null, time: null },
-            businessServices: { data: null, time: null },
-            networks: { data: null, time: null }
+            assignmentGroups: {},
+            serviceOfferings: {},
+            businessServices: {},
+            networks: {}
         };
     }
 
@@ -73,24 +74,43 @@ class ServiceNowClient {
         }
     }
 
-    async _fetchCachedReferenceData(cacheKey, tableEnv, queryEnv, fieldsEnv, defaultTable, defaultQuery, defaultFields, valueField = 'sys_id', labelField = 'name', overrideQuery = null) {
+    async _fetchCachedReferenceData(options) {
         if (!this.isEnabled()) return [];
 
-        const now = Date.now();
-        const cacheObj = this.caches[cacheKey];
-
-        // If we have an override query, skip cache to ensure we get filtered data
-        if (!overrideQuery && cacheObj && cacheObj.data && cacheObj.time && (now - cacheObj.time) < this.CACHE_TTL) {
-            return cacheObj.data;
-        }
+        const {
+            cacheKey,
+            tableEnv,
+            queryEnv,
+            fieldsEnv,
+            defaultTable,
+            defaultQuery,
+            defaultFields,
+            valueField = 'sys_id',
+            labelField = 'name',
+            appendQuery = null
+        } = options;
 
         const table = process.env[tableEnv] || defaultTable;
-        const query = overrideQuery || process.env[queryEnv] || defaultQuery;
+        let query = process.env[queryEnv] || defaultQuery;
         const fields = process.env[fieldsEnv] || defaultFields;
+
+        if (appendQuery) {
+            query = query ? `${query}^${appendQuery}` : appendQuery;
+        }
 
         if (!table) {
             console.warn(`⚠️ Warning: No ServiceNow table configured for ${cacheKey}`);
             return [];
+        }
+
+        // Cache dynamically based on the final query string
+        const cacheHash = query || 'default';
+        const now = Date.now();
+        const categoryCache = this.caches[cacheKey];
+        const cacheObj = categoryCache && categoryCache[cacheHash];
+
+        if (cacheObj && cacheObj.data && cacheObj.time && (now - cacheObj.time) < this.CACHE_TTL) {
+            return cacheObj.data;
         }
 
         try {
@@ -111,19 +131,19 @@ class ServiceNowClient {
             });
 
             const items = response.data.result.map(item => ({
-                value: item[valueField] || item.sys_id || item.name, 
+                value: item[valueField] || item.sys_id || item.name,
                 label: (item[labelField] || item.label || item.name || 'Unknown').toString().trim()
             })).sort((a, b) => a.label.localeCompare(b.label));
 
-            if (!overrideQuery) {
-                this.caches[cacheKey] = { data: items, time: Date.now() };
-                console.log(`✅ Cached ${items.length} ${cacheKey}`);
-            }
+            // Save to dynamic cache
+            if (!this.caches[cacheKey]) this.caches[cacheKey] = {};
+            this.caches[cacheKey][cacheHash] = { data: items, time: Date.now() };
+            console.log(`✅ Cached ${items.length} ${cacheKey} (query: ${cacheHash})`);
 
             return items;
         } catch (error) {
-            console.error(`❌ Error fetching ${cacheKey}:`, error.message);
-            if (!overrideQuery && cacheObj && cacheObj.data) {
+            console.error(`❌ Error fetching ${cacheKey} (query: ${cacheHash}):`, error.message);
+            if (cacheObj && cacheObj.data) {
                 console.warn(`⚠️ Using stale cache for ${cacheKey} due to API error`);
                 return cacheObj.data;
             }
@@ -132,54 +152,69 @@ class ServiceNowClient {
     }
 
     async fetchAssignmentGroups() {
-        return this._fetchCachedReferenceData(
-            'assignmentGroups',
-            'SN_GROUP_TABLE', 'SN_GROUP_QUERY', 'SN_GROUP_FIELDS',
-            'sys_user_group', 'active=true^u_unit=80', 'sys_id,name',
-            'sys_id', 'name' // Use sys_id for the value
-        );
+        return this._fetchCachedReferenceData({
+            cacheKey: 'assignmentGroups',
+            tableEnv: 'SN_GROUP_TABLE',
+            queryEnv: 'SN_GROUP_QUERY',
+            fieldsEnv: 'SN_GROUP_FIELDS',
+            defaultTable: 'sys_user_group',
+            defaultQuery: 'active=true^u_unit=80',
+            defaultFields: 'sys_id,name',
+            valueField: 'sys_id',
+            labelField: 'name'
+        });
     }
 
     async fetchNetworks() {
-        return this._fetchCachedReferenceData(
-            'networks',
-            'SN_NETWORK_TABLE', 'SN_NETWORK_QUERY', 'SN_NETWORK_FIELDS',
-            'sys_choice', 'name=incident^element=u_network^inactive=false', 'value,label',
-            'value', 'label'
-        );
+        return this._fetchCachedReferenceData({
+            cacheKey: 'networks',
+            tableEnv: 'SN_NETWORK_TABLE',
+            queryEnv: 'SN_NETWORK_QUERY',
+            fieldsEnv: 'SN_NETWORK_FIELDS',
+            defaultTable: 'sys_choice',
+            defaultQuery: 'name=incident^element=u_network^inactive=false',
+            defaultFields: 'value,label',
+            valueField: 'value',
+            labelField: 'label'
+        });
     }
 
-    async fetchServiceOfferings(parentService = null) {
-        let query = 'active=true';
-        if (parentService) {
-            // This is a guess on field name, often 'parent_service' or via cmdb_rel_ci
-            // Using a simple query if it's a field on the offering
-            query += `^parent_service.name=${parentService}`;
-        }
+    async fetchServiceOfferings(network = null) {
+        // Appends to the base `.env` query. Using LIKE since u_network_ci can contain multiple comma-separated values
+        // Including ^ORu_network_ciISEMPTY to fetch unassigned/global items as well.
+        const appendQuery = network ? `u_network_ciLIKE${network}^ORu_network_ciISEMPTY` : null;
 
-        return this._fetchCachedReferenceData(
-            'serviceOfferings',
-            'SN_OFFERING_TABLE', 'SN_OFFERING_QUERY', 'SN_OFFERING_FIELDS',
-            'service_offering', query, 'sys_id,name',
-            'name', 'name',
-            parentService ? query : null
-        );
+        return this._fetchCachedReferenceData({
+            cacheKey: 'serviceOfferings',
+            tableEnv: 'SN_OFFERING_TABLE',
+            queryEnv: 'SN_OFFERING_QUERY',
+            fieldsEnv: 'SN_OFFERING_FIELDS',
+            defaultTable: 'service_offering',
+            defaultQuery: 'active=true',
+            defaultFields: 'sys_id,name',
+            valueField: 'name', // Using name as the value identifier
+            labelField: 'name',
+            appendQuery
+        });
     }
 
     async fetchBusinessServices(network = null) {
-        let query = 'active=true';
-        if (network) {
-            // Again, guessing the relationship field name
-            query += `^u_network=${network}`;
-        }
+        // Appends to the base `.env` query. Using LIKE since u_network_ci can contain multiple comma-separated values
+        // Including ^ORu_network_ciISEMPTY to fetch unassigned/global items as well.
+        const appendQuery = network ? `u_network_ciLIKE${network}^ORu_network_ciISEMPTY` : null;
 
-        return this._fetchCachedReferenceData(
-            'businessServices',
-            'SN_BUSINESS_TABLE', 'SN_BUSINESS_QUERY', 'SN_BUSINESS_FIELDS',
-            'cmdb_ci_service', query, 'sys_id,name',
-            'name', 'name',
-            network ? query : null
-        );
+        return this._fetchCachedReferenceData({
+            cacheKey: 'businessServices',
+            tableEnv: 'SN_BUSINESS_TABLE',
+            queryEnv: 'SN_BUSINESS_QUERY',
+            fieldsEnv: 'SN_BUSINESS_FIELDS',
+            defaultTable: 'cmdb_ci_service',
+            defaultQuery: 'active=true',
+            defaultFields: 'sys_id,name',
+            valueField: 'name', // Using name as the value identifier
+            labelField: 'name',
+            appendQuery
+        });
     }
 
     async getSysIdByUser(username) {

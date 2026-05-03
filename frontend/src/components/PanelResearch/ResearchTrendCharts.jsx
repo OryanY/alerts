@@ -50,21 +50,26 @@ const ResearchTrendCharts = ({ daily_trend, duration_distribution, loading }) =>
                             labelFormatter={(date) =>
                                 new Date(date).toLocaleDateString('en-IL')
                             }
+                            itemSorter={(item) => item.dataKey === 'alert_count' ? 1 : 2}
                         />
                         <Area
                             type="monotone"
                             dataKey="alert_count"
                             fill={colors.chart.primary}
-                            fillOpacity={0.25}
+                            fillOpacity={0.2}
                             stroke={colors.chart.primary}
                             strokeWidth={2}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="alert_count"
-                            stroke={colors.chart.secondary}
-                            strokeWidth={2}
                             dot={{ r: 4, fill: colors.chart.primary }}
+                            name="Total Alerts"
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="false_alerts"
+                            fill={colors.semantic.error}
+                            fillOpacity={0.4}
+                            stroke={colors.semantic.error}
+                            strokeWidth={2}
+                            name="False Alerts"
                         />
                     </ComposedChart>
                 </ResponsiveContainer>

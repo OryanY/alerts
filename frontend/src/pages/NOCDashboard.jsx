@@ -438,16 +438,31 @@ const NocDashboard = () => {
                     name.includes('Duration') ? formatDuration(value) : value,
                     name
                   ]}
+                  itemSorter={(item) => {
+                    if (item.dataKey === 'alert_count') return 1;
+                    if (item.dataKey === 'false_alerts') return 2;
+                    return 3;
+                  }}
                 />
                 <Area
                   yAxisId="left"
                   type="monotone"
                   dataKey="alert_count"
                   fill={colors.chart.primary}
-                  fillOpacity={0.3}
+                  fillOpacity={0.2}
                   stroke={colors.chart.primary}
                   strokeWidth={2}
-                  name="Alert Count"
+                  name="Total Alerts"
+                />
+                <Area
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="false_alerts"
+                  fill={colors.semantic.error}
+                  fillOpacity={0.4}
+                  stroke={colors.semantic.error}
+                  strokeWidth={2}
+                  name="False Alerts"
                 />
                 <Line
                   yAxisId="right"

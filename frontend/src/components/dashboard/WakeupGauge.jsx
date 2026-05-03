@@ -76,7 +76,7 @@ export const WakeupGauge = ({ shiftData, loading, error }) => {
               fontSize: 12,
               color: textSecondary
             }}>
-              אחוז התראות שקריות: {nightShift?.false_wakeup_rate || 0}%
+              אחוז התראות שקריות: {falsePct.toFixed(1)}%
             </div>
           </div>
         </div>

@@ -303,8 +303,9 @@ class AlertService {
         const panels = [...new Set(rows.map(r => r.panel_title).filter(Boolean))].sort();
         const applications = [...new Set(rows.map(r => r.application).filter(Boolean))].sort();
         const operators = [...new Set(rows.map(r => r.operator).filter(Boolean))].sort();
+        const objects = [...new Set(rows.map(r => r.object).filter(Boolean))].sort();
 
-        return { success: true, data: { panels, applications, operators } };
+        return { success: true, data: { panels, applications, operators, objects } };
     }
 
     async getPanelList(params) {

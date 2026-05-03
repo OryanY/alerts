@@ -24,7 +24,7 @@ const buildServerFilters = (filters, config) => {
   const normalizedSortOrder = (filters.sort_order || 'desc').toString().toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
   const serverFilters = {};
 
-  ['panel_title', 'application', 'operator', 'has_incident'].forEach((field) => {
+  ['panel_title', 'application', 'operator', 'object', 'has_incident'].forEach((field) => {
     if (filters[field] !== undefined && filters[field] !== '') {
       serverFilters[field] = filters[field];
     }
@@ -163,6 +163,7 @@ const ExplorerPage = () => {
     const panels = data.panels || [];
     const apps = data.applications || [];
     const operators = data.operators || [];
+    const objects = data.objects || [];
 
     return {
       panels: [{ value: '', label: 'All Panels' }, ...panels.map((p) => ({ value: p, label: p }))],
@@ -173,6 +174,10 @@ const ExplorerPage = () => {
       operators: [
         { value: '', label: filters.panel_title ? 'All Operators in Panel' : 'All Operators' },
         ...operators.map((o) => ({ value: o, label: o })),
+      ],
+      objects: [
+        { value: '', label: filters.panel_title ? 'All Objects in Panel' : 'All Objects' },
+        ...objects.map((o) => ({ value: o, label: o })),
       ],
       durations: [
         { value: '', label: 'All Durations' },
@@ -394,6 +399,11 @@ const ExplorerPage = () => {
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Operator
               <SearchableSelect value={filters.operator || ''} onChange={(val) => setFilters({ operator: val })} options={dropdownOptions.operators} placeholder="All Operators" />
+            </label>
+
+            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
+              Object
+              <SearchableSelect value={filters.object || ''} onChange={(val) => setFilters({ object: val })} options={dropdownOptions.objects} placeholder="All Objects" />
             </label>
 
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
