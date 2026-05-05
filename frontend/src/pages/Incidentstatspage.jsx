@@ -110,15 +110,49 @@ const StatTable = ({ rows, nameKey, colors, onRowClick }) => (
         </table>
     </div>
 );
-
+// Defined at module scope so Recharts never unmounts/remounts it between renders.
+// Receives colors as a prop instead of closing over the parent component's scope.
+const CustomTooltip = ({ active, payload, label, colors }) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    return (
+        <div style={{
+            background: colors.bg.secondary,
+            border: `1px solid ${colors.border.secondary}`,
+            borderRadius: 8, padding: '12px 16px', fontSize: 13,
+            color: colors.text.primary,
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+            direction: 'rtl', minWidth: 220,
+            zIndex: 1000
+        }}>
+            <div style={{ fontWeight: 700, marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${colors.border.tertiary}`, color: colors.brand.primary }}>
+                {d?.fullName || label}
+            </div>
+            <div style={{ color: colors.text.primary, marginBottom: 10, fontWeight: 800, fontSize: 14 }}>
+                סה"כ התראות: {(d?.total || 0).toLocaleString()}
+            </div>
+            {payload.map((p, i) => (
+                <div key={i} style={{ color: p.color, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{p.name}:</span>
+                    <strong style={{ marginLeft: 8 }}>{(p.value || 0).toLocaleString()}</strong>
+                </div>
+            ))}
+            {d?.avg_alerts_per_incident && (
+                <div style={{ marginTop: 10, color: colors.text.secondary, borderTop: `1px solid ${colors.border.tertiary}`, paddingTop: 8, fontSize: 11 }}>
+                    ממוצע {d.avg_alerts_per_incident} התראות לתקלה
+                </div>
+            )}
+        </div>
+    );
+};
 
 
 const IncidentStatsPage = () => {
     const navigate = useNavigate();
     const { getApiParams, dateRange } = useClientConfig();
     const { colors } = useTheme();
-    const S = createThemedStyles(colors);
-    const chartProps = getChartProps(colors);
+    const S = useMemo(() => createThemedStyles(colors), [colors]);
+    const chartProps = useMemo(() => getChartProps(colors), [colors]);
 
     const apiParams = getApiParams();
     const isClustered = apiParams.clustering_enabled;
@@ -136,39 +170,6 @@ const IncidentStatsPage = () => {
         navigate(`/explorer?${search.toString()}`);
     };
 
-    const CustomTooltip = ({ active, payload, label }) => {
-        if (!active || !payload?.length) return null;
-        const d = payload[0]?.payload;
-        return (
-            <div style={{
-                background: colors.bg.secondary,
-                border: `1px solid ${colors.border.secondary}`,
-                borderRadius: 8, padding: '12px 16px', fontSize: 13,
-                color: colors.text.primary,
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
-                direction: 'rtl', minWidth: 220,
-                zIndex: 1000
-            }}>
-                <div style={{ fontWeight: 700, marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${colors.border.tertiary}`, color: colors.brand.primary }}>
-                    {d?.fullName || label}
-                </div>
-                <div style={{ color: colors.text.primary, marginBottom: 10, fontWeight: 800, fontSize: 14 }}>
-                    סה"כ התראות: {(d?.total || 0).toLocaleString()}
-                </div>
-                {payload.map((p, i) => (
-                    <div key={i} style={{ color: p.color, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-                        <span>{p.name}:</span>
-                        <strong style={{ marginLeft: 8 }}>{(p.value || 0).toLocaleString()}</strong>
-                    </div>
-                ))}
-                {d?.avg_alerts_per_incident && (
-                    <div style={{ marginTop: 10, color: colors.text.secondary, borderTop: `1px solid ${colors.border.tertiary}`, paddingTop: 8, fontSize: 11 }}>
-                        ממוצע {d.avg_alerts_per_incident} התראות לתקלה
-                    </div>
-                )}
-            </div>
-        );
-    };
 
     const coverage = useMemo(() => data?.coverage || {}, [data?.coverage]);
     const byTeam = useMemo(() => data?.by_team || [], [data?.by_team]);
@@ -252,7 +253,7 @@ const IncidentStatsPage = () => {
                             <YAxis type="category" dataKey="name" width={130}
                                 tick={{ fill: colors.text.secondary, fontSize: 11 }}
                                 tickLine={false} axisLine={false} />
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip content={<CustomTooltip colors={colors} />} />
                             <Bar dataKey="tickets" name="תקלות (Incidents)" stackId="a"
                                 fill={colors.brand.primary} />
                             <Bar dataKey="coveredExtra" name="התראות נוספות באותה תקלה" stackId="a"
@@ -271,7 +272,7 @@ const IncidentStatsPage = () => {
                             <YAxis type="category" dataKey="name" width={130}
                                 tick={{ fill: colors.text.secondary, fontSize: 11 }}
                                 tickLine={false} axisLine={false} />
-                            <Tooltip content={<CustomTooltip />} />
+                            <Tooltip content={<CustomTooltip colors={colors} />} />
                             <Bar dataKey="tickets" name="תקלות (Incidents)" stackId="a"
                                 fill={colors.brand.purple} />
                             <Bar dataKey="coveredExtra" name="התראות נוספות באותה תקלה" stackId="a"

@@ -4,7 +4,7 @@ module.exports = {
   // When @panel_title is set, scopes applications + operators to that panel only.
   DISTINCT_FILTER_OPTIONS: `
     SELECT DISTINCT panel_title, application, operator, ISNULL(object, 'Unknown') AS object
-    FROM dbo.historicalAlerts
+    FROM dbo.historicalAlerts WITH (NOLOCK)
     WHERE panel_title IS NOT NULL
       AND application IS NOT NULL
       AND (@panel_title IS NULL OR panel_title = @panel_title)
@@ -16,16 +16,16 @@ module.exports = {
       CONVERT(varchar(23), time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time', 126) AS time_fired,
       CONVERT(varchar(23), time_resolved AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time', 126) AS time_resolved,
       duration_sec, message, key_field, incident_number, incident_sys_id, history_id
-    FROM dbo.historicalAlerts {WHERE_CLAUSE} {ORDER_CLAUSE} {PAGINATION_CLAUSE}
+    FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE} {ORDER_CLAUSE} {PAGINATION_CLAUSE}
   `,
   COUNT_ALERTS: `
     SELECT COUNT_BIG(1) AS total
-    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}
   `,
   CLUSTERED_ALERTS: `
     WITH Filtered AS (
         SELECT incident_id, panel_title, application, node_name, network, object, operator, time_fired, time_resolved, duration_sec, message, key_field, incident_number, incident_sys_id, history_id
-        FROM dbo.historicalAlerts {WHERE_CLAUSE}
+        FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}
     ),
     Marked AS (
         SELECT *,
@@ -65,11 +65,12 @@ module.exports = {
         ) AS raw_alerts_json
     FROM Clusters c
     {ORDER_CLAUSE} {PAGINATION_CLAUSE}
+    OPTION (RECOMPILE)
   `,
   COUNT_CLUSTERED_ALERTS: `
     WITH Filtered AS (
         SELECT panel_title, application, time_fired
-        FROM dbo.historicalAlerts {WHERE_CLAUSE}
+        FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}
     ),
     Marked AS (
         SELECT *,
@@ -86,11 +87,12 @@ module.exports = {
     )
     SELECT COUNT_BIG(1) AS total
     FROM Clusters
+    OPTION (RECOMPILE)
   `,
   SELECT_BASIC_RECORDS: `SELECT TOP (@limit_param) {FIELDS} FROM dbo.historicalAlerts {WHERE_CLAUSE} ORDER BY time_fired DESC`,
   HOURLY_HEATMAP: `
     WITH FilteredAlerts AS (
-      SELECT duration_sec, DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour FROM dbo.historicalAlerts {WHERE_CLAUSE}
+      SELECT duration_sec, DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}
     ),
     HourBuckets AS (
       SELECT DISTINCT hour,
@@ -108,7 +110,7 @@ module.exports = {
       COUNT(CASE WHEN duration_sec <= @dur_short_max THEN 1 END) AS short_count,
       COUNT(CASE WHEN duration_sec > @dur_short_max AND duration_sec <= @dur_medium_max THEN 1 END) AS medium_count,
       COUNT(CASE WHEN duration_sec > @dur_medium_max THEN 1 END) AS long_count
-    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}
   `,
   SHIFT_ANALYSIS: `
     SELECT 
@@ -308,7 +310,7 @@ module.exports = {
     FROM FilteredClusters
   `,
   CLUSTERED_HOURLY_HEATMAP: `
-    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
+    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}),
     Grouped AS (SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
     Clusters AS (SELECT MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application),
     FilteredAlerts AS (SELECT cluster_duration, DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour FROM Clusters),
@@ -322,6 +324,7 @@ module.exports = {
     AllHours AS (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS hour FROM sys.objects)
     SELECT ah.hour, ISNULL(hb.count, 0) AS count, ISNULL(hb.avg_duration, 0) AS avg_duration, ISNULL(hb.median_duration, 0) AS median_duration
     FROM AllHours ah LEFT JOIN HourBuckets hb ON ah.hour = hb.hour ORDER BY ah.hour
+    OPTION (RECOMPILE)
   `,
   CLUSTERED_DURATION_HISTOGRAM: `
     WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),

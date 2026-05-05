@@ -147,7 +147,7 @@ const IncidentMappings = () => {
     const lower = searchTerm.toLowerCase();
 
     // Fields to search
-    const groupLabel = assignmentGroups.find(g => g.id === m.assignment_group)?.name || '';
+    const groupLabel = assignmentGroups.find(g => g.value === m.assignment_group)?.label || '';
 
     const fieldsToCheck = [
       m.service_offering,

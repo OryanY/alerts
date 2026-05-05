@@ -108,7 +108,6 @@ const IncidentRules = () => {
   const fetchRules = async () => {
     try {
       setLoading(true);
-      setLoading(true);
       const res = await fetch(`${API_BASE}/incidents/incident-rules`, { credentials: 'include' });
       const data = await safeJson(res);
       if (data.success) setRules(data.data || []);
@@ -141,7 +140,7 @@ const IncidentRules = () => {
       const data = await safeJson(res);
       if (data.success) {
         const sortedGroups = (data.data || []).sort((a, b) =>
-          String(a.name || '').localeCompare(String(b.name || ''))
+          String(a.label || '').localeCompare(String(b.label || ''))
         );
         setAssignmentGroups(sortedGroups);
       }

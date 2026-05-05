@@ -123,6 +123,7 @@ async function startServer() {
     incidentRoutes.incidentService.getAssignmentGroups().catch(e => console.error('Failed to pre-cache groups:', e.message));
     incidentRoutes.incidentService.getServiceOfferings().catch(e => console.error('Failed to pre-cache offerings:', e.message));
     incidentRoutes.incidentService.getBusinessServices().catch(e => console.error('Failed to pre-cache business services:', e.message));
+    incidentRoutes.incidentService.getNetworks().catch(e => console.error('Failed to pre-cache business services:', e.message));
 
     server = app.listen(PORT, () => {
       console.log(`Alert Management API Server Started on Port ${PORT}`);

@@ -81,8 +81,10 @@ class IncidentController {
 
   async getServiceOfferings(req, res, next) {
     try {
-      const { parent_service } = req.query;
-      const offerings = await this.incidentService.getServiceOfferings(parent_service);
+      // Accept both network (for filtering) and business_service (for UI cascade display)
+      const { network, business_service } = req.query;
+      // Filter by network — same filter used for business services
+      const offerings = await this.incidentService.getServiceOfferings(network || null);
       res.json({ success: true, data: offerings, count: offerings.length });
     } catch (err) {
       console.error('❌ Error fetching service offerings:', err);

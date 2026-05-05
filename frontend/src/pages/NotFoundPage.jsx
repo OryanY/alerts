@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, ArrowLeft, Search } from 'lucide-react';
 
@@ -8,7 +9,7 @@ const NotFoundPage = () => {
   const navigate = useNavigate();
 
   const { colors } = useTheme();
-  const S = createThemedStyles(colors);
+  const S = useMemo(() => createThemedStyles(colors), [colors]);
   return (
     <div style={S.card({ textAlign: 'center', maxWidth: 600, margin: '80px auto' })}>
       <div style={{ marginBottom: 24 }}>

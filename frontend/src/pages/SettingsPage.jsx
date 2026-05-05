@@ -1,5 +1,5 @@
 // pages/SettingsPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Settings, Save, RotateCcw, Info } from 'lucide-react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 import { useClientConfig } from '../contexts/ClientConfigContext';
@@ -9,7 +9,7 @@ import { createThemedStyles } from '../utils/themedStyles';
 
 const SettingsPage = () => {
   const { colors } = useTheme();
-  const S = createThemedStyles(colors);
+  const S = useMemo(() => createThemedStyles(colors), [colors]);
 
   const toMinutes = (seconds) => {
     if (!seconds) return 0;
@@ -413,48 +413,7 @@ const SettingsPage = () => {
 
 
 
-        {/* ---------------- STATISTICS SETTINGS ---------------- */}
-        <div style={S.card()}>
-          <h3
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 18,
-              fontWeight: 600,
-              margin: '0 0 16px 0',
-            }}
-          >
-            תצוגת סטטיסטיקה
-          </h3>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <label style={{ fontSize: 14, fontWeight: 600 }}>חישוב משך זמן מייצג:</label>
-            <div style={{ display: 'flex', gap: 20 }}>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name="durationMetric"
-                  value="average"
-                  checked={localConfig.durationMetric === 'average'}
-                  onChange={() => updateLocalConfig('durationMetric', 'average')}
-                />
-                ממוצע (יותר רגיש להתראות חריגות)
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name="durationMetric"
-                  value="median"
-                  checked={localConfig.durationMetric !== 'average'} // Default to median
-                  onChange={() => updateLocalConfig('durationMetric', 'median')}
-                />
-                חציון (פחות רגיש)
-              </label>
-            </div>
-          </div>
-        </div>
 
       </div>
     </div>

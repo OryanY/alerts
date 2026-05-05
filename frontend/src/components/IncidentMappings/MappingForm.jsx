@@ -3,16 +3,15 @@ import {
     Plus,
     Edit,
     Save,
-    PlusCircle,
-    MinusCircle,
-    ChevronLeft
 } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
 import { withAlpha } from '../../utils/formatters';
 import { safeJson } from '../../utils/api';
 import MappingFormPatternBuilder from './MappingFormPatternBuilder';
-import SearchableSelect from '../common/SearchableSelect';
+import TemplateHints from './TemplateHints';
+import MappingServiceNowFields from './MappingServiceNowFields';
+import MappingCustomFields from './MappingCustomFields';
 
 const baseMandatoryFields = [
     'service_offering',
@@ -33,52 +32,7 @@ const excludeFromCustom = [
 
 const OTHER_VALUE = '___OTHER___';
 
-const TemplateHints = ({ colors }) => (
-    <div
-        style={{
-            background: withAlpha(colors.brand.primary, '10'),
-            border: `1px solid ${withAlpha(colors.brand.primary, '30')}`,
-            borderRadius: 8,
-            padding: '12px 16px',
-            marginBottom: 24,
-            fontSize: 13,
-            color: colors.text.secondary,
-        }}
-    >
-        <strong style={{ color: colors.brand.primary, display: 'block', marginBottom: 4 }}>
-            💡 Template Variables Available
-        </strong>
-        You can use dynamic variables in{' '}
-        <span style={{ fontWeight: 600 }}>Network</span>,{' '}
-        <span style={{ fontWeight: 600 }}>Impact Tech</span>, and{' '}
-        <span style={{ fontWeight: 600 }}>Custom Fields</span>:
-        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {[
-                '{{ application }}',
-                '{{ object_name }}',
-                '{{ node_name }}',
-                '{{ message }}',
-                '{{ operator }}',
-                '{{ network }}',
-                '{{ time_created }}',
-            ].map((tag) => (
-                <code
-                    key={tag}
-                    style={{
-                        background: colors.bg.primary,
-                        border: `1px solid ${colors.border.secondary}`,
-                        borderRadius: 4,
-                        padding: '2px 6px',
-                        fontFamily: 'monospace',
-                        color: colors.text.primary,
-                    }}
-                >
-                    {tag}
-                </code>
-            ))}
-        </div>
-    </div>
-);
+
 
 const MappingForm = ({
     PATTERN_TYPES,
@@ -103,6 +57,7 @@ const MappingForm = ({
     });
 
     const [customFields, setCustomFields] = useState({});
+    const [errors, setErrors] = useState({});
 
     // Reference Data State
     const [networks, setNetworks] = useState([]);
@@ -131,6 +86,7 @@ const MappingForm = ({
             u_system_failure: false,
         });
         setCustomFields({});
+        setErrors({});
         setUseOtherNetwork(false);
         setOtherNetwork('');
         setUseOtherBusiness(false);
@@ -182,7 +138,7 @@ const MappingForm = ({
         fetchBusinessServices();
     }, [form.u_network, useOtherNetwork]);
 
-    // Cascade: Business Service -> Service Offerings
+    // Cascade: Business Service -> Service Offerings (also filtered by the same network as business services)
     useEffect(() => {
         if (!form.business_service || useOtherBusiness) {
             setServiceOfferings([]);
@@ -192,7 +148,11 @@ const MappingForm = ({
         const fetchServiceOfferings = async () => {
             try {
                 setLoadingOfferings(true);
-                const res = await fetch(`${API_BASE}/incidents/service-offerings?parent_service=${encodeURIComponent(form.business_service)}`, { credentials: 'include' });
+                // Filter service offerings by the same network — consistent with how business services are filtered
+                const networkParam = !useOtherNetwork && form.u_network
+                    ? `&network=${encodeURIComponent(form.u_network)}`
+                    : '';
+                const res = await fetch(`${API_BASE}/incidents/service-offerings?business_service=${encodeURIComponent(form.business_service)}${networkParam}`, { credentials: 'include' });
                 const data = await safeJson(res);
                 if (data.success) {
                     setServiceOfferings(data.data || []);
@@ -204,7 +164,7 @@ const MappingForm = ({
             }
         };
         fetchServiceOfferings();
-    }, [form.business_service, useOtherBusiness]);
+    }, [form.business_service, form.u_network, useOtherBusiness, useOtherNetwork]);
 
     // Handle Edit Mode Initialization
     useEffect(() => {
@@ -268,16 +228,16 @@ const MappingForm = ({
     };
 
     const validateForm = () => {
-        const errors = [];
+        const newErrors = {};
         if (!form.grafana_names || form.grafana_names.length === 0) {
-            errors.push('At least one Grafana application pattern is required');
+            newErrors.grafana_names = 'At least one Grafana application pattern is required';
         }
         form.grafana_names.forEach((pattern, idx) => {
             if (!pattern.value || !pattern.value.trim()) {
-                errors.push(`Pattern ${idx + 1}: Value is required`);
+                newErrors[`grafana_names_${idx}`] = `Pattern ${idx + 1}: Value is required`;
             }
             if (pattern.type === 'regex') {
-                try { new RegExp(pattern.value); } catch (e) { errors.push(`Pattern ${idx + 1}: Invalid regex - ${e.message}`); }
+                try { new RegExp(pattern.value); } catch (e) { newErrors[`grafana_names_${idx}`] = `Pattern ${idx + 1}: Invalid regex`; }
             }
         });
 
@@ -296,22 +256,22 @@ const MappingForm = ({
                        form[key];
             
             if (!val || !val.toString().trim()) {
-                errors.push(`${label} is required`);
+                newErrors[key] = `${label} is required`;
             }
         });
 
-        return errors;
+        return newErrors;
     };
 
     const save = async (e) => {
         e.preventDefault();
         const validationErrors = validateForm();
-        if (validationErrors.length > 0) {
-            const errorMessage = 'Please fix the following errors:\n\n' + validationErrors.map((err, i) => `${i + 1}. ${err}`).join('\n');
-            onError?.(errorMessage);
-            alert(errorMessage);
+        if (Object.keys(validationErrors).length > 0) {
+            setErrors(validationErrors);
+            onError?.('Please fix the errors in the form before saving.');
             return;
         }
+        setErrors({});
 
         try {
             const dataToSave = {
@@ -415,252 +375,46 @@ const MappingForm = ({
                         }
                         PATTERN_TYPES={PATTERN_TYPES}
                         PATTERN_COLORS={PATTERN_COLORS}
+                        errors={errors}
                     />
 
                     {/* Template Hints */}
                     <TemplateHints colors={colors} />
 
                     {/* ServiceNow Fields */}
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
-                            gap: 20,
-                        }}
-                    >
-                        {/* 1. Network (The Trigger) */}
-                        <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
-                                    Network
-                                </label>
-                                {useOtherNetwork && (
-                                    <button 
-                                        type="button" 
-                                        onClick={() => { setUseOtherNetwork(false); setForm({...form, u_network: ''}); }}
-                                        style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                                    >
-                                        <ChevronLeft size={12} /> Back to List
-                                    </button>
-                                )}
-                            </div>
-                            {useOtherNetwork ? (
-                                <input
-                                    type="text"
-                                    autoFocus
-                                    placeholder="Enter network manually..."
-                                    value={otherNetwork}
-                                    onChange={(e) => setOtherNetwork(e.target.value)}
-                                    style={inputStyle}
-                                />
-                            ) : (
-                                <SearchableSelect
-                                    options={getOptionsWithOther(networks)}
-                                    value={form.u_network}
-                                    onChange={(val) => {
-                                        if (val === OTHER_VALUE) {
-                                            setUseOtherNetwork(true);
-                                        } else {
-                                            setForm({ ...form, u_network: val, business_service: '', service_offering: '' });
-                                        }
-                                    }}
-                                    placeholder="Select Network..."
-                                    loading={loadingNetworks}
-                                />
-                            )}
-                        </div>
-
-                        {/* 2. Business Service (Depends on Network) */}
-                        <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
-                                    Business Service
-                                </label>
-                                {useOtherBusiness && (
-                                    <button 
-                                        type="button" 
-                                        onClick={() => { setUseOtherBusiness(false); setForm({...form, business_service: ''}); }}
-                                        style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                                    >
-                                        <ChevronLeft size={12} /> Back to List
-                                    </button>
-                                )}
-                            </div>
-                            {useOtherBusiness ? (
-                                <input
-                                    type="text"
-                                    autoFocus
-                                    placeholder="Enter business service manually..."
-                                    value={otherBusiness}
-                                    onChange={(e) => setOtherBusiness(e.target.value)}
-                                    style={inputStyle}
-                                />
-                            ) : (
-                                <SearchableSelect
-                                    options={getOptionsWithOther(businessServices)}
-                                    value={form.business_service}
-                                    disabled={!form.u_network && !useOtherNetwork}
-                                    onChange={(val) => {
-                                        if (val === OTHER_VALUE) {
-                                            setUseOtherBusiness(true);
-                                        } else {
-                                            setForm({ ...form, business_service: val, service_offering: '' });
-                                        }
-                                    }}
-                                    placeholder={(!form.u_network && !useOtherNetwork) ? "Select Network First" : "Select Business Service..."}
-                                    loading={loadingBusiness}
-                                />
-                            )}
-                        </div>
-
-                        {/* 3. Service Offering (Depends on Business Service) */}
-                        <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
-                                    Service Offering
-                                </label>
-                                {useOtherOffering && (
-                                    <button 
-                                        type="button" 
-                                        onClick={() => { setUseOtherOffering(false); setForm({...form, service_offering: ''}); }}
-                                        style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                                    >
-                                        <ChevronLeft size={12} /> Back to List
-                                    </button>
-                                )}
-                            </div>
-                            {useOtherOffering ? (
-                                <input
-                                    type="text"
-                                    autoFocus
-                                    placeholder="Enter service offering manually..."
-                                    value={otherOffering}
-                                    onChange={(e) => setOtherOffering(e.target.value)}
-                                    style={inputStyle}
-                                />
-                            ) : (
-                                <SearchableSelect
-                                    options={getOptionsWithOther(serviceOfferings)}
-                                    value={form.service_offering}
-                                    disabled={!form.business_service && !useOtherBusiness}
-                                    onChange={(val) => {
-                                        if (val === OTHER_VALUE) {
-                                            setUseOtherOffering(true);
-                                        } else {
-                                            setForm({ ...form, service_offering: val });
-                                        }
-                                    }}
-                                    placeholder={(!form.business_service && !useOtherBusiness) ? "Select Business Service First" : "Select Service Offering..."}
-                                    loading={loadingOfferings}
-                                />
-                            )}
-                        </div>
-
-                        {/* 4. Assignment Group (Standard Select) */}
-                        <div>
-                            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
-                                Assignment Group
-                            </label>
-                            <SearchableSelect
-                                options={assignmentGroups}
-                                value={form.assignment_group}
-                                onChange={(val) => setForm({ ...form, assignment_group: val })}
-                                placeholder="Select Group..."
-                                loading={loadingGroups}
-                            />
-                        </div>
-
-                        {/* 5. Impact Technology */}
-                        <div>
-                            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
-                                Impact Technology
-                            </label>
-                            <input
-                                type="text"
-                                value={form.u_impact_technology}
-                                onChange={(e) => setForm({ ...form, u_impact_technology: e.target.value })}
-                                style={inputStyle}
-                                placeholder="e.g. {{ network }} Monitoring"
-                            />
-                        </div>
-
-                        {/* 6. System Failure */}
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', userSelect: 'none' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={form.u_system_failure}
-                                    onChange={(e) => setForm({ ...form, u_system_failure: e.target.checked })}
-                                    style={{ width: 18, height: 18, accentColor: colors.brand.primary, cursor: 'pointer' }}
-                                />
-                                <span style={{ fontSize: 14, fontWeight: 600, color: colors.text.primary }}>
-                                    System Failure
-                                </span>
-                            </label>
-                        </div>
-                    </div>
+                    <MappingServiceNowFields
+                        form={form}
+                        setForm={setForm}
+                        networks={networks}
+                        loadingNetworks={loadingNetworks}
+                        businessServices={businessServices}
+                        loadingBusiness={loadingBusiness}
+                        serviceOfferings={serviceOfferings}
+                        loadingOfferings={loadingOfferings}
+                        useOtherNetwork={useOtherNetwork}
+                        setUseOtherNetwork={setUseOtherNetwork}
+                        otherNetwork={otherNetwork}
+                        setOtherNetwork={setOtherNetwork}
+                        useOtherBusiness={useOtherBusiness}
+                        setUseOtherBusiness={setUseOtherBusiness}
+                        otherBusiness={otherBusiness}
+                        setOtherBusiness={setOtherBusiness}
+                        useOtherOffering={useOtherOffering}
+                        setUseOtherOffering={setUseOtherOffering}
+                        otherOffering={otherOffering}
+                        setOtherOffering={setOtherOffering}
+                        assignmentGroups={assignmentGroups}
+                        loadingGroups={loadingGroups}
+                        errors={errors}
+                    />
 
                     {/* Custom Fields */}
-                    <div style={{ padding: 20, background: colors.bg.tertiary, borderRadius: 10, border: `1px solid ${colors.border.primary}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <h4 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: colors.text.primary }}>
-                                Additional Custom Fields
-                            </h4>
-                            <button
-                                type="button"
-                                onClick={addCustomField}
-                                style={{
-                                    background: colors.bg.secondary,
-                                    border: `1px solid ${colors.border.primary}`,
-                                    borderRadius: 6,
-                                    padding: '6px 12px',
-                                    fontSize: 13,
-                                    fontWeight: 500,
-                                    color: colors.text.primary,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                }}
-                            >
-                                <PlusCircle size={14} />
-                                Add Field
-                            </button>
-                        </div>
-
-                        {Object.keys(customFields).length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: 20, color: colors.text.tertiary, fontSize: 13, fontStyle: 'italic' }}>
-                                No custom fields defined.
-                            </div>
-                        ) : (
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-                                {Object.entries(customFields).map(([key, value]) => (
-                                    <div key={key} style={{ background: colors.bg.secondary, padding: 12, borderRadius: 8, border: `1px solid ${colors.border.primary}`, position: 'relative' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                            <label style={{ fontSize: 11, fontWeight: 600, color: colors.text.secondary, fontFamily: 'monospace' }}>
-                                                {key}
-                                            </label>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeCustomField(key)}
-                                                style={{ background: 'none', border: 'none', color: colors.text.tertiary, cursor: 'pointer', padding: 0 }}
-                                                title="Remove field"
-                                            >
-                                                <MinusCircle size={14} />
-                                            </button>
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={value}
-                                            onChange={(e) => updateCustomField(key, e.target.value)}
-                                            placeholder="Value"
-                                            style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: `1px solid ${colors.border.secondary}`, fontSize: 13, background: colors.bg.primary, color: colors.text.primary }}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    <MappingCustomFields
+                        customFields={customFields}
+                        onAddCustomField={addCustomField}
+                        onRemoveCustomField={removeCustomField}
+                        onUpdateCustomField={updateCustomField}
+                    />
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 12, paddingTop: 20, borderTop: `1px solid ${colors.border.secondary}` }}>
                         <button

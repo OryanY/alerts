@@ -1,7 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useApiData } from '../hooks/useApiData';
 import { useTheme } from '../contexts/ThemeContext';
+import { formatDate } from '../utils/dateUtils';
 import {
     Search, CheckCircle,
     AlertTriangle, ChevronRight, Activity, Globe, Zap
@@ -21,25 +22,7 @@ const IncidentHistoryPage = () => {
         { skip: false } // Options
     );
 
-    // useApiData already extracts json.data if present, so logsData is likely the array itself
     const logs = Array.isArray(logsData) ? logsData : (logsData?.data || []);
-
-    // Effect to refetch when search changes is handled by useApiData automatically
-    // But we need to handle manual refresh if needed
-    useEffect(() => {
-        if (error) {
-            console.error('Failed to fetch logs', error);
-        }
-    }, [error]);
-
-    // Helper to format date
-    const formatDate = (isoString) => {
-        if (!isoString) return '-';
-        return new Date(isoString).toLocaleString('en-IL', {
-            dateStyle: 'short',
-            timeStyle: 'medium'
-        });
-    };
 
     return (
         <div style={{ padding: 24, paddingBottom: 100 }}>
@@ -92,7 +75,42 @@ const IncidentHistoryPage = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {logs.map(log => (
+                            {/* Loading state — skeleton rows */}
+                            {loading && Array.from({ length: 5 }).map((_, i) => (
+                                <tr key={`skel-${i}`} style={{ borderBottom: `1px solid ${colors.border.secondary}` }}>
+                                    {[180, 140, 100, 200, 80].map((w, j) => (
+                                        <td key={j} style={{ padding: '14px 16px' }}>
+                                            <div style={{
+                                                height: 12,
+                                                width: w,
+                                                borderRadius: 6,
+                                                background: colors.bg.tertiary,
+                                                animation: 'pulse 1.5s ease-in-out infinite',
+                                                animationDelay: `${i * 0.1}s`,
+                                            }} />
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                            {/* Error state */}
+                            {!loading && error && (
+                                <tr>
+                                    <td colSpan={5} style={{ padding: '32px 16px', textAlign: 'center' }}>
+                                        <div style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 10,
+                                            background: colors.semantic.errorBg,
+                                            color: colors.semantic.errorText,
+                                            border: `1px solid ${colors.semantic.error}`,
+                                            borderRadius: 8, padding: '12px 20px', fontSize: 13,
+                                        }}>
+                                            <AlertTriangle size={16} />
+                                            {error.message || 'Failed to load incident history'}
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                            {/* Data rows */}
+                            {!loading && !error && logs.map(log => (
                                 <tr
                                     key={log._id}
                                     onClick={() => setSelectedLog(log)}

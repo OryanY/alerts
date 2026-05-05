@@ -212,7 +212,7 @@ const MappingCard = ({
                             color: colors.text.primary,
                         }}
                     >
-                        {assignmentGroups.find((g) => g.id === mapping.assignment_group)?.name ||
+                        {assignmentGroups.find((g) => g.value === mapping.assignment_group)?.label ||
                             mapping.assignment_group}
                     </div>
                 </div>

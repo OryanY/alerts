@@ -8,6 +8,7 @@ const MappingFormPatternBuilder = ({
     onPatternsChange,
     PATTERN_TYPES,
     PATTERN_COLORS,
+    errors = {}
 }) => {
     const { colors } = useTheme();
     const [newPattern, setNewPattern] = useState({ value: '', type: 'exact' });
@@ -148,6 +149,12 @@ const MappingFormPatternBuilder = ({
                     </p>
                 </div>
             </div>
+
+            {errors.grafana_names && (
+                <div style={{ color: colors.semantic.error, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <X size={14} /> {errors.grafana_names}
+                </div>
+            )}
 
             {/* Pattern Input */}
             <div
@@ -294,8 +301,8 @@ const MappingFormPatternBuilder = ({
                             const colorsForType = PATTERN_COLORS[pattern.type] || PATTERN_COLORS.exact;
 
                             return (
+                                <React.Fragment key={index}>
                                 <div
-                                    key={index}
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center',
@@ -371,6 +378,12 @@ const MappingFormPatternBuilder = ({
                                         <X size={14} />
                                     </button>
                                 </div>
+                                {errors[`grafana_names_${index}`] && (
+                                    <div style={{ color: colors.semantic.error, fontSize: 11, marginTop: -4, marginLeft: 34 }}>
+                                        {errors[`grafana_names_${index}`]}
+                                    </div>
+                                )}
+                                </React.Fragment>
                             );
                         })}
                     </div>

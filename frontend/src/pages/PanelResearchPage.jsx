@@ -25,7 +25,7 @@ import ConsecutiveDaysTable from '../components/PanelResearch/ConsecutiveDaysTab
 import TopNoisyNodesTable from '../components/PanelResearch/TopNoisyNodesTable';
 import TopObjectsTable from '../components/PanelResearch/TopObjectsTable';
 // Replaced RecentAlertsTable with shared AlertTable
-import { AlertTable } from '../components/dashboard/AlertTable';
+import { AlertTable } from '../components/ui/AlertTable';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { Table } from 'lucide-react';
 
@@ -36,7 +36,7 @@ const PanelResearchPage = () => {
   } = useClientConfig();
 
   const { colors } = useTheme();
-  const S = createThemedStyles(colors);
+  const S = useMemo(() => createThemedStyles(colors), [colors]);
 
   // Destructure colorByDuration correctly
   const { colorByDuration } = useDurationBands(config);
@@ -590,13 +590,22 @@ const PanelResearchPage = () => {
                   objects={topObjects}
                   loading={topObjectsLoading}
                   selectedObject={null}
-                  onSelectObject={() => {}}
+                  onSelectObject={() => { }}
                 />
               </div>
 
               {/* Recent Alerts - Reused AlertTable for Clustering Support */}
-              <div style={{ marginTop: 24 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ marginTop: 32 }}>
+                <div
+                  dir="rtl"
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    marginBottom: 16,
+                    width: '100%'
+                  }}
+                >
                   <h3
                     style={{
                       fontSize: 16,
@@ -604,49 +613,69 @@ const PanelResearchPage = () => {
                       color: colors.text.primary,
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 10
+                      gap: 10,
+                      margin: 0
                     }}
                   >
                     <Table size={16} style={{ color: colors.brand.primary }} />
-                    Recent Alerts
-                    <span style={{ fontSize: 13, color: colors.text.tertiary, fontWeight: 400 }}>
-                      (Last 100)
+
+                    <span>היסטוריית התראות</span>
+
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: colors.text.tertiary,
+                        fontWeight: 400
+                      }}
+                    >
+                      (100 אחרונות)
                     </span>
+
                     {selectedNode && (
-                      <span style={{ fontSize: 12, fontWeight: 400, color: colors.semantic.infoText, background: colors.semantic.infoBg, padding: '2px 8px', borderRadius: 4 }}>
+                      <span
+                        dir="ltr"
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 400,
+                          color: colors.semantic.infoText,
+                          background: colors.semantic.infoBg,
+                          padding: '2px 8px',
+                          borderRadius: 4
+                        }}
+                      >
                         Filtered by: {selectedNode}
                       </span>
                     )}
                   </h3>
                 </div>
-
-                {alertsLoading ? (
-                  <LoadingSkeleton width="100%" height={400} />
-                ) : alertsError ? (
-                  <ErrorCallout message="Failed to load recent alerts" details={alertsError} />
-                ) : recentAlerts?.length > 0 ? (
-                  <div style={{
-                    border: `1px solid ${colors.border.primary}`,
-                    borderRadius: 8,
-                    background: colors.bg.secondary,
-                    overflowX: 'auto'
-                  }}>
-                    <AlertTable
-                      alerts={recentAlerts}
-                      visibleColumns={visibleColumns}
-                      sortConfig={sortConfig}
-                      onSort={handleSort}
-                      colorByDuration={colorByDuration}
-                      colors={colors}
-                      renderShiftBadge={renderShiftBadge}
-                    />
-                  </div>
-                ) : (
-                  <div style={{ padding: 40, textAlign: 'center', color: colors.text.secondary }}>
-                    No alerts found for this panel
-                  </div>
-                )}
               </div>
+
+              {alertsLoading ? (
+                <LoadingSkeleton width="100%" height={400} />
+              ) : alertsError ? (
+                <ErrorCallout message="Failed to load recent alerts" details={alertsError} />
+              ) : recentAlerts?.length > 0 ? (
+                <div style={{
+                  border: `1px solid ${colors.border.primary}`,
+                  borderRadius: 8,
+                  background: colors.bg.secondary,
+                  overflowX: 'auto'
+                }}>
+                  <AlertTable
+                    alerts={recentAlerts}
+                    visibleColumns={visibleColumns}
+                    sortConfig={sortConfig}
+                    onSort={handleSort}
+                    colorByDuration={colorByDuration}
+                    colors={colors}
+                    renderShiftBadge={renderShiftBadge}
+                  />
+                </div>
+              ) : (
+                <div style={{ padding: 40, textAlign: 'center', color: colors.text.secondary }}>
+                  No alerts found for this panel
+                </div>
+              )}
             </>
           ) : null}
         </div>
@@ -654,6 +683,5 @@ const PanelResearchPage = () => {
     </div>
   );
 };
-
 
 export default PanelResearchPage;

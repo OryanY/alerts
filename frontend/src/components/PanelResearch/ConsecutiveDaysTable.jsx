@@ -9,7 +9,7 @@ const ConsecutiveDaysTable = ({ nodes, loading, onSelectNode, selectedNode }) =>
 
     return (
         <ChartCard
-            title="Consecutive Days Patterns (3+ Days)"
+            title="התראות חזרתיות (3+ ימים)"
             loading={loading}
             height="auto"
             subtitle="Click a row to filter dashboard by node"

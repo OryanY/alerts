@@ -18,6 +18,7 @@ const normalizeTheme = (c = {}) => ({
   border: {
     primary: c?.border?.primary || '#E2E8F0',
     secondary: c?.border?.secondary || '#CBD5E1',
+    tertiary: c?.border?.tertiary || '#E5E7EB',
     focus: c?.border?.focus || '#3B82F6',
   },
 
@@ -71,29 +72,6 @@ export const createThemedStyles = (raw) => {
       color: colors.text.primary,
     },
 
-    header: {
-      background: colors.bg.secondary,
-      borderBottom: `1px solid ${colors.border.primary}`,
-      boxShadow: 'none',
-    },
-
-    headerInner: { maxWidth: '100%', margin: 0, padding: '0 16px' },
-    headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 54, gap: 14 },
-
-    navBtn: (active) => ({
-      display: 'flex',
-      alignItems: 'center',
-      gap: 7,
-      padding: '7px 10px',
-      border: `1px solid ${active ? colors.brand.primary : 'transparent'}`,
-      borderRadius: 6,
-      background: active ? `${colors.brand.primary}16` : 'transparent',
-      color: active ? colors.brand.primary : colors.text.secondary,
-      fontSize: 13,
-      fontWeight: 700,
-      cursor: 'pointer'
-    }),
-
     main: { maxWidth: '100%', margin: 0, padding: 16 },
 
     card: (extra = {}) => ({
@@ -105,25 +83,6 @@ export const createThemedStyles = (raw) => {
       ...extra,
     }),
 
-    kpiIconWrap: (color) => ({
-      width: 40,
-      height: 40,
-      borderRadius: 8,
-      background: `${color}20`,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    }),
-
-    pill: (color) => ({
-      background: `${color}20`,
-      color: color,
-      padding: '4px 8px',
-      borderRadius: 12,
-      fontSize: 11,
-      fontWeight: 600,
-    }),
-
     input: {
       padding: '7px 10px',
       border: `1px solid ${colors.border.secondary}`,
@@ -133,25 +92,6 @@ export const createThemedStyles = (raw) => {
       minHeight: 36,
       background: colors.bg.secondary,
       color: colors.text.primary,
-    },
-
-    select: {
-      padding: '10px 14px',
-      borderWidth: 1,
-      borderStyle: 'solid',
-      borderColor: colors.border.secondary,
-      borderRadius: 8,
-      fontSize: 14,
-      background: colors.bg.secondary,
-      color: colors.text.primary,
-      cursor: 'pointer',
-      transition: 'all 0.2s ease',
-
-      ':focus': {
-        outline: 'none',
-        borderColor: colors.border.focus,
-        boxShadow: `0 0 0 3px ${colors.brand.primary}20`,
-      },
     },
 
     tableHeadCell: {
@@ -172,14 +112,6 @@ export const createThemedStyles = (raw) => {
       marginBottom: 24,
     }),
 
-    footer: {
-      background: colors.bg.secondary,
-      borderTop: `1px solid ${colors.border.primary}`,
-      marginTop: 40,
-    },
-
-    footerInner: { maxWidth: 1200, margin: '0 auto', padding: '16px 20px' },
-
     skeleton: (w = '100%', h = 20) => ({
       backgroundColor: colors.bg.tertiary,
       height: h,
@@ -190,33 +122,8 @@ export const createThemedStyles = (raw) => {
 
     container: { maxWidth: '100%', margin: 0, padding: 0 },
 
-    headerBox: {
-      background: colors.bg.tertiary,
-      padding: 20,
-      borderRadius: 8,
-      marginBottom: 20,
-      borderLeft: `4px solid ${colors.brand.primary}`,
-    },
-
     title: { margin: '0 0 10px 0', color: colors.text.primary, fontSize: 24 },
 
-    subtitle: { margin: 0, color: colors.text.secondary, fontSize: 14 },
-
-    tabs: { display: 'flex', marginBottom: 20, borderBottom: `2px solid ${colors.border.primary}` },
-
-    tab: {
-      padding: '12px 24px',
-      background: 'transparent',
-      border: 'none',
-      cursor: 'pointer',
-      fontSize: 16,
-      fontWeight: 'bold',
-      borderBottom: '3px solid transparent',
-    },
-
-    activeTab: { color: colors.brand.primary, borderBottomColor: colors.brand.primary },
-
-    inactiveTab: { color: colors.text.secondary, borderBottomColor: 'transparent' },
     button: {
       primary: (disabled = false) => ({
         display: 'inline-flex',
@@ -290,19 +197,6 @@ export const createThemedStyles = (raw) => {
       }),
     },
 
-
-    buttonDanger: {
-      background: colors.semantic.error,
-      color: colors.text.inverse,
-      padding: '8px 16px',
-    },
-
-    buttonSuccess: {
-      background: colors.semantic.success,
-      color: colors.text.inverse,
-      padding: '8px 16px',
-    },
-
     error: {
       background: colors.semantic.errorBg,
       color: colors.semantic.errorText,
@@ -317,32 +211,6 @@ export const createThemedStyles = (raw) => {
       padding: 40,
       color: colors.text.secondary,
     },
-
-    cardHeader: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 15,
-      paddingBottom: 10,
-      borderBottom: `2px solid ${colors.border.primary}`,
-    },
-
-    cardTitle: { fontSize: 18, fontWeight: 'bold', color: colors.brand.primary },
-    cardSubtitle: { fontSize: 14, color: colors.text.secondary, marginTop: 5 },
-
-    ruleHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: 15 },
-    ruleTitle: { fontSize: 18, fontWeight: 'bold', color: colors.brand.primary },
-
-    priorityIndicator: {
-      padding: '2px 8px',
-      borderRadius: 12,
-      fontSize: 11,
-      background: colors.semantic.infoBg,
-      color: colors.semantic.infoText,
-    },
-
-    ruleSubtitle: { fontSize: 14, color: colors.text.secondary },
-    ruleDescription: { fontSize: 13, color: colors.text.secondary },
 
     badge: (variant = 'default') => {
       const variants = {
@@ -362,14 +230,6 @@ export const createThemedStyles = (raw) => {
         fontWeight: 600,
         ...variants[variant],
       };
-    },
-
-    noItems: {
-      textAlign: 'center',
-      padding: 40,
-      color: colors.text.secondary,
-      background: colors.bg.tertiary,
-      borderRadius: 8,
     },
   };
 };

@@ -32,7 +32,6 @@ export const DEFAULT_CLIENT_CFG = {
   falseWakeupThreshold: 120,
   clusteringEnabled: true,
   clusteringThreshold: 15,
-  durationMetric: 'median', // 'median' or 'average'
   bands: [
     { key: 'short', label: 'Short', min: 0, max: 59, color: '#10B981' },
     { key: 'medium', label: 'Medium ', min: 60, max: 299, color: '#F59E0B' },

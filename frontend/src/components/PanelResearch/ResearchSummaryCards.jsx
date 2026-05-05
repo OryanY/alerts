@@ -10,7 +10,6 @@ const ResearchSummaryCards = ({ summary }) => {
     const { colors } = useTheme();
     const S = createThemedStyles(colors);
     const { config } = useClientConfig();
-    const durationMetric = config.durationMetric || 'average';
 
     const thresholdMin = Math.round((config.falseWakeupThreshold || 120) / 60);
 
@@ -23,6 +22,7 @@ const ResearchSummaryCards = ({ summary }) => {
                 gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                 gap: 16,
                 marginBottom: 20,
+                direction: 'rtl',
             }}
         >
             {/* Total Alerts */}
@@ -49,7 +49,7 @@ const ResearchSummaryCards = ({ summary }) => {
                                 borderBottom: `1px dotted ${colors.text.tertiary}`
                             }}
                         >
-                            Total Alerts
+                            סה״כ התראות
                         </span>
                     </Tooltip>
                 </div>
@@ -69,7 +69,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         marginTop: 4,
                     }}
                 >
-                    {summary.alerts_per_day} per day
+                    {summary.alerts_per_day} ליום
                 </div>
             </div>
 
@@ -87,11 +87,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.chart.primary }}
                     />
-                    <Tooltip content={
-                        durationMetric === 'median'
-                            ? "משך זמן טיפוסי"
-                            : "משך ממוצע"
-                    }>
+                    <Tooltip content="משך זמן ממוצע וחציון (טיפוסי)">
                         <span
                             style={{
                                 fontSize: 12,
@@ -101,18 +97,18 @@ const ResearchSummaryCards = ({ summary }) => {
                                 borderBottom: `1px dotted ${colors.text.tertiary}`
                             }}
                         >
-                            {durationMetric === 'median' ? 'Median Duration' : 'Avg Duration'}
+                            משך זמן (ממוצע | חציון)
                         </span>
                     </Tooltip>
                 </div>
                 <div
                     style={{
-                        fontSize: 32,
+                        fontSize: 24,
                         fontWeight: 700,
                         color: colors.text.primary,
                     }}
                 >
-                    {formatDuration(durationMetric === 'median' ? summary.median_duration : summary.avg_duration)}
+                    {formatDuration(summary.avg_duration)} | {formatDuration(summary.median_duration)}
                 </div>
             </div>
 
@@ -140,7 +136,7 @@ const ResearchSummaryCards = ({ summary }) => {
                                 borderBottom: `1px dotted ${colors.text.tertiary}`
                             }}
                         >
-                            False Positive Rate
+                            אחוז התראות שווא
                         </span>
                     </Tooltip>
                 </div>
@@ -160,7 +156,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         marginTop: 4,
                     }}
                 >
-                    &lt; {thresholdMin}m threshold
+                    משך  &gt; {thresholdMin}  דקות
                 </div>
             </div>
 
@@ -188,7 +184,7 @@ const ResearchSummaryCards = ({ summary }) => {
                                 borderBottom: `1px dotted ${colors.text.tertiary}`
                             }}
                         >
-                            Night Wakeups
+                            התראות לילה
                         </span>
                     </Tooltip>
                 </div>
@@ -208,7 +204,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         marginTop: 4,
                     }}
                 >
-                    {summary.night_false_wakeups} false wakeups
+                    {summary.night_false_wakeups} התראות שווא
                 </div>
             </div>
 
@@ -244,7 +240,7 @@ const ResearchSummaryCards = ({ summary }) => {
                                 borderBottom: `1px dotted ${colors.text.tertiary}`
                             }}
                         >
-                            Trend
+                            מגמה
                         </span>
                     </Tooltip>
                 </div>
@@ -262,7 +258,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         textTransform: 'capitalize',
                     }}
                 >
-                    {summary.trend_direction}
+                    {summary.trend_direction === 'increasing' ? 'מגמת עליה' : summary.trend_direction === 'decreasing' ? 'מגמת ירידה' : 'יציב'}
                 </div>
             </div>
         </div>

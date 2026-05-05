@@ -10,7 +10,6 @@ import { useClientConfig } from '../../contexts/ClientConfigContext';
 const TopNoisyAlertsList = ({ alerts, loading }) => {
     const { colors } = useTheme();
     const { config } = useClientConfig();
-    const durationMetric = config?.durationMetric || 'average';
     // eslint-disable-next-line
     const S = createThemedStyles(colors);
 
@@ -72,8 +71,8 @@ const TopNoisyAlertsList = ({ alerts, loading }) => {
                                         color: colors.text.secondary,
                                     }}
                                 >
-                                    <span>{alert.count} occurrences</span>
-                                    <span>{formatDuration(durationMetric === 'median' ? alert.median_duration : alert.avg_duration)} {durationMetric === 'median' ? 'med' : 'avg'}</span>
+                                    <span>{alert.count} times</span>
+                                    <span>{formatDuration(alert.avg_duration)} avg | {formatDuration(alert.median_duration)} med </span>
                                 </div>
                                 <div
                                     style={{

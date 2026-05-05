@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     Copy, Check, Terminal, PlayCircle, Server,
     Settings, Link as LinkIcon
@@ -11,7 +11,7 @@ const commonOptionalFields = ['time_created', 'network', 'user'];
 
 const HowToUsePage = () => {
     const { colors } = useTheme();
-    const S = createThemedStyles(colors);
+    const S = useMemo(() => createThemedStyles(colors), [colors]);
     const [copiedSection, setCopiedSection] = useState(null);
     const [activeTab, setActiveTab] = useState('grafana');
 
@@ -39,14 +39,14 @@ const HowToUsePage = () => {
             desc: 'יוצר התראת ServiceNow לצרכי ניטור וקישור לתקלה ללא פתיחת תקלה חדשה.',
             color: colors.brand.purple,
             req: alertRequiredFields,
-            opt: [...commonOptionalFields, 'incident_number','incident_sys_id']
+            opt: [...commonOptionalFields, 'incident_number', 'incident_sys_id']
         },
         {
             id: 'both',
             url: `${baseUrl}/api/incidents/incident-with-alert`,
             title: 'תקלה + התראה',
             icon: PlayCircle,
-            desc: 'המסלול המומלץ: פותח התראה ומקשר אותה לתקלה חדשה (או קיימת) באופן אוטומטי.',
+            desc: 'פותח התראה ומקשר אותה לתקלה חדשה (או קיימת) באופן אוטומטי.',
             color: colors.semantic.success,
             req: alertRequiredFields,
             opt: [...commonOptionalFields]
@@ -66,7 +66,7 @@ const HowToUsePage = () => {
         { id: 'endpoints', label: 'בקשות HTTP', icon: LinkIcon },
     ];
 
-    const pageStyles = {
+    const pageStyles = useMemo(() => ({
         container: {
             maxWidth: 1000,
             margin: '0 auto',
@@ -133,7 +133,7 @@ const HowToUsePage = () => {
             color: required ? colors.semantic.errorText : colors.semantic.infoText,
             border: `1px solid ${required ? colors.semantic.error : colors.semantic.info}30`
         })
-    };
+    }), [colors, S]);
 
     const renderGrafanaTab = () => (
         <div style={pageStyles.card}>

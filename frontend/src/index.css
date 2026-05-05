@@ -58,6 +58,7 @@ a {
   position: sticky;
   top: 0;
   align-self: start;
+  z-index: 60;
 }
 
 .ops-nav {
@@ -283,13 +284,25 @@ a {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
 }
 
 ::-webkit-scrollbar {

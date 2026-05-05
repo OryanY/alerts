@@ -13,7 +13,7 @@ const IncidentManagement = () => {
 
   const { colors } = useTheme();
   const { setTopBarSlots, clearTopBarSlots } = useTopBar();
-  const S = createThemedStyles(colors);
+  const S = useMemo(() => createThemedStyles(colors), [colors]);
 
   const isMappings = activeTab === 'mappings';
   const isRules = activeTab === 'rules';

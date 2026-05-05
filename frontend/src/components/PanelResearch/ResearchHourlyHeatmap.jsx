@@ -21,14 +21,13 @@ import { formatDuration } from '../../utils/formatters';
 const ResearchHourlyHeatmap = ({ hourly_heatmap, loading }) => {
     const { colors } = useTheme();
     const { config } = useClientConfig();
-    const durationMetric = config?.durationMetric || 'average';
     // eslint-disable-next-line
     const S = createThemedStyles(colors);
     const chartProps = getChartProps(colors);
 
     return (
         <ChartCard
-            title="Hourly Alert Pattern"
+            title="תבנית התראות שעתית"
             icon={Clock}
             loading={loading}
         >
@@ -54,7 +53,7 @@ const ResearchHourlyHeatmap = ({ hourly_heatmap, loading }) => {
                                             const barColor = entry.payload?.is_night ? colors.brand.purple : colors.chart.primary;
                                             const color = isCount ? barColor : entry.color;
                                             const value = isCount ? entry.value : formatDuration(entry.value);
-                                            const name = isCount ? 'Alerts' : (durationMetric === 'average' ? 'Average Duration' : 'Median Duration');
+                                            const name = isCount ? 'התראות' : (entry.dataKey === 'avg_duration' ? 'משך ממוצע' : 'משך חציוני');
                                             return (
                                                 <p key={index} style={{ margin: 0, color: color, fontWeight: 'bold' }}>
                                                     {name}: {value}
@@ -84,11 +83,20 @@ const ResearchHourlyHeatmap = ({ hourly_heatmap, loading }) => {
                     <Line
                         yAxisId="right"
                         type="monotone"
-                        dataKey={durationMetric === 'average' ? 'avg_duration' : 'median_duration'}
+                        dataKey="avg_duration"
                         stroke={colors.chart.quaternary}
                         strokeWidth={2}
-                        name={durationMetric === 'average' ? 'Average Duration' : 'Median Duration'}
+                        name="משך ממוצע"
                         dot={{ r: 4, fill: colors.chart.quaternary }}
+                    />
+                    <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="median_duration"
+                        stroke={colors.chart.secondary}
+                        strokeWidth={2}
+                        name="משך חציוני"
+                        dot={{ r: 4, fill: colors.chart.secondary }}
                     />
                 </ComposedChart>
             </ResponsiveContainer>

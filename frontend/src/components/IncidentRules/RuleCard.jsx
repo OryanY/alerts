@@ -482,7 +482,7 @@ const RuleCard = ({
                                                     ? 'YES'
                                                     : 'NO'
                                                 : k === 'assignment_group'
-                                                    ? assignmentGroups?.find(g => g.id === v)?.name || v
+                                                    ? assignmentGroups?.find(g => g.value === v)?.label || v
                                                     : String(v)}
                                         </div>
                                     </div>

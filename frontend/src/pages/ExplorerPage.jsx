@@ -14,7 +14,7 @@ import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { ColumnVisibilityPanel, getDefaultVisibleColumns, getAllColumns } from '../components/layout/ColumnVisibilityPanel';
-import { AlertTable } from '../components/dashboard/AlertTable';
+import { AlertTable } from '../components/ui/AlertTable';
 
 const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 50;
@@ -24,7 +24,7 @@ const buildServerFilters = (filters, config) => {
   const normalizedSortOrder = (filters.sort_order || 'desc').toString().toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
   const serverFilters = {};
 
-  ['panel_title', 'application', 'operator', 'object', 'has_incident'].forEach((field) => {
+  ['panel_title', 'application', 'operator', 'object', 'has_incident', 'shift'].forEach((field) => {
     if (filters[field] !== undefined && filters[field] !== '') {
       serverFilters[field] = filters[field];
     }
@@ -261,6 +261,7 @@ const ExplorerPage = () => {
       min_duration: '',
       max_duration: '',
       has_incident: '',
+      shift: '',
     });
   };
 
@@ -409,6 +410,20 @@ const ExplorerPage = () => {
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Duration
               <SearchableSelect value={filters.duration_category || ''} onChange={(val) => setFilters({ duration_category: val })} options={dropdownOptions.durations} placeholder="All Durations" />
+            </label>
+
+            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
+              Shift
+              <SearchableSelect
+                value={filters.shift || ''}
+                onChange={(val) => setFilters({ shift: val })}
+                options={[
+                  { value: '', label: 'All Shifts' },
+                  { value: 'day', label: 'Day' },
+                  { value: 'night', label: 'Night' },
+                ]}
+                placeholder="All Shifts"
+              />
             </label>
 
             <div style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>

@@ -130,10 +130,30 @@ class ServiceNowClient {
                 timeout: 10000
             });
 
-            const items = response.data.result.map(item => ({
-                value: item[valueField] || item.sys_id || item.name,
-                label: (item[labelField] || item.label || item.name || 'Unknown').toString().trim()
-            })).sort((a, b) => a.label.localeCompare(b.label));
+            // Build items — skip rows whose resolved label is empty/blank
+            const rawItems = [];
+            for (const item of response.data.result) {
+                const rawLabel = (item[labelField] || item.label || item.name || '').toString().trim();
+                const rawValue = (item[valueField] || item.sys_id || item.name || '').toString().trim();
+
+                // Drop records where both label and value are empty
+                if (!rawLabel && !rawValue) continue;
+
+                rawItems.push({
+                    value: rawValue || rawLabel, // fall back to label if value is empty
+                    label: rawLabel || rawValue   // fall back to value if label is empty
+                });
+            }
+
+            // Deduplicate by label — keep first occurrence, skip subsequent dupes
+            const uniqueMap = new Map();
+            for (const item of rawItems) {
+                if (!uniqueMap.has(item.label)) {
+                    uniqueMap.set(item.label, item);
+                }
+            }
+
+            const items = Array.from(uniqueMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 
             // Save to dynamic cache
             if (!this.caches[cacheKey]) this.caches[cacheKey] = {};
@@ -174,7 +194,7 @@ class ServiceNowClient {
             defaultTable: 'sys_choice',
             defaultQuery: 'name=incident^element=u_network^inactive=false',
             defaultFields: 'value,label',
-            valueField: 'value',
+            valueField: 'label',
             labelField: 'label'
         });
     }

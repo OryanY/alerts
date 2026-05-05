@@ -80,6 +80,23 @@ class AlertService {
             }
         }
 
+        if (params.shift) {
+            const shiftVal = params.shift.toLowerCase();
+            const ds = params.day_start ?? this.constants.DAY_START;
+            const de = params.day_end ?? this.constants.DAY_END;
+            
+            // We must bind these parameters because _buildWhereClause is used in places 
+            // where _bindThresholds is not called (like unclustered alerts and count queries)
+            request.input('shift_ds', sql.Int, ds);
+            request.input('shift_de', sql.Int, de);
+
+            if (shiftVal === 'day') {
+                conditions.push(`DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @shift_ds AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @shift_de`);
+            } else if (shiftVal === 'night') {
+                conditions.push(`(DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @shift_ds OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @shift_de)`);
+            }
+        }
+
         return conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     }
 

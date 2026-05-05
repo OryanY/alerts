@@ -206,8 +206,16 @@ class IncidentService {
             incidentData = helpers.buildIncidentData(systemMapping, finalOverrides, alertData);
         }
 
+        // Build match objects in the shape the frontend expects
+        const matchObjects = allMatches.map(m => ({ rule: m.rule, score: m.score, is_global: !!m.rule.is_global }));
+        // Winner = highest scoring match (allMatches is already sorted desc by score)
+        const winner = matchObjects.length > 0 ? matchObjects[0] : null;
+        const shadowed_rules = matchObjects.slice(1); // all lower-priority matches
+
         return {
             system_mapping: systemMapping || null,
+            winner,
+            shadowed_rules,
             applied_rules: matchingRules.map(r => ({ rule_name: r.rule_name, incident_overrides: r.incident_overrides, is_global: r.is_global })),
             total_rules_checked: enabledRules.length,
             generated_incident: incidentData,

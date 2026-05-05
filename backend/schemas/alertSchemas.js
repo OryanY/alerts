@@ -54,7 +54,10 @@ const alertsSchema = Joi.object({
   // Duration filters
   min_duration: Joi.number().integer().min(0).optional(),
   max_duration: Joi.number().integer().min(0).optional(),
-  
+
+  // Shift filter
+  shift: Joi.string().valid('day', 'night').optional(),
+
   // Text Search
   search: Joi.string().trim().max(200).optional()
 }).custom((value, helpers) => {

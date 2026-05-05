@@ -19,7 +19,7 @@ import { useClientConfig } from '../contexts/ClientConfigContext';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { MetricCard } from '../components/ui/MetricCard';
 import { ChartCard } from '../components/ui/ChartCard';
-import { WakeupGauge } from '../components/dashboard/WakeupGauge';
+import { WakeupGauge } from '../components/ui/WakeupGauge';
 import {
   AlertTriangle,
   Clock,
@@ -35,12 +35,7 @@ import SearchableSelect from '../components/common/SearchableSelect';
 
 import { createChartConfig } from '../utils/chartConfig';
 import { formatDuration } from '../utils/formatters';
-
-const asArray = (value) => {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.data)) return value.data;
-  return [];
-};
+import { asArray, getPrevPeriodText } from '../utils/dateUtils';
 
 const NocDashboard = () => {
 
@@ -76,7 +71,12 @@ const NocDashboard = () => {
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
   // Always fetch detailed panel stats un-filtered, so the widget stays consistent
   const panelStats = useApiData('/stats/by-panel', { limit: 20 });
-  const panelOptions = asArray(panelsList);
+  // Memoize so asArray doesn't return a new reference on every render
+  const panelOptions = useMemo(() => asArray(panelsList), [panelsList]);
+  const panelSelectOptions = useMemo(
+    () => panelOptions.map(p => ({ value: p.panel_title, label: `${p.panel_title} (${p.alert_count})` })),
+    [panelOptions]
+  );
   const panelStatsRows = asArray(panelStats.data);
   const shiftRows = asArray(shifts.data);
   const durationRows = asArray(duration.data);
@@ -86,27 +86,7 @@ const NocDashboard = () => {
   // Calculate threshold in minutes for display
   const thresholdMinutes = Math.round((config.falseWakeupThreshold || 120) / 60);
 
-  // Calculate previous period for tooltips
-  const prevPeriodText = useMemo(() => {
-    if (!dateRange.start_date || !dateRange.end_date) return '';
-    try {
-      const parseLocal = (s) => {
-        const [y, m, d] = s.split('-').map(Number);
-        return new Date(y, m - 1, d);
-      };
-      const start = parseLocal(dateRange.start_date);
-      const end = parseLocal(dateRange.end_date);
-      const duration = end - start; // Time difference in ms
-
-      const prevEnd = new Date(start.getTime() - 86400000); // Start minus 1 day
-      const prevStart = new Date(prevEnd.getTime() - duration);
-
-      const fmt = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
-      return `(${fmt(prevStart)} - ${fmt(prevEnd)})`;
-    } catch (e) {
-      return '';
-    }
-  }, [dateRange]);
+  const prevPeriodText = useMemo(() => getPrevPeriodText(dateRange), [dateRange]);
 
   const topBarSlots = useMemo(() => ({
     controls: (
@@ -126,12 +106,9 @@ const NocDashboard = () => {
         >
           {config.clusteringEnabled ? 'Grouped' : 'All Alerts'}
         </a>
-                <div style={{ width: 220 }}>
+        <div style={{ width: 220 }}>
           <SearchableSelect
-            options={panelOptions.map(p => ({
-              value: p.panel_title,
-              label: `${p.panel_title} (${p.alert_count})`
-            }))}
+            options={panelSelectOptions}
             value={selectedPanel || ''}
             onChange={(val) => setSelectedPanel(val || null)}
             placeholder="All Panels"
@@ -139,13 +116,12 @@ const NocDashboard = () => {
         </div>
       </div>
     ),
-  }), [panelOptions, selectedPanel, setSelectedPanel, config.clusteringEnabled, colors]);
+  }), [panelSelectOptions, selectedPanel, setSelectedPanel, config.clusteringEnabled, colors]);
 
   useEffect(() => {
     setTopBarSlots(topBarSlots);
     return clearTopBarSlots;
   }, [setTopBarSlots, clearTopBarSlots, topBarSlots]);
-
   return (
     <div>
       {/*
@@ -199,13 +175,9 @@ const NocDashboard = () => {
           />
 
           <MetricCard
-            title={config.durationMetric === 'average' ? 'ממוצע זמן התראה' : 'חציון זמן התראה'}
-            tooltip={
-              config.durationMetric === 'average'
-                ? "משך זמן ממוצע להתראה."
-                : "משך זמן בחציון (כדי למנוע השפעה של התראות חריגות)."
-            }
-            value={formatDuration(config.durationMetric === 'average' ? exec.data?.avg_duration : exec.data?.median_duration)}
+            title="משך זמן התראה (ממוצע | חציון)"
+            tooltip="משך זמן התראה ממוצע לעומת חציון (טיפוסי)."
+            value={`${formatDuration(exec.data?.avg_duration)} | ${formatDuration(exec.data?.median_duration)}`}
             icon={Clock}
             logoColor="green"
             loading={exec.loading}
@@ -323,7 +295,7 @@ const NocDashboard = () => {
                             const barColor = entry.payload?.is_night ? colors.brand.purple : colors.chart.primary;
                             const color = isCount ? barColor : entry.color;
                             const value = isCount ? entry.value : formatDuration(entry.value);
-                            const name = isCount ? 'Count' : (config.durationMetric === 'average' ? 'Average Duration' : 'Median Duration');
+                            const name = isCount ? 'כמות' : (entry.dataKey === 'avg_duration' ? 'ממוצע' : 'חציון');
                             return (
                               <p key={index} style={{ margin: 0, color: color, fontWeight: 'bold' }}>
                                 {name}: {value}
@@ -336,7 +308,7 @@ const NocDashboard = () => {
                     return null;
                   }}
                 />
-                <Bar yAxisId="left" dataKey="count" name="Count">
+                <Bar yAxisId="left" dataKey="count" name="כמות">
                   {heatmapRows.map((entry, idx) => (
                     <Cell
                       key={idx}
@@ -347,11 +319,20 @@ const NocDashboard = () => {
                 <Line
                   yAxisId="right"
                   type="monotone"
-                  dataKey={config.durationMetric === 'average' ? 'avg_duration' : 'median_duration'}
+                  dataKey="avg_duration"
                   stroke={colors.chart.quaternary}
                   strokeWidth={2}
-                  name={config.durationMetric === 'average' ? 'Average Duration' : 'Median Duration'}
+                  name="ממוצע"
                   dot={{ r: 4, fill: colors.chart.quaternary }}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="median_duration"
+                  stroke={colors.chart.secondary}
+                  strokeWidth={2}
+                  name="חציון"
+                  dot={{ r: 4, fill: colors.chart.secondary }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -359,7 +340,7 @@ const NocDashboard = () => {
 
           {/* Top Alert Sources List */}
           <ChartCard
-            title="Top Alert Sources"
+            title="מקורות ההתראות המובילים"
             icon={Network}
             loading={panelStats.loading}
             error={panelStats.error}
@@ -391,7 +372,7 @@ const NocDashboard = () => {
                         {p.alert_count}
                       </div>
                       <div style={{ fontSize: 10, color: colors.text.secondary }}>
-                        {formatDuration(p.avg_duration)} avg | {formatDuration(p.median_duration)} med
+                        {formatDuration(p.avg_duration)} ממוצע | {formatDuration(p.median_duration)} חציון
                       </div>
                     </div>
                   </div>
@@ -452,7 +433,7 @@ const NocDashboard = () => {
                   fillOpacity={0.2}
                   stroke={colors.chart.primary}
                   strokeWidth={2}
-                  name="Total Alerts"
+                  name="סה״כ התראות"
                 />
                 <Area
                   yAxisId="left"
@@ -462,7 +443,7 @@ const NocDashboard = () => {
                   fillOpacity={0.4}
                   stroke={colors.semantic.error}
                   strokeWidth={2}
-                  name="False Alerts"
+                  name="התראות שווא"
                 />
                 <Line
                   yAxisId="right"
@@ -470,7 +451,15 @@ const NocDashboard = () => {
                   dataKey="avg_duration"
                   stroke={colors.chart.tertiary}
                   strokeWidth={2}
-                  name={config.durationMetric === 'average' ? 'Average Duration' : 'Median Duration'}
+                  name="ממוצע"
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="median_duration"
+                  stroke={colors.chart.secondary}
+                  strokeWidth={2}
+                  name="חציון"
                 />
               </ComposedChart>
             </ResponsiveContainer>

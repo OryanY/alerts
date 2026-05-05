@@ -30,6 +30,7 @@ const baseThemes = {
     border: {
       primary: '#E5E7EB',
       secondary: '#D1D5DB',
+      tertiary: '#F3F4F6',
       focus: '#3B82F6',
     },
     brand: {
@@ -89,6 +90,7 @@ const baseThemes = {
     border: {
       primary: '#374151',
       secondary: '#4B5563',
+      tertiary: '#4B5563',
       focus: '#60A5FA',
     },
     brand: {

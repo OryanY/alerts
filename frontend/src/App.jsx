@@ -6,13 +6,13 @@ import ExplorerPage from './pages/ExplorerPage';
 import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { ClientConfigProvider } from './contexts/ClientConfigContext';
-import IncidentManagment from './pages/IncidentManagment';
+import IncidentManagement from './pages/IncidentManagementPage';
 import IncidentHistoryPage from './pages/IncidentHistoryPage';
 import PanelResearchPage from './pages/PanelResearchPage';
 import HowToUsePage from './pages/HowToUsePage';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
-import IncidentStatsPage from './pages/Incidentstatspage';
+import IncidentStatsPage from './pages/IncidentStatsPage';
 import Health from './pages/Health';
 
 const queryClient = new QueryClient({
@@ -48,7 +48,7 @@ function App() {
                 <Route path="settings" element={<SettingsPage />} />
 
 
-                <Route path="incident" element={<IncidentManagment />} />
+                <Route path="incident" element={<IncidentManagement />} />
                 <Route path="history" element={<IncidentHistoryPage />} />
                 <Route path="research" element={<PanelResearchPage />} />
                 <Route path="how-to-use" element={<HowToUsePage />} />

@@ -15,6 +15,8 @@ export const useExplorerFilters = () => {
     min_duration: searchParams.get('min_dur') || '',
     max_duration: searchParams.get('max_dur') || '',
     has_incident: searchParams.get('has_inc') || '',
+    object: searchParams.get('object') || '',
+    shift: searchParams.get('shift') || '',
     sort_by: searchParams.get('sort') || 'time_fired',
     sort_order: searchParams.get('order') || 'desc',
     page: parseInt(searchParams.get('page') || '1', 10)

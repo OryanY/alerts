@@ -105,7 +105,6 @@ export const ClientConfigProvider = ({ children }) => {
         ? newConfig.clusteringEnabled
         : DEFAULT_CLIENT_CFG.clusteringEnabled,
       clusteringThreshold: toInt(newConfig.clusteringThreshold, DEFAULT_CLIENT_CFG.clusteringThreshold),
-      durationMetric: ['median', 'average'].includes(newConfig.durationMetric) ? newConfig.durationMetric : DEFAULT_CLIENT_CFG.durationMetric,
       bands: newConfig.bands?.map(b => ({
         ...b,
         min: toInt(b.min, 0),
