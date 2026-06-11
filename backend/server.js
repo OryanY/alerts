@@ -3,8 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
-const { DateTime } = require('luxon');
-
+const { ensureCacheIndex } = require('./utils/cache.js');
 
 // Import configuration and database connections
 const { CONFIG } = require('./config');
@@ -37,10 +36,8 @@ app.use(helmet({
 }));
 
 // CORS configuration
-const restrictedCors = cors(CONFIG.cors.restricted);
 const publicCors = cors(CONFIG.cors.public);
 
-// Apply public CORS to health check by default (or restricted? Health usually open for load balancers)
 app.use('/api/health', publicCors);
 
 // Compression and parsing
@@ -69,7 +66,7 @@ app.get('/api/health', (req, res) => {
 // API Routes
 app.use('/from-grafana', publicCors, incidentRoutes);
 
-app.use('/api', restrictedCors, alertRoutes);
+app.use('/api', publicCors, alertRoutes);
 app.use('/api/incidents', publicCors, incidentRoutes);
 
 app.use('/metrics', metricsRoutes);
@@ -114,16 +111,19 @@ let isShuttingDown = false;
 
 async function startServer() {
   try {
+    //Connect to mongo
     console.log('Starting Alert Management API...');
     await initializeSqlDatabase();
     await initializeMongoDatabase();
+    await ensureCacheIndex();
     console.log('Databases initialized.');
-    // Pre-warm the ServiceNow reference data cache in the background
+
+    // Pre-warm ServiceNow data cache in the background
     console.log('Pre-warming ServiceNow reference caches...');
     incidentRoutes.incidentService.getAssignmentGroups().catch(e => console.error('Failed to pre-cache groups:', e.message));
     incidentRoutes.incidentService.getServiceOfferings().catch(e => console.error('Failed to pre-cache offerings:', e.message));
     incidentRoutes.incidentService.getBusinessServices().catch(e => console.error('Failed to pre-cache business services:', e.message));
-    incidentRoutes.incidentService.getNetworks().catch(e => console.error('Failed to pre-cache business services:', e.message));
+    incidentRoutes.incidentService.getNetworks().catch(e => console.error('Failed to pre-cache networks:', e.message));
 
     server = app.listen(PORT, () => {
       console.log(`Alert Management API Server Started on Port ${PORT}`);

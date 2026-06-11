@@ -150,26 +150,66 @@ class AlertService {
         return result.recordset;
     }
 
-    async getExecutiveKPIs(params) {
+    async _fetchKpiRow(params) {
         const { enabled } = this._getClusteringConfig(params);
-        let sqlKpis;
-
         if (enabled) {
             const result = await this._execute(queries.CLUSTERED_KPI_STATS, params, { replace: { CLUSTER_FILTER: '' } });
-            sqlKpis = result[0] || {};
-        } else {
-            const result = await this._execute(queries.UNCLUSTERED_KPI_STATS, params);
-            sqlKpis = result[0] || {};
+            return result[0] || {};
         }
+        const result = await this._execute(queries.UNCLUSTERED_KPI_STATS, params);
+        return result[0] || {};
+    }
+
+    // Previous period of equal length, ending the day before start_date.
+    // Mirrors the frontend's getPrevPeriodText() so the trend label and the
+    // numbers describe the same window.
+    _getPreviousPeriod(params) {
+        if (!params.start_date || !params.end_date) return null;
+        const start = DateTime.fromISO(params.start_date, { zone: 'Asia/Jerusalem' }).startOf('day');
+        const end = DateTime.fromISO(params.end_date, { zone: 'Asia/Jerusalem' }).startOf('day');
+        if (!start.isValid || !end.isValid || end < start) return null;
+        const days = end.diff(start, 'days').days;
+        const prevEnd = start.minus({ days: 1 });
+        const prevStart = prevEnd.minus({ days });
+        return {
+            start_date: prevStart.toISODate(),
+            end_date: prevEnd.toISODate()
+        };
+    }
+
+    _falsePositiveRate(row) {
+        return row.total_alerts > 0
+            ? parseFloat(((row.false_wakeups * 100) / row.total_alerts).toFixed(1))
+            : 0;
+    }
+
+    async getExecutiveKPIs(params) {
+        const prevPeriod = this._getPreviousPeriod(params);
+        const [sqlKpis, prevKpis] = await Promise.all([
+            this._fetchKpiRow(params),
+            prevPeriod ? this._fetchKpiRow({ ...params, ...prevPeriod }) : Promise.resolve(null)
+        ]);
 
         const kpis = {
             total_alerts: sqlKpis.total_alerts || 0,
             avg_duration: sqlKpis.avg_duration || 0,
             median_duration: sqlKpis.median_duration || 0,
-            false_positive_rate_247: sqlKpis.total_alerts > 0 ? parseFloat(((sqlKpis.false_wakeups * 100) / sqlKpis.total_alerts).toFixed(1)) : 0,
+            false_positive_rate_247: this._falsePositiveRate(sqlKpis),
             true_wakeups: sqlKpis.night_true_wakeups || 0,
             signal_ratio: sqlKpis.total_alerts > 0 ? parseFloat(((sqlKpis.true_alerts * 100) / sqlKpis.total_alerts).toFixed(1)) : 0
         };
+
+        // Trends vs. the previous equivalent period (omitted when there is no
+        // comparable data, so the UI hides the trend arrow).
+        if (prevKpis && prevKpis.total_alerts > 0) {
+            kpis.total_trend_pct = parseFloat(
+                (((kpis.total_alerts - prevKpis.total_alerts) * 100) / prevKpis.total_alerts).toFixed(1)
+            );
+            // Percentage-point change of the false-alert rate
+            kpis.noise_trend_pct = parseFloat(
+                (kpis.false_positive_rate_247 - this._falsePositiveRate(prevKpis)).toFixed(1)
+            );
+        }
 
         return { success: true, data: kpis };
     }
@@ -177,6 +217,9 @@ class AlertService {
     _formatAlerts(records, enabled, params) {
         const ds = params.day_start ? parseInt(params.day_start, 10) : this.constants.DAY_START;
         const de = params.day_end ? parseInt(params.day_end, 10) : this.constants.DAY_END;
+        // Same precedence as the duration histogram: request params win over defaults
+        const shortMax = params.dur_short_max ? parseInt(params.dur_short_max, 10) : this.constants.DUR_SHORT_MAX;
+        const mediumMax = params.dur_medium_max ? parseInt(params.dur_medium_max, 10) : this.constants.DUR_MEDIUM_MAX;
 
         return records.map(r => {
             const duration_sec = r.duration_sec || 0;
@@ -207,7 +250,7 @@ class AlertService {
                 time_fired: r.time_fired,
                 time_resolved: r.time_resolved,
                 duration_sec: duration_sec,
-                duration_category: duration_sec <= (this.constants.DUR_SHORT_MAX || 59) ? 'short' : (duration_sec <= (this.constants.DUR_MEDIUM_MAX || 299) ? 'medium' : 'long'),
+                duration_category: duration_sec <= shortMax ? 'short' : (duration_sec <= mediumMax ? 'medium' : 'long'),
                 shift: shift,
                 message: r.message,
                 key_field: r.key_field,

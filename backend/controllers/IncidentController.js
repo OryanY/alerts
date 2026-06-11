@@ -1,554 +1,340 @@
 // controllers/IncidentController.js
 // ---------------------------------------------------------------
-// Handles only HTTP request/response – all business logic lives
-// in the services that are injected via the constructor.
+// HTTP layer only — all business logic lives in the injected services.
+//
+// Two response styles, by caller type:
+//  - Webhook/browser flows (Grafana links): redirect to ServiceNow on
+//    success, styled HTML page on error (with a "create mapping" action
+//    when the application has no mapping).
+//  - Programmatic flows (the React app): JSON, with status taken from
+//    typed errors (utils/errors.js).
 // ---------------------------------------------------------------
 const { getErrorHtml } = require('./htmlTemplates');
+const { AppError, MappingNotFoundError } = require('../utils/errors');
+const helpers = require('../services/incident/incidentHelpers');
+
+// Hebrew user-facing messages for the HTML (webhook) error pages
+const HTML_MESSAGES = {
+    mappingMissing: 'לא נמצא מיפוי מערכת עבור האפליקציה',
+    incidentFailed: 'אירעה שגיאה פנימית במערכת',
+    alertFailed: 'אירעה שגיאה ביצירת ההתראה',
+    combinedFailed: 'אירעה שגיאה ביצירת התקלה וההתראה',
+    grafanaFailed: 'אירעה שגיאה ביצירת התקלה'
+};
 
 class IncidentController {
-  constructor(incidentService, mappingService, ruleService) {
-    // -----------------------------------------------------------
-    // Dependencies
-    // -----------------------------------------------------------
-    this.incidentService = incidentService;
-    this.mappingService  = mappingService;
-    this.ruleService     = ruleService;
-
-    // -----------------------------------------------------------
-    // Bind every handler so Express can call it directly
-    // -----------------------------------------------------------
-    this.getAssignmentGroups         = this.getAssignmentGroups.bind(this);
-    this.getNetworks                 = this.getNetworks.bind(this);
-    this.getServiceOfferings         = this.getServiceOfferings.bind(this);
-    this.getBusinessServices         = this.getBusinessServices.bind(this);
-    this.createIncidentFromAlertGET  = this.createIncidentFromAlertGET.bind(this);
-    this.createIncidentFromAlertPOST = this.createIncidentFromAlertPOST.bind(this);
-    this.createIncidentWithAlertGET  = this.createIncidentWithAlertGET.bind(this);
-    this.createIncidentWithAlertPOST = this.createIncidentWithAlertPOST.bind(this);
-    this.simulateIncidentCreation    = this.simulateIncidentCreation.bind(this);
-    this.getSystemMappings           = this.getSystemMappings.bind(this);
-    this.createSystemMapping         = this.createSystemMapping.bind(this);
-    this.updateSystemMapping         = this.updateSystemMapping.bind(this);
-    this.deleteSystemMapping         = this.deleteSystemMapping.bind(this);
-    this.getIncidentRules            = this.getIncidentRules.bind(this);
-    this.createIncidentRule          = this.createIncidentRule.bind(this);
-    this.updateIncidentRule          = this.updateIncidentRule.bind(this);
-    this.deleteIncidentRule          = this.deleteIncidentRule.bind(this);
-    this.toggleIncidentRule          = this.toggleIncidentRule.bind(this);
-    this.getIncidentLogs             = this.getIncidentLogs.bind(this);
-    this.createServiceNowAlert       = this.createServiceNowAlert.bind(this);
-    this.createIncidentFromGrafana = this.createIncidentFromGrafana.bind(this);
-  }
-
-  // -----------------------------------------------------------------
-  // Helper – builds a link that lets the UI jump to the mapping screen
-  // -----------------------------------------------------------------
-  _getErrorAction(error) {
-    if (error.message.includes('No system mapping')) {
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      return {
-        label: '➕ יצירת מיפוי חדש',
-        url: `${frontendUrl}/incident`
-      };
+    constructor(incidentService, mappingService, ruleService, settingsService) {
+        this.incidentService = incidentService;
+        this.mappingService = mappingService;
+        this.ruleService = ruleService;
+        this.settingsService = settingsService;
     }
-    return null;
-  }
 
-  // ====================== ASSIGNMENT GROUPS ======================
-  async getAssignmentGroups(req, res, next) {
-    try {
-      const groups = await this.incidentService.getAssignmentGroups();
-      if (!Array.isArray(groups)) {
-        console.error('❌ Groups is not an array:', typeof groups);
-        return res.status(500).json({ success: false, error: 'Invalid groups data' });
-      }
-      res.json({ success: true, data: groups, count: groups.length });
-    } catch (err) {
-      next(err);
+    // ================== ERROR RESPONDERS ==================
+
+    _isMappingError(err) {
+        return err instanceof MappingNotFoundError || err.message.includes('No system mapping');
     }
-  }
 
-  // ====================== OTHER REFERENCE DATA ======================
-  async getNetworks(req, res, next) {
-    try {
-      const networks = await this.incidentService.getNetworks();
-      res.json({ success: true, data: networks, count: networks.length });
-    } catch (err) {
-      console.error('❌ Error fetching networks:', err);
-      next(err);
+    /** Styled HTML error page for webhook/browser flows. */
+    _respondHtmlError(res, err, failureMessage) {
+        const isMapping = this._isMappingError(err);
+        const status = isMapping ? 404 : (err.status || 500);
+        const userMsg = isMapping ? HTML_MESSAGES.mappingMissing : failureMessage;
+        const action = isMapping
+            ? { label: '➕ יצירת מיפוי חדש', url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/incident` }
+            : null;
+        res.status(status).send(getErrorHtml(userMsg, err.message, action));
     }
-  }
 
-  async getServiceOfferings(req, res, next) {
-    try {
-      // Accept both network (for filtering) and business_service (for UI cascade display)
-      const { network, business_service } = req.query;
-      // Filter by network — same filter used for business services
-      const offerings = await this.incidentService.getServiceOfferings(network || null);
-      res.json({ success: true, data: offerings, count: offerings.length });
-    } catch (err) {
-      console.error('❌ Error fetching service offerings:', err);
-      next(err);
+    /** JSON error for programmatic flows; unknown errors go to the global handler. */
+    _respondJsonError(res, next, err, label = null) {
+        if (err instanceof AppError) {
+            return res.status(err.status).json({
+                success: false,
+                error: label || err.message,
+                details: err.message
+            });
+        }
+        next(err);
     }
-  }
 
-  async getBusinessServices(req, res, next) {
-    try {
-      const { network } = req.query;
-      const services = await this.incidentService.getBusinessServices(network);
-      res.json({ success: true, data: services, count: services.length });
-    } catch (err) {
-      console.error('❌ Error fetching business services:', err);
-      next(err);
+    /** Redirect to the ServiceNow record if a link came back, else JSON. */
+    _redirectOrJson(res, result, message, link) {
+        if (link) return res.redirect(link);
+        return res.json({ success: true, message, data: result });
     }
-  }
 
-  // ====================== SERVICE‑NOW ALERT ONLY ======================
-  async createServiceNowAlert(req, res, next) {
-    try {
-      const alertData = req.validatedQuery || req.validatedBody; // works for GET & POST
-      console.log('Creating ServiceNow alert (%s):', req.method, alertData);
-      const result = await this.incidentService.createServiceNowAlert(alertData);
+    // ================== SERVICENOW REFERENCE DATA ==================
 
-      if (result?.serviceNowResult?.link) {
-        return res.redirect(result.serviceNowResult.link);
-      }
-      return res.json({
-        success: true,
-        message: 'ServiceNow alert created successfully',
-        data: result
-      });
-    } catch (err) {
-      console.error('❌ Error %s /alert: %s', req.method, err.message);
-      const isMapping = err.message.includes('No system mapping');
-      const status    = isMapping ? 404 : 500;
-      const userMsg   = isMapping
-        ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
-        : 'אירעה שגיאה ביצירת ההתראה';
-      const action   = this._getErrorAction(err);
-      return res.status(status).send(getErrorHtml(userMsg, err.message, action));
-    }
-  }
+    getAssignmentGroups = async (req, res, next) => {
+        try {
+            const groups = await this.incidentService.getAssignmentGroups();
+            res.json({ success: true, data: groups, count: groups.length });
+        } catch (err) { next(err); }
+    };
 
-  // ====================== INCIDENT ONLY ======================
-  async createIncidentFromAlertGET(req, res, next) {
-    try {
-      const alertData = req.validatedQuery;
-      console.log('Creating incident only (GET):', alertData);
-      const result = await this.incidentService.createIncidentFromAlert(alertData);
+    getNetworks = async (req, res, next) => {
+        try {
+            const networks = await this.incidentService.getNetworks();
+            res.json({ success: true, data: networks, count: networks.length });
+        } catch (err) { next(err); }
+    };
 
-      if (result?.serviceNowResult?.link) {
-        return res.redirect(result.serviceNowResult.link);
-      }
-      return res.json({
-        success: true,
-        message: 'Incident created successfully',
-        data: result
-      });
-    } catch (err) {
-      console.error('❌ Error GET /incident: %s', err.message);
-      const isMapping = err.message.includes('No system mapping');
-      const status    = isMapping ? 404 : 500;
-      const userMsg   = isMapping
-        ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
-        : 'אירעה שגיאה פנימית במערכת';
-      const action   = this._getErrorAction(err);
-      res.status(status).send(getErrorHtml(userMsg, err.message, action));
-    }
-  }
+    getServiceOfferings = async (req, res, next) => {
+        try {
+            const offerings = await this.incidentService.getServiceOfferings(req.query.network || null);
+            res.json({ success: true, data: offerings, count: offerings.length });
+        } catch (err) { next(err); }
+    };
 
-  async createIncidentFromAlertPOST(req, res, next) {
-    try {
-      const alertData = req.validatedBody;
-      console.log('Creating incident only (POST):', alertData);
-      const result = await this.incidentService.createIncidentFromAlert(alertData);
-      res.json({
-        success: true,
-        message: 'Incident created successfully',
-        data: result
-      });
-    } catch (err) {
-      if (err.message.includes('No system mapping') || err.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'No system mapping or rules found',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    getBusinessServices = async (req, res, next) => {
+        try {
+            const services = await this.incidentService.getBusinessServices(req.query.network);
+            res.json({ success: true, data: services, count: services.length });
+        } catch (err) { next(err); }
+    };
 
-  async createIncidentFromGrafana(req, res, next) {
-    try {
-      const { object_name, application, node_name, message, time_created, operator } = req.query;
-  
-      // Validate required fields
-      if (!object_name || !application || !node_name || !message || !time_created || !operator) {
-        return res.status(400).json({
-          success: false,
-          error: 'Missing required parameters'
-        });
-      }
-  
-      // --- START: Logic migrated from Python from_grafana.py ---
-      
-      let cleanMessage = message;
-      let cleanApplication = application;
-  
-      // Python: if "%" in data['message']: data['message'] = data['message'].replace('%', ' percent ')
-      if (cleanMessage.includes('%')) {
-        cleanMessage = cleanMessage.replace(/%/g, ' percent ');
-      }
-  
-      // Python: if data["application"] == 'vmwere' and "esx" in data["message"].lower()
-      // Note: object_name is checked for 'esx' in Python
-      if (cleanApplication === 'vmwere' && (object_name.toLowerCase().includes('esx') || cleanMessage.toLowerCase().includes('esx'))) {
-        cleanApplication = 'virtu_cyber';
-      }
-  
-      // Python: if data["application"] == 'l-twix' -> 'twix'
-      if (cleanApplication === 'l-twix') {
-        cleanApplication = 'twix';
-      }
-  
-      // --- END: Logic migrated from Python ---
-  
-      // Construct the alert data object expected by the Node service
-      const alertData = {
-        object_name: object_name.toLowerCase(),
-        application: cleanApplication,
-        node_name: node_name,
-        message: cleanMessage,
-        time_created: time_created,
-        operator: operator
-      };
-  
-      console.log('📥 Received Grafana Alert (Legacy Route):', alertData);
-  
-      // Use the existing service method to create the incident in ServiceNow
-      const result = await this.incidentService.createIncidentFromAlert(alertData);
-  
-      // If the service returns a link, redirect the user to ServiceNow
-      if (result?.serviceNowResult?.link) {
-        return res.redirect(result.serviceNowResult.link);
-      }
-  
-      return res.json({
-        success: true,
-        message: 'Incident created successfully via Grafana Route',
-        data: result
-      });
-  
-    } catch (err) {
-      console.error('❌ Error in /from-grafana:', err.message);
-      
-      const isMapping = err.message.includes('No system mapping');
-      const status = isMapping ? 404 : 500;
-      const userMsg = isMapping
-        ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
-        : 'אירעה שגיאה ביצירת התקלה';
-      
-      res.status(status).send(getErrorHtml(userMsg, err.message));
-    }
-  }
+    // ================== INCIDENT CREATION ==================
 
-  // ====================== INCIDENT + ALERT (COMBINED) ======================
-  /** GET /incident‑with‑alert – webhook compatible */
-  async createIncidentWithAlertGET(req, res, next) {
-    try {
-      const params = req.validatedQuery;
+    /** GET /incident — Grafana click-through: redirect to the created ticket. */
+    createIncidentFromAlertGET = async (req, res) => {
+        try {
+            const result = await this.incidentService.createIncidentFromAlert(req.validatedQuery);
+            this._redirectOrJson(res, result, 'Incident created successfully', result?.serviceNowResult?.link);
+        } catch (err) {
+            console.error('❌ Error GET /incident: %s', err.message);
+            this._respondHtmlError(res, err, HTML_MESSAGES.incidentFailed);
+        }
+    };
 
-      const createAlert   = params.create_servicenow_alert === 'true' || params.create_servicenow_alert === '1';
-      const linkToIncident = params.link_to_incident === 'true' || params.link_to_incident === '1';
+    /** POST /incident — programmatic creation, JSON in/out. */
+    createIncidentFromAlertPOST = async (req, res, next) => {
+        try {
+            const result = await this.incidentService.createIncidentFromAlert(req.validatedBody);
+            res.json({ success: true, message: 'Incident created successfully', data: result });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'No system mapping or rules found');
+        }
+    };
 
-      const alertData = {
-        application:  params.application,
-        object_name:  params.object_name,
-        node_name:    params.node_name,
-        message:      params.message,
-        time_created: params.time_created,
-        operator:     params.operator,
-        network:      params.network,
-        user:         params.user
-      };
+    /** GET /from-grafana — legacy webhook route with alert normalization. */
+    createIncidentFromGrafana = async (req, res) => {
+        try {
+            const { object_name, application, node_name, message, time_created, operator } = req.query;
+            if (!object_name || !application || !node_name || !message || !time_created || !operator) {
+                return res.status(400).json({ success: false, error: 'Missing required parameters' });
+            }
 
-      console.log('GET /incident-with-alert →', { alertData, createAlert, linkToIncident });
+            const alertData = helpers.normalizeGrafanaAlert(
+                { object_name, application, node_name, message, time_created, operator }
+            );
 
-      const result = await this.incidentService.createIncidentWithAlert(
-        alertData,
-        createAlert,
-        linkToIncident
-      );
+            console.log('📥 Received Grafana Alert (Legacy Route):', alertData);
+            const result = await this.incidentService.createIncidentFromAlert(alertData);
+            this._redirectOrJson(res, result, 'Incident created successfully via Grafana Route', result?.serviceNowResult?.link);
+        } catch (err) {
+            console.error('❌ Error in /from-grafana:', err.message);
+            this._respondHtmlError(res, err, HTML_MESSAGES.grafanaFailed);
+        }
+    };
 
-      // Prefer the incident link, otherwise the alert link
-      const redirectLink = result.incident?.serviceNowResult?.link ||
-                           result.alert?.serviceNowResult?.link;
+    // ================== TIUD ALERT ==================
 
-      if (redirectLink) return res.redirect(redirectLink);
+    /** GET|POST /alert — create a TIUD alert record. */
+    createServiceNowAlert = async (req, res) => {
+        try {
+            const alertData = req.validatedQuery || req.validatedBody;
+            console.log('Creating ServiceNow alert (%s):', req.method, alertData);
+            const result = await this.incidentService.createServiceNowAlert(alertData);
+            this._redirectOrJson(res, result, 'ServiceNow alert created successfully', result?.serviceNowResult?.link);
+        } catch (err) {
+            console.error('❌ Error %s /alert: %s', req.method, err.message);
+            this._respondHtmlError(res, err, HTML_MESSAGES.alertFailed);
+        }
+    };
 
-      res.json({
-        success: true,
-        message: 'Incident and alert created successfully',
-        data: result
-      });
-    } catch (err) {
-      console.error('❌ Error GET /incident-with-alert: %s', err.message);
-      const isMapping = err.message.includes('No system mapping');
-      const status    = isMapping ? 404 : 500;
-      const userMsg   = isMapping
-        ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
-        : 'אירעה שגיאה ביצירת התקלה וההתראה';
-      const action    = this._getErrorAction(err);
-      res.status(status).send(getErrorHtml(userMsg, err.message, action));
-    }
-  }
+    // ================== INCIDENT + ALERT (COMBINED) ==================
 
-  /** POST /incident‑with‑alert – programmatic use */
-  async createIncidentWithAlertPOST(req, res, next) {
-    try {
-      const {
-        alert,
-        create_servicenow_alert = true,
-        link_to_incident = true
-      } = req.body;
+    /** GET /incident-with-alert — webhook compatible. */
+    createIncidentWithAlertGET = async (req, res) => {
+        try {
+            const params = req.validatedQuery;
+            const createAlert = params.create_servicenow_alert === 'true' || params.create_servicenow_alert === '1';
+            const linkToIncident = params.link_to_incident === 'true' || params.link_to_incident === '1';
 
-      if (!alert) {
-        return res.status(400).json({
-          success: false,
-          error: 'Missing alert data',
-          details: 'Request body must include an "alert" object'
-        });
-      }
+            const alertData = {
+                application: params.application,
+                object_name: params.object_name,
+                node_name: params.node_name,
+                message: params.message,
+                time_created: params.time_created,
+                operator: params.operator,
+                network: params.network,
+                user: params.user
+            };
 
-      console.log('POST /incident-with-alert →', { alert, create_servicenow_alert, link_to_incident });
+            console.log('GET /incident-with-alert →', { alertData, createAlert, linkToIncident });
+            const result = await this.incidentService.createIncidentWithAlert(alertData, createAlert, linkToIncident);
 
-      const result = await this.incidentService.createIncidentWithAlert(
-        alert,
-        create_servicenow_alert,
-        link_to_incident
-      );
+            const link = result.incident?.serviceNowResult?.link || result.alert?.serviceNowResult?.link;
+            this._redirectOrJson(res, result, 'Incident and alert created successfully', link);
+        } catch (err) {
+            console.error('❌ Error GET /incident-with-alert: %s', err.message);
+            this._respondHtmlError(res, err, HTML_MESSAGES.combinedFailed);
+        }
+    };
 
-      res.json({
-        success: true,
-        message: 'Incident and alert created successfully',
-        data: result
-      });
-    } catch (err) {
-      // Re‑use generic error handling
-      const isMapping = err.message.includes('No system mapping');
-      const status    = isMapping ? 404 : 500;
-      const userMsg   = isMapping
-        ? 'לא נמצא מיפוי מערכת עבור האפליקציה'
-        : 'אירעה שגיאה ביצירת התקלה וההתראה';
-      const action    = this._getErrorAction(err);
-      res.status(status).send(getErrorHtml(userMsg, err.message, action));
-    }
-  }
+    /** POST /incident-with-alert — programmatic use. */
+    createIncidentWithAlertPOST = async (req, res) => {
+        try {
+            const { alert, create_servicenow_alert = true, link_to_incident = true } = req.body;
+            if (!alert) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Missing alert data',
+                    details: 'Request body must include an "alert" object'
+                });
+            }
 
-  // ====================== SIMULATION ======================
-  async simulateIncidentCreation(req, res, next) {
-    try {
-      const alertData = req.validatedBody;
-      console.log('🧪 Simulating incident creation:', alertData);
-      const simulationResult = await this.incidentService.simulateIncidentCreation(alertData);
-      res.json({
-        success: true,
-        message: 'Simulation completed',
-        data: simulationResult
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
+            console.log('POST /incident-with-alert →', { alert, create_servicenow_alert, link_to_incident });
+            const result = await this.incidentService.createIncidentWithAlert(alert, create_servicenow_alert, link_to_incident);
+            res.json({ success: true, message: 'Incident and alert created successfully', data: result });
+        } catch (err) {
+            this._respondHtmlError(res, err, HTML_MESSAGES.combinedFailed);
+        }
+    };
 
-  // ====================== SYSTEM MAPPINGS ======================
-  async getSystemMappings(req, res, next) {
-    try {
-      const mappings = await this.mappingService.getSystemMappings();
-      res.json({ success: true, data: mappings, count: mappings.length });
-    } catch (err) {
-      next(err);
-    }
-  }
+    // ================== SIMULATION ==================
 
-  async createSystemMapping(req, res, next) {
-    try {
-      const mappingData = req.validatedBody;
-      const newMapping  = await this.mappingService.createSystemMapping(mappingData);
-      res.status(201).json({
-        success: true,
-        message: 'System mapping created successfully',
-        data: newMapping
-      });
-    } catch (err) {
-      if (err.message.includes('already exist')) {
-        return res.status(409).json({
-          success: false,
-          error: 'Mapping already exists',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    simulateIncidentCreation = async (req, res, next) => {
+        try {
+            const simulationResult = await this.incidentService.simulateIncidentCreation(req.validatedBody);
+            res.json({ success: true, message: 'Simulation completed', data: simulationResult });
+        } catch (err) { next(err); }
+    };
 
-  async updateSystemMapping(req, res, next) {
-    try {
-      const { id } = req.params;
-      const mappingData = req.validatedBody;
-      const updated = await this.mappingService.updateSystemMapping(id, mappingData);
-      res.json({
-        success: true,
-        message: 'System mapping updated successfully',
-        data: updated
-      });
-    } catch (err) {
-      if (err.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'System mapping not found',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    // ================== INCIDENT SETTINGS (templates & defaults) ==================
 
-  async deleteSystemMapping(req, res, next) {
-    try {
-      const { id } = req.params;
-      const result = await this.mappingService.deleteSystemMapping(id);
-      res.json({ success: true, message: result.message, deletedCount: result.deletedCount });
-    } catch (err) {
-      if (err.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'System mapping not found',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    getIncidentSettings = async (req, res, next) => {
+        try {
+            const settings = await this.settingsService.getSettings();
+            res.json({ success: true, data: settings });
+        } catch (err) { next(err); }
+    };
 
-  // ====================== INCIDENT RULES ======================
-  async getIncidentRules(req, res, next) {
-    try {
-      const { application } = req.query;
-      const rules = await this.ruleService.getIncidentRules(application);
-      res.json({ success: true, data: rules, count: rules.length });
-    } catch (err) {
-      next(err);
-    }
-  }
+    updateIncidentSettings = async (req, res, next) => {
+        try {
+            const settings = await this.settingsService.updateSettings(req.validatedBody);
+            res.json({ success: true, message: 'Incident settings updated successfully', data: settings });
+        } catch (err) { next(err); }
+    };
 
-  async createIncidentRule(req, res, next) {
-    try {
-      const ruleData = req.validatedBody;
-      const newRule  = await this.ruleService.createIncidentRule(ruleData);
-      res.status(201).json({
-        success: true,
-        message: 'Incident rule created successfully',
-        data: newRule
-      });
-    } catch (err) {
-      if (err.message.includes('System mapping not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'System mapping not found',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    resetIncidentSettings = async (req, res, next) => {
+        try {
+            const settings = await this.settingsService.resetSettings();
+            res.json({ success: true, message: 'Incident settings reset to defaults', data: settings });
+        } catch (err) { next(err); }
+    };
 
-  async updateIncidentRule(req, res, next) {
-    try {
-      const { id } = req.params;
-      const ruleData = req.validatedBody;
-      const updated = await this.ruleService.updateIncidentRule(id, ruleData);
-      res.json({
-        success: true,
-        message: 'Incident rule updated successfully',
-        data: updated
-      });
-    } catch (err) {
-      if (err.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'Rule not found',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    // ================== SYSTEM MAPPINGS ==================
 
-  async deleteIncidentRule(req, res, next) {
-    try {
-      const { id } = req.params;
-      const result = await this.ruleService.deleteIncidentRule(id);
-      res.json({ success: true, message: result.message, deletedCount: result.deletedCount });
-    } catch (err) {
-      if (err.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'Incident rule not found',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    getSystemMappings = async (req, res, next) => {
+        try {
+            const mappings = await this.mappingService.getSystemMappings();
+            res.json({ success: true, data: mappings, count: mappings.length });
+        } catch (err) { next(err); }
+    };
 
-  async toggleIncidentRule(req, res, next) {
-    try {
-      const { id } = req.params;
-      const { enabled } = req.body;
-      if (typeof enabled !== 'boolean') {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid request',
-          details: 'enabled field must be a boolean'
-        });
-      }
-      const result = await this.ruleService.toggleIncidentRule(id, enabled);
-      res.json({ success: true, message: result.message });
-    } catch (err) {
-      if (err.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'Incident rule not found',
-          details: err.message
-        });
-      }
-      next(err);
-    }
-  }
+    createSystemMapping = async (req, res, next) => {
+        try {
+            const newMapping = await this.mappingService.createSystemMapping(req.validatedBody);
+            res.status(201).json({ success: true, message: 'System mapping created successfully', data: newMapping });
+        } catch (err) {
+            this._respondJsonError(res, next, err, err.status === 409 ? 'Mapping already exists' : 'System mapping not found');
+        }
+    };
 
-  // ====================== HISTORY / LOGS ======================
-  async getIncidentLogs(req, res, next) {
-    try {
-      const { limit = 50, skip = 0, search = '' } = req.query;
-      const result = await this.incidentService.getIncidentHistory(
-        parseInt(limit, 10),
-        parseInt(skip, 10),
-        search
-      );
-      res.json({
-        success: true,
-        data: result.logs,
-        count: result.total,
-        meta: { limit, skip, search }
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
+    updateSystemMapping = async (req, res, next) => {
+        try {
+            const updated = await this.mappingService.updateSystemMapping(req.params.id, req.validatedBody);
+            res.json({ success: true, message: 'System mapping updated successfully', data: updated });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'System mapping not found');
+        }
+    };
 
-  // ====================== UTILITY ======================
+    deleteSystemMapping = async (req, res, next) => {
+        try {
+            const result = await this.mappingService.deleteSystemMapping(req.params.id);
+            res.json({ success: true, message: result.message, deletedCount: result.deletedCount });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'System mapping not found');
+        }
+    };
+
+    // ================== INCIDENT RULES ==================
+
+    getIncidentRules = async (req, res, next) => {
+        try {
+            const rules = await this.ruleService.getIncidentRules(req.query.application);
+            res.json({ success: true, data: rules, count: rules.length });
+        } catch (err) { next(err); }
+    };
+
+    createIncidentRule = async (req, res, next) => {
+        try {
+            const newRule = await this.ruleService.createIncidentRule(req.validatedBody);
+            res.status(201).json({ success: true, message: 'Incident rule created successfully', data: newRule });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'System mapping not found');
+        }
+    };
+
+    updateIncidentRule = async (req, res, next) => {
+        try {
+            const updated = await this.ruleService.updateIncidentRule(req.params.id, req.validatedBody);
+            res.json({ success: true, message: 'Incident rule updated successfully', data: updated });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'Rule not found');
+        }
+    };
+
+    deleteIncidentRule = async (req, res, next) => {
+        try {
+            const result = await this.ruleService.deleteIncidentRule(req.params.id);
+            res.json({ success: true, message: result.message, deletedCount: result.deletedCount });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'Incident rule not found');
+        }
+    };
+
+    toggleIncidentRule = async (req, res, next) => {
+        try {
+            const { enabled } = req.body;
+            if (typeof enabled !== 'boolean') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid request',
+                    details: 'enabled field must be a boolean'
+                });
+            }
+            const result = await this.ruleService.toggleIncidentRule(req.params.id, enabled);
+            res.json({ success: true, message: result.message });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'Incident rule not found');
+        }
+    };
+
+    // ================== HISTORY / LOGS ==================
+
+    getIncidentLogs = async (req, res, next) => {
+        try {
+            const { limit = 50, skip = 0, search = '' } = req.query;
+            const result = await this.incidentService.getIncidentHistory(parseInt(limit, 10), parseInt(skip, 10), search);
+            res.json({ success: true, data: result.logs, count: result.total, meta: { limit, skip, search } });
+        } catch (err) { next(err); }
+    };
 }
 
 module.exports = { IncidentController };

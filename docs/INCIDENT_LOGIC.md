@@ -30,15 +30,14 @@ The `IncidentService.createIncidentFromAlert` method manages the external side-e
 
 ### The Flow
 1.  **Ingest**: Receive alert data.
-2.  **Rule Match**: Find the best matching rule (as described above).
-3.  **Deduplication**: Query the database for an *existing, active* incident for this specific Node/Application pair.
-    *   **Scenario A (Active Incident Exists)**: Do not spam ServiceNow. Instead, update the existing ticket with a work-note ("Alert re-fired").
-    *   **Scenario B (No Active Incident)**: Proceed to creation.
-4.  **Creation**:
+2.  **Rule Match**: Find the matching rules (as described above) and merge their overrides in specificity order.
+3.  **Creation**:
     *   Resolve **System Mapping**: Identify the `Business Service` and `Assignment Group`.
-    *   Apply **Overrides**: If the Rule specifies a unique description or severity, apply it.
+    *   Apply **Overrides**: If the Rule specifies a unique description or other field values, apply them.
     *   **API Call**: Send POST request to ServiceNow.
-5.  **Persist**: Save the new Incident ID and state to the mongo database to track its lifecycle.
+4.  **Persist**: Log the alert source, generated payload, ServiceNow result, and applied rules to the `incident_logs` Mongo collection (90-day TTL).
+
+> **Deduplication note:** This service does **not** deduplicate. Every call creates a new ServiceNow incident. Deduplication of repeated alerts is handled *upstream* by an external **n8n workflow** before alerts reach these endpoints. Do not add dedup logic here without an explicit decision.
 
 ## System Mappings
 System Mappings bridge the gap between Grafana and ServiceNow.

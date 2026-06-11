@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { formatDuration } from '../../utils/formatters';
 
 // ServiceNow instance URL (without trailing slash)
-const SERVICE_NOW_BASE_URL = 'https://servicenow.com';
+const SERVICE_NOW_BASE_URL = 'http://servicenow.d8200.mil';
 
 export const AlertTable = ({
   alerts,

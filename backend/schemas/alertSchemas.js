@@ -10,9 +10,9 @@ const baseSchema = {
   day_end: Joi.number().integer().min(0).max(23).default(22),
   night_start: Joi.number().integer().min(0).max(23).default(22),
   night_end: Joi.number().integer().min(0).max(23).default(8),
-  // Duration thresholds
-  dur_short_max: Joi.number().integer().min(1).default(30),
-  dur_medium_max: Joi.number().integer().min(1).default(300),
+  // Duration thresholds — defaults aligned with frontend DEFAULT_CLIENT_CFG bands
+  dur_short_max: Joi.number().integer().min(1).default(59),
+  dur_medium_max: Joi.number().integer().min(1).default(299),
   false_wakeup_threshold: Joi.number().integer().min(1).default(120),
 
   // Limit parameter

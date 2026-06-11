@@ -21,7 +21,7 @@ In this mode, the math is entirely literal to the rows in the database:
 When the "Clustered Mode" toggle is *enabled*, the API switches to `CLUSTERED_INCIDENT_STATS_BATCH`. This fundamentally changes the baseline unit of measurement from an "Alert" to a "Cluster".
 
 ### How The Grouping Works
-The database orders all alerts chronologically. If any two consecutive alerts (system-wide) fire within the `@cluster_threshold` (default: 15 minutes) of each other, they are grouped into a single **Cluster**. A Cluster continues to grow infinitely until there is a >= 15-minute period of absolute silence across the system.
+The database orders alerts chronologically **within each `(panel_title, application)` pair** (see the `PARTITION BY panel_title, application` in the clustered queries). If two consecutive alerts from the *same panel and application* fire within the `@cluster_threshold` (default: 15 minutes) of each other, they are grouped into a single **Cluster**. A Cluster continues to grow until there is a ≥ 15-minute gap in alerts *for that panel/application pair*. Alerts from different panels or applications never share a cluster.
 
 ### How The KPIs Change
 Because the unit of measurement is now a Cluster (a "cardboard box" holding many alerts), the KPI cards on the dashboard mathematically shift their definitions. 

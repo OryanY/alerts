@@ -1,104 +1,90 @@
 # Alert Management Backend
 
-A production-ready Node.js/Express backend for managing Grafana alerts and creating ServiceNow incidents.
+Node.js/Express backend for the Alert & Incident Management dashboard: serves alert BI statistics from SQL Server and creates ServiceNow incidents from Grafana alerts using MongoDB-stored mappings and rules.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# Install dependencies
 npm install
 
-# Copy environment template
+# Copy environment template and fill in real values
 cp .env.example .env
 
-# Edit .env with your values
-# ...
-
-# Start development server
+# Development (nodemon)
 npm run dev
 
-# Start production server
+# Production
 npm start
 ```
 
-## 📁 Project Structure
+The server listens on port **8080** (`CONFIG.server.port`).
+
+## Project Structure (actual)
 
 ```
 backend/
-├── controllers/          # HTTP request handlers
-│   ├── AlertController.js
-│   ├── IncidentController.js
-│   └── StatsController.js
-├── routes/               # Route definitions (path mapping only)
-│   ├── alertRoutes.js
-│   ├── incidentRoutes.js
-│   ├── statsRoutes.js
-│   └── healthRoutes.js
-├── services/             # Business logic
-│   ├── alert/
-│   │   └── AlertService.js
+├── config/
+│   ├── index.js            # CONFIG object + SQL/Mongo connection configs (reads .env)
+│   └── validateEnv.js      # Fail-fast env validation on startup
+├── controllers/
+│   ├── IncidentController.js  # HTTP handlers for incident/mapping/rule endpoints
+│   └── htmlTemplates.js       # HTML error page for webhook (GET) flows
+├── database/
+│   ├── connection.js       # SQL Server pool + MongoDB client lifecycle
+│   └── queries/alertQueries.js  # All T-SQL templates (clustered + unclustered)
+├── middleware/
+│   ├── validation.js       # Joi validateQuery/validateBody/validateParams
+│   └── queryLogger.js      # Request/response logging
+├── routes/
+│   ├── alertRoutes.js      # /api/alerts + /api/stats/* (handlers inline, logic in AlertService)
+│   ├── incidentRoutes.js   # /api/incidents/* + /from-grafana (controller pattern)
+│   └── metrics.js          # /metrics — live ServiceNow incident counts for external dashboards
+├── schemas/                # Joi schemas (alertSchemas, incidentSchemas)
+├── services/
+│   ├── alert/AlertService.js        # Alert BI orchestration, WHERE-clause building
 │   └── incident/
-│       ├── IncidentService.js
-│       ├── IncidentQueryService.js
-│       ├── ServiceNowClient.js
-│       └── ...
-├── middleware/           # Express middleware
-│   ├── errorHandler.js
-│   ├── validation.js
-│   └── requestId.js
-├── utils/                # Utilities
-│   ├── constants.js      # Centralized constants
-│   ├── errors.js         # Custom error classes
-│   ├── response.js       # API response helpers
-│   └── validateEnv.js    # Environment validation
-├── config/               # Configuration
-├── database/             # Database connections
-├── schemas/              # Joi validation schemas
-└── server.js             # Application entry point
+│       ├── IncidentService.js       # Incident creation + history logs
+│       ├── IncidentRuleService.js   # Rule CRUD + matching (Mongo)
+│       ├── SystemMappingService.js  # Mapping CRUD + application lookup (Mongo)
+│       ├── ServiceNowClient.js      # ServiceNow Table API client (axios)
+│       └── incidentHelpers.js       # Pure rule-matching / payload-building functions
+├── utils/sharedCache.js    # MongoDB-backed cross-replica cache (cacheGet/cacheSet)
+└── server.js               # App wiring, startup, shutdown
 ```
 
-## 🔑 Environment Variables
+## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `SQL_SERVER` | ✅ | SQL Server hostname |
-| `SQL_DATABASE` | ✅ | Database name |
-| `SQL_USER` | ✅ | Database username |
-| `SQL_PASSWORD` | ✅ | Database password |
-| `MONGO_URI` | ✅ | MongoDB connection string |
-| `SERVICENOW_URL` | ⚠️ | ServiceNow instance URL |
-| `SERVICENOW_USERNAME` | ⚠️ | ServiceNow API username |
-| `SERVICENOW_PASSWORD` | ⚠️ | ServiceNow API password |
+See [.env.example](.env.example) for the full annotated list. Required:
+`SQL_SERVER`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD`, `MONGO_HOST`, `MONGO_DB`, `MONGO_USER`, `MONGO_PASSWORD`, `SERVICENOW_URL`, `SERVICENOW_USERNAME`, `SERVICENOW_PASSWORD`, `NODE_ENV`, `FRONTEND_URL`.
 
-## 📡 API Endpoints
+## API Surface
 
-### Health Checks
-- `GET /api/health` - Basic health check
-- `GET /api/health/ready` - Readiness check (DB connections)
-- `GET /api/health/live` - Liveness check (process info)
+### Health
+- `GET /api/health`
 
-### Alerts
-- `GET /api/alerts` - List alerts with filtering
+### Alerts & BI (`/api`)
+- `GET /api/alerts` — paginated alerts (clustered or raw), `GET /api/alerts/export.csv`
+- `GET /api/stats/executive-kpis` — KPIs incl. previous-period trends (`total_trend_pct`, `noise_trend_pct`)
+- `GET /api/stats/{timeseries|hourly-heatmap|duration-histogram|shift-analysis}`
+- `GET /api/stats/{panels|by-panel|panel-analysis|top-applications|top-nodes-by-app|top-objects-by-app|consecutive-days|incident-stats|filter-options}`
 
-### Statistics
-- `GET /api/stats/executive-kpis` - Executive KPIs
-- `GET /api/stats/overview` - Overview statistics
-- `GET /api/stats/*` - Various statistics endpoints
+All stats endpoints accept the client threshold params (`dur_short_max`, `dur_medium_max`, `false_wakeup_threshold`, `day_start`, `day_end`, `clustering_enabled`, `clustering_threshold`). **The frontend's user-tunable settings are the source of truth for these**; the Joi defaults (59 / 299 / 120 / 8 / 22) only apply to direct API callers and must stay aligned with `frontend/src/utils/constants.js`.
 
-### Incidents
-- `GET /api/incidents/incident` - Create incident (GET for webhooks)
-- `POST /api/incidents/incident` - Create incident
-- `POST /api/incidents/incident/simulate` - Simulate without creating
-- `GET /api/incidents/incident-logs` - Incident history
+### Incidents (`/api/incidents`, also mounted at `/from-grafana`)
+- `GET|POST /incident` — create ServiceNow incident from alert data (GET kept intentionally for Grafana click-through links)
+- `POST /incident/simulate` — dry-run rule evaluation
+- `GET|POST /alert` — create TIUD alert record
+- `GET|POST /incident-with-alert` — combined creation
+- CRUD: `/system-mappings`, `/incident-rules` (+ `PATCH /incident-rules/:id/toggle`)
+- `GET|PUT|DELETE /settings` — incident field configuration (content templates + default field fillers). Stored in the `incident_settings` Mongo collection, edited from the UI (Incidents → Incident Defaults), read fresh on every incident creation so changes apply without a restart. **PUT/DELETE require the team key** (`INCIDENT_SETTINGS_KEY` env var, sent as `X-Settings-Key`); reading is open. Required fields, literal fields, and the legacy Grafana application rewrites are code-managed (`services/incident/incidentSettingsDefaults.js`, `incidentHelpers.js`).
+- `GET /incident-logs` — creation history (Mongo, 90-day TTL)
 
-### Configuration
-- `GET /api/incidents/system-mappings` - CRUD for system mappings
-- `GET /api/incidents/incident-rules` - CRUD for incident rules
+### Metrics (`/metrics`)
+ServiceNow live incident counts with team/state/tag filters, cached 60s in the shared Mongo cache. Consumed by external dashboards — treat its query/filter behavior as a frozen contract.
 
-## 📝 Architecture Principles
+## Architecture Notes
 
-1. **Controller-Service Pattern**: Routes delegate to controllers, controllers orchestrate services
-2. **Dependency Injection**: Services receive dependencies via constructors
-3. **Custom Errors**: Use `NotFoundError`, `ValidationError`, etc. from `utils/errors.js`
-4. **Consistent Responses**: Use helpers from `utils/response.js`
-5. **No Magic Strings**: Use constants from `utils/constants.js`
+1. **SQL safety invariant:** user values are ALWAYS bound via `request.input()`; query templates only ever interpolate code-controlled fragments (`{WHERE_CLAUSE}`, validated `sort_by`, etc.). Keep it that way.
+2. **Deduplication is external:** an n8n workflow dedups alerts upstream. `createIncidentFromAlert` always creates a ticket.
+3. **Caching:** prefer `utils/sharedCache.js` (Mongo-backed, cross-replica) per CLAUDE.md. Some legacy in-process caches remain in `alertRoutes.js` and the mapping/rule services — slated for unification.
+4. **ServiceNow field names** like `u_perational_impact` are intentionally spelled to match the real instance schema (including typos). Placeholder values for mandatory fields (`u_phone_voip`, `u_computer_name`) are deliberate.

@@ -16,14 +16,17 @@ const alertQuerySchema = Joi.object({
 // ServiceNow alert creation (system_offering REMOVED)
 const serviceNowAlertSchema = Joi.object({
   application: Joi.string().required().trim(),
-  object_name: Joi.string().required().trim(),
+  object_name: Joi.string().optional().trim(),
   node_name: Joi.string().required().trim(),
   message: Joi.string().required().trim(),
   time_created: Joi.string().optional().allow('').trim(),
-  operator: Joi.string().required().trim().max(50),
+  operator: Joi.string().optional().trim().max(50),
   incident_number: Joi.string().trim().optional(),
   network: Joi.string().trim().max(50).optional(),
-  user: Joi.string().trim().optional()
+  how_solved: Joi.string().trim().optional(),
+  user: Joi.string().trim().optional(),
+  prevented: Joi.string().trim().optional(),
+  incident_sys_id: Joi.string().trim().optional(),
 });
 
 // Combined incident + alert creation (system_offering REMOVED)
@@ -92,10 +95,28 @@ const incidentRuleSchema = Joi.object({
   enabled: Joi.boolean().default(true),
 });
 
+// Incident field configuration (templates + default fields) — editable from
+// the UI, stored in Mongo.
+// Each section is atomic: when present it fully replaces the stored value.
+// (required_fields / literal_fields / template_variables / application
+// rewrites are code-managed and deliberately not accepted here — they are
+// the fixed ServiceNow base contract, not tunable configuration.)
+const incidentSettingsSchema = Joi.object({
+  content_templates: Joi.object().pattern(
+    Joi.string().pattern(/^[a-zA-Z0-9_]+$/),
+    Joi.string().allow('')
+  ),
+  default_fields: Joi.object().pattern(
+    Joi.string().pattern(/^[a-zA-Z0-9_]+$/),
+    Joi.alternatives().try(Joi.string().allow(''), Joi.boolean(), Joi.number())
+  )
+}).min(1);
+
 module.exports = {
   alertQuerySchema,
   serviceNowAlertSchema,
   combinedCreateSchema,
   systemMappingSchema,
-  incidentRuleSchema
+  incidentRuleSchema,
+  incidentSettingsSchema
 };

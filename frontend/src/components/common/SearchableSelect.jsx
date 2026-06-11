@@ -21,7 +21,6 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder = 'Select
     const searchRef = useRef(null);
 
     const selectedLabel = options.find(o => o.value === value)?.label || '';
-
     const filtered = search
         ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
         : options;
@@ -56,7 +55,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder = 'Select
 
     const buttonStyle = {
         width: '100%',
-        padding: '10px 36px 10px 12px',
+        padding: '10px 36px 10px 14px',
         borderRadius: 8,
         border: `1px solid ${open ? colors.brand?.primary || '#6366f1' : colors.border.primary}`,
         background: colors.bg.primary,
@@ -72,6 +71,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder = 'Select
         position: 'relative',
         transition: 'border-color 0.15s',
         opacity: loading ? 0.6 : 1,
+        minHeight: 44,
     };
 
     const dropdownStyle = {
@@ -97,7 +97,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder = 'Select
                 onClick={() => !loading && setOpen(o => !o)}
                 style={buttonStyle}
             >
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ flex: 1, wordBreak: 'break-word', lineHeight: 1.3, paddingLeft: 4 }}>
                     {loading ? 'Loading...' : (selectedLabel || placeholder)}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -164,6 +164,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder = 'Select
                                         background: opt.value === value ? (colors.brand?.primaryAlpha || 'rgba(99,102,241,0.1)') : 'transparent',
                                         fontWeight: opt.value === value ? 600 : 400,
                                         transition: 'background 0.1s',
+                                        wordBreak: 'break-word',
                                     }}
                                     onMouseEnter={e => e.currentTarget.style.background = colors.bg.hover || 'rgba(255,255,255,0.05)'}
                                     onMouseLeave={e => e.currentTarget.style.background = opt.value === value ? (colors.brand?.primaryAlpha || 'rgba(99,102,241,0.1)') : 'transparent'}

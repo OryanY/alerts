@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
+import { API_BASE } from '../utils/constants';
 
 const alertRequiredFields = ['application', 'object_name', 'node_name', 'message', 'operator'];
 const commonOptionalFields = ['time_created', 'network', 'user'];
@@ -12,18 +13,16 @@ const commonOptionalFields = ['time_created', 'network', 'user'];
 const HowToUsePage = () => {
     const { colors } = useTheme();
     const S = useMemo(() => createThemedStyles(colors), [colors]);
+
     const [copiedSection, setCopiedSection] = useState(null);
     const [activeTab, setActiveTab] = useState('grafana');
 
-    const baseUrl = window.location.origin;
-    const templatePrefix = '$';
-    const grafanaField = (fieldName) => `${templatePrefix}{__data.fields['${fieldName}']}`;
-    const grafanaUser = `${templatePrefix}{__user.login}`;
+    const baseUrl = API_BASE;
 
     const endpoints = [
         {
             id: 'incident',
-            url: `${baseUrl}/api/incidents/incident`,
+            url: `${baseUrl}/incidents/incident`,
             title: 'יצירת תקלה בלבד',
             icon: Server,
             desc: 'פותח תקלה (Incident) ב-ServiceNow עם שיוך אוטומטי לצוות הרלוונטי.',
@@ -33,7 +32,7 @@ const HowToUsePage = () => {
         },
         {
             id: 'alert',
-            url: `${baseUrl}/api/incidents/alert`,
+            url: `${baseUrl}/incidents/alert`,
             title: 'יצירת התראה בלבד',
             icon: Terminal,
             desc: 'יוצר התראת ServiceNow לצרכי ניטור וקישור לתקלה ללא פתיחת תקלה חדשה.',
@@ -43,7 +42,7 @@ const HowToUsePage = () => {
         },
         {
             id: 'both',
-            url: `${baseUrl}/api/incidents/incident-with-alert`,
+            url: `${baseUrl}/incidents/incident-with-alert`,
             title: 'תקלה + התראה',
             icon: PlayCircle,
             desc: 'פותח התראה ומקשר אותה לתקלה חדשה (או קיימת) באופן אוטומטי.',
@@ -53,7 +52,35 @@ const HowToUsePage = () => {
         }
     ];
 
-    const grafanaUrl = `${baseUrl}/api/incidents/alert?application=${grafanaField('application')}&object_name=${grafanaField('object')}&node_name=${grafanaField('node_name')}&message=${grafanaField('message')}&time_created=${grafanaField('time_created')}&operator=${grafanaField('operator')}&network=${grafanaField('network')}&user=${grafanaUser}`;
+    // -------------------------------------------------------------------------
+    //  Two example URLs (escaped placeholders) – used only for display / copy
+    // -------------------------------------------------------------------------
+    const alertExample = `
+    ${baseUrl}/incidents/alert?
+    application=\${__data.fields['application']}&
+    object_name=\${__data.fields['object']}&
+    node_name=\${__data.fields['node_name']}&
+    message=\${__data.fields['message']}&
+    time_created=\${__data.fields['time_created']}&
+    operator=\${__data.fields['operator']}&
+    network=\${__data.fields['network']}&
+    user=\${__user.login}
+    `.trim();
+
+    /* -------------------------------------------------------------
+    Example for the **incident** endpoint
+    ------------------------------------------------------------- */
+    const incidentExample = `
+    ${baseUrl}/incidents/incident?
+    application=\${__data.fields['application']}&
+    object_name=\${__data.fields['object']}&
+    node_name=\${__data.fields['node_name']}&
+    message=\${__data.fields['message']}&
+    time_created=\${__data.fields['time_created']}&
+    operator=\${__data.fields['operator']}&
+    network=\${__data.fields['network']}&
+    user=\${__user.login}
+    `.trim();
 
     const copyToClipboard = (text, section) => {
         navigator.clipboard.writeText(text);
@@ -135,59 +162,110 @@ const HowToUsePage = () => {
         })
     }), [colors, S]);
 
+    // -------------------------------------------------------------------------
+    //  Render the Grafana tab – NEW INSTRUCTION BLOCK + TWO EXAMPLE URLs
+    // -------------------------------------------------------------------------
     const renderGrafanaTab = () => (
-        <div style={pageStyles.card}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: '2rem' }}>
-                <div style={{ padding: 12, background: `${colors.brand.primary}15`, borderRadius: 12 }}>
-                    <Settings size={28} color={colors.brand.primary} />
-                </div>
-                <div>
-                    <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, color: colors.text.primary }}>הגדרת Webhook בגרפנה</h2>
-                    <p style={{ margin: 0, color: colors.text.tertiary }}>שלב אחר שלב לחיבור אוטומטי</p>
-                </div>
-            </div>
-
-            <p style={{ color: colors.text.secondary, marginBottom: '2rem', fontSize: '1.1rem', lineHeight: 1.7 }}>
-                כדי לחבר את המערכת לגרפנה, יש ליצור <strong>Contact Point</strong> מסוג <strong>Webhook</strong>.
-                העתיקו את הכתובת הבאה הכוללת את כל המשתנים הנדרשים כ-Query Parameters. המערכת תזהה אותם אוטומטית ותבצע את המיפוי.
-            </p>
-
-            <div style={pageStyles.codeBox}>
-                <button
-                    onClick={() => copyToClipboard(grafanaUrl, 'grafana')}
-                    style={{
-                        position: 'absolute', top: 16, right: 16,
-                        background: '#334155', border: 'none', borderRadius: 8,
-                        padding: 8, color: '#fff', cursor: 'pointer'
-                    }}
-                >
-                    {copiedSection === 'grafana' ? <Check size={18} color="#4ade80" /> : <Copy size={18} />}
-                </button>
-                <div style={pageStyles.codeText}>
-                    <span style={{ color: '#38bdf8' }}>POST</span> {grafanaUrl.split('?')[0]}<br />
-                    <span style={{ color: '#fbbf24' }}>?</span>{grafanaUrl.split('?')[1].split('&').map((param, i, arr) => (
-                        <React.Fragment key={i}>
-                            <span style={{ color: '#a78bfa' }}>{param.split('=')[0]}</span>
-                            <span style={{ color: '#fff' }}>=</span>
-                            <span style={{ color: '#94a3b8' }}>{param.split('=')[1]}</span>
-                            {i < arr.length - 1 && <span style={{ color: '#fbbf24' }}>&</span>}
-                            <br />
-                        </React.Fragment>
-                    ))}
-                </div>
-            </div>
+    <div style={pageStyles.card}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: '2rem' }}>
+        <div style={{ padding: 12, background: `${colors.brand.primary}15`, borderRadius: 12 }}>
+            <Settings size={28} color={colors.brand.primary} />
         </div>
+        <div>
+            <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, color: colors.text.primary }}>
+            הגדרת פתיחה בגרפנה
+            </h2>
+        </div>
+        </div>
+
+        {/* --------------------------------------------------------------
+            Instruction text – bold parts are now <strong>
+            -------------------------------------------------------------- */}
+        <div style={{
+        color: colors.text.secondary,
+        marginBottom: '2rem',
+        fontSize: '1.1rem',
+        lineHeight: 1.7
+        }}>
+        כדי לפתוח תקלות מהגרפאנה יש להוסיף לשליפה <code>alert</code>,{' '}
+       <code>incident</code>.<br />
+        ואז ניתן להוסיף לינק לכל אחד מהכפתורים האלו באמצעות <strong>Data Links</strong>.<br />
+        <div>
+            ניתן גם ליצור <strong>התראה</strong> בעזרת ה‑URL של <code>alert</code>:
+        </div>
+        </div>
+
+        {/* Alert example ---------------------------------------------------- */}
+        <div style={pageStyles.codeBox}>
+        <button
+            onClick={() => copyToClipboard(alertExample, 'alert')}
+            style={{
+            position: 'absolute',
+            top: 16,
+            right: 16,
+            background: '#334155',
+            border: 'none',
+            borderRadius: 8,
+            padding: 8,
+            color: '#fff',
+            cursor: 'pointer'
+            }}
+        >
+            {copiedSection === 'alert' ? <Check size={18} color="#4ade80" /> : <Copy size={18} />}
+        </button>
+        <pre style={pageStyles.codeText}>{alertExample}</pre>
+        </div>
+
+        {/* Spacer ----------------------------------------------------------- */}
+        <div style={{ height: 24 }} />
+
+        {/* Incident intro – now with <strong> */}
+        <div style={{
+        color: colors.text.secondary,
+        marginBottom: '2rem',
+        fontSize: '1.1rem',
+        lineHeight: 1.7
+        }}>
+        <div>או, ליצירת <strong>תקלה בלבד</strong>:</div>
+        </div>
+
+        {/* Incident example ------------------------------------------------- */}
+        <div style={pageStyles.codeBox}>
+        <button
+            onClick={() => copyToClipboard(incidentExample, 'incident')}
+            style={{
+            position: 'absolute',
+            top: 16,
+            right: 16,
+            background: '#334155',
+            border: 'none',
+            borderRadius: 8,
+            padding: 8,
+            color: '#fff',
+            cursor: 'pointer'
+            }}
+        >
+            {copiedSection === 'incident' ? <Check size={18} color="#4ade80" /> : <Copy size={18} />}
+        </button>
+        <pre style={pageStyles.codeText}>{incidentExample}</pre>
+        </div>
+    </div>
     );
 
+    // -------------------------------------------------------------------------
+    //  Render the HTTP‑endpoints tab (unchanged)
+    // -------------------------------------------------------------------------
     const renderEndpointsTab = () => (
         <div style={pageStyles.card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: '2.5rem' }}>
                 <div style={{ padding: 12, background: `${colors.brand.purple}15`, borderRadius: 12 }}>
                     <LinkIcon size={28} color={colors.brand.purple} />
                 </div>
-                <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, color: colors.text.primary }}>בקשות HTTP</h2>
+                <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 800, color: colors.text.primary }}>
+                    בקשות HTTP
+                </h2>
             </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
                 {endpoints.map((ep) => {
                     const Icon = ep.icon;
@@ -195,27 +273,39 @@ const HowToUsePage = () => {
                         <div key={ep.id} style={{
                             background: colors.bg.tertiary,
                             border: `1px solid ${colors.border.primary}`,
-                            borderRadius: 16, padding: '1.5rem',
-                            display: 'flex', flexDirection: 'column', gap: 16
+                            borderRadius: 16,
+                            padding: '1.5rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 16
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                     <Icon color={ep.color} size={22} />
-                                    <h3 style={{ margin: 0, color: colors.text.primary, fontSize: '1.2rem', fontWeight: 700 }}>{ep.title}</h3>
+                                    <h3 style={{ margin: 0, color: colors.text.primary, fontSize: '1.2rem', fontWeight: 700 }}>
+                                        {ep.title}
+                                    </h3>
                                 </div>
-                                <button onClick={() => copyToClipboard(ep.url, ep.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.tertiary }}>
+                                <button
+                                    onClick={() => copyToClipboard(ep.url, ep.id)}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.text.tertiary }}
+                                >
                                     {copiedSection === ep.id ? <Check size={18} color={colors.semantic.success} /> : <Copy size={18} />}
                                 </button>
                             </div>
-
-                            <p style={{ color: colors.text.secondary, fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>{ep.desc}</p>
-
+                            <p style={{ color: colors.text.secondary, fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>
+                                {ep.desc}
+                            </p>
                             <div style={{ marginTop: 'auto' }}>
-                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: colors.text.primary, marginBottom: 8 }}>שדות חובה:</div>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: colors.text.primary, marginBottom: 8 }}>
+                                    שדות חובה:
+                                </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
                                     {ep.req.map(f => <span key={f} style={pageStyles.badge(true)}>{f}</span>)}
                                 </div>
-                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: colors.text.primary, marginBottom: 8 }}>אופציונלי:</div>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: colors.text.primary, marginBottom: 8 }}>
+                                    אופציונלי:
+                                </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                     {ep.opt.map(f => <span key={f} style={pageStyles.badge(false)}>{f}</span>)}
                                 </div>
@@ -227,7 +317,9 @@ const HowToUsePage = () => {
         </div>
     );
 
-
+    // -------------------------------------------------------------------------
+    //  Main render
+    // -------------------------------------------------------------------------
     return (
         <div style={{ ...S.page, minHeight: '100vh' }}>
             <style>{`
@@ -236,10 +328,15 @@ const HowToUsePage = () => {
                     to { opacity: 1; transform: translateY(0); }
                 }
             `}</style>
+
             <div style={pageStyles.container}>
                 <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
-                    <h1 style={{ ...S.title, fontSize: '3rem', marginBottom: 12 }}>📖 איך משתמשים במערכת?</h1>
-                    <p style={{ color: colors.text.secondary, fontSize: '1.2rem' }}>המדריך המלא לחיבור ושימוש ב-API של מערכת ניהול האירועים</p>
+                    <h1 style={{ ...S.title, fontSize: '3rem', marginBottom: 12 }}>
+                        📖 איך משתמשים במערכת?
+                    </h1>
+                    <p style={{ color: colors.text.secondary, fontSize: '1.2rem' }}>
+                        המדריך המלא לחיבור ושימוש ב-API של מערכת פתיחת התקלות
+                    </p>
                 </div>
 
                 <div style={pageStyles.tabContainer}>

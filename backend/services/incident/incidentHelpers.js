@@ -1,5 +1,10 @@
 // services/incident/incidentHelpers.js
-// Pure functions for rule matching, transforming, and validating incident data
+// Pure functions for rule matching, transforming, and validating incident data.
+// Field configuration (required fields, templates, defaults) comes from the
+// caller-provided `settings` object (see IncidentSettingsService); the code
+// defaults in incidentSettingsDefaults.js are only the fallback.
+
+const { DEFAULT_INCIDENT_SETTINGS } = require('./incidentSettingsDefaults');
 
 // ================== TRANSFORM HELPERS ==================
 
@@ -40,78 +45,131 @@ function validateGrafanaPatterns(patterns) {
     return sanitized;
 }
 
-function replaceTemplateVariables(template, alertData) {
+/**
+ * Substitute {{variable}} placeholders in a template with alert values.
+ * The allowed variable names come from settings.template_variables.
+ */
+function replaceTemplateVariables(template, alertData, templateVariables = DEFAULT_INCIDENT_SETTINGS.template_variables) {
     if (!template || typeof template !== 'string') return template;
-    const validFields = ['application', 'object_name', 'node_name', 'message', 'time_created', 'operator', 'network'];
     let result = template;
-    validFields.forEach(field => {
+    templateVariables.forEach(field => {
         const regex = new RegExp(`\\{\\{\\s*${field}\\s*\\}\\}`, 'g');
         result = result.replace(regex, alertData[field] || '');
     });
     return result;
 }
 
-function buildIncidentData(systemMapping, ruleOverrides = {}, alertData) {
-    const baseRequired = ['service_offering', 'business_service', 'u_network', 'assignment_group', 'u_system_failure'];
-    const excludeFields = new Set(['_id', 'grafana_names', 'created_at', 'updated_at']);
+// Mapping/rule document keys that are metadata, never ServiceNow fields.
+const NON_INCIDENT_FIELDS = new Set(['_id', 'grafana_names', 'created_at', 'updated_at']);
+
+/**
+ * Build the ServiceNow incident payload.
+ *
+ * Value precedence per field (highest wins):
+ *   1. Rule overrides (merged in specificity order by the caller)
+ *   2. System mapping fields
+ *   3. settings.content_templates (templated from alert data)
+ *   4. settings.default_fields (mandatory-field fillers)
+ *
+ * @param {object} systemMapping  Mongo mapping document for the application
+ * @param {object} ruleOverrides  Merged incident_overrides from matching rules
+ * @param {object} alertData      Normalized incoming alert
+ * @param {object} settings       Incident field configuration (IncidentSettingsService.getSettings())
+ */
+function buildIncidentData(systemMapping, ruleOverrides = {}, alertData, settings = DEFAULT_INCIDENT_SETTINGS) {
+    const requiredFields = settings.required_fields || DEFAULT_INCIDENT_SETTINGS.required_fields;
+    const literalFields = new Set(settings.literal_fields || DEFAULT_INCIDENT_SETTINGS.literal_fields);
+    const templateVariables = settings.template_variables || DEFAULT_INCIDENT_SETTINGS.template_variables;
     const incidentData = {};
 
-    baseRequired.forEach(field => {
+    // 1+2. Required fields: rule override wins over the mapping; must end up non-empty.
+    requiredFields.forEach(field => {
         let value = ruleOverrides[field] !== undefined ? ruleOverrides[field] : systemMapping[field];
         if (field === 'u_system_failure') {
             incidentData[field] = parseBoolean(value);
-        } else {
-            const skipTemplates = ['assignment_group', 'service_offering', 'business_service'];
-            if (value && typeof value === 'string' && !skipTemplates.includes(field)) {
-                value = replaceTemplateVariables(value, alertData);
-            }
-            if (!value && field !== 'u_system_failure') {
-                throw new Error(`Required field '${field}' is missing (or empty after template)`);
-            }
-            incidentData[field] = value;
+            return;
         }
+        if (value && typeof value === 'string' && !literalFields.has(field)) {
+            value = replaceTemplateVariables(value, alertData, templateVariables);
+        }
+        if (!value) {
+            throw new Error(`Required field '${field}' is missing (or empty after template)`);
+        }
+        incidentData[field] = value;
     });
 
+    // 2. Remaining mapping fields (custom fields configured on the mapping).
     Object.entries(systemMapping).forEach(([key, value]) => {
-        if (!excludeFields.has(key) && !baseRequired.includes(key) && value != null && String(value).trim() !== '') {
-            incidentData[key] = typeof value === 'string' ? replaceTemplateVariables(value, alertData) : value;
+        if (!NON_INCIDENT_FIELDS.has(key) && !requiredFields.includes(key) && value != null && String(value).trim() !== '') {
+            incidentData[key] = typeof value === 'string'
+                ? replaceTemplateVariables(value, alertData, templateVariables)
+                : value;
         }
     });
 
+    // 1. Remaining rule overrides win over mapping fields.
     Object.entries(ruleOverrides).forEach(([key, value]) => {
-        if (!excludeFields.has(key) && !baseRequired.includes(key)) {
-            if (key === 'u_system_failure') {
-                incidentData[key] = parseBoolean(value);
-            } else if (value != null && String(value).trim() !== '') {
-                incidentData[key] = replaceTemplateVariables(value, alertData);
-            }
+        if (NON_INCIDENT_FIELDS.has(key) || requiredFields.includes(key)) return;
+        if (key === 'u_system_failure') {
+            incidentData[key] = parseBoolean(value);
+        } else if (value != null && String(value).trim() !== '') {
+            incidentData[key] = replaceTemplateVariables(value, alertData, templateVariables);
         }
     });
 
-    if (!incidentData.short_description) {
-        incidentData.short_description = `קפצה התראה על: ${alertData.object_name} בניטור של - ${alertData.application}`;
-    }
+    // 3. Content templates (short_description, description, ...) when still missing.
+    Object.entries(settings.content_templates || {}).forEach(([key, template]) => {
+        if (!incidentData[key] && template) {
+            incidentData[key] = replaceTemplateVariables(template, alertData, templateVariables);
+        }
+    });
 
-    if (!incidentData.description) {
-        incidentData.description = `ההתראה:\n        ${alertData.message}`;
-    }
+    // 4. Mandatory-field fillers when still missing.
+    Object.entries(settings.default_fields || {}).forEach(([key, value]) => {
+        if (!incidentData[key] && value !== '' && value != null) {
+            incidentData[key] = typeof value === 'string'
+                ? replaceTemplateVariables(value, alertData, templateVariables)
+                : value;
+        }
+    });
 
-    if (!incidentData.u_perational_impact) {
-        incidentData.u_perational_impact = "בבדיקה";
-    }
-    if (!incidentData.u_perational_impact) {
-        incidentData.u_perational_impact = "בבדיקה";
-    }
-    if (!incidentData.u_phone_voip) {
-        incidentData.u_phone_voip = "1234";
-    }
-    if (!incidentData.u_mobile_phone) {
-        incidentData.u_mobile_phone = "1234";
-    }
-    if (!incidentData.u_computer_name) {
-        incidentData.u_computer_name = "My Computer";
-    }
     return incidentData;
+}
+
+// Legacy application-name rewrites for incoming Grafana alerts (migrated
+// from the old Python from_grafana.py). Intentionally hardcoded — these are
+// frozen legacy behavior, not configuration.
+// `when_contains` (optional): rewrite only when object_name or message
+// contains this substring (case-insensitive).
+const LEGACY_APPLICATION_REWRITES = [
+    { from: 'vmwere', to: 'virtu_cyber', when_contains: 'esx' },
+    { from: 'l-twix', to: 'twix' }
+];
+
+/**
+ * Normalize a raw Grafana alert before mapping/rule evaluation:
+ * - '%' breaks ServiceNow payloads → replaced with ' percent '
+ * - legacy application renames (LEGACY_APPLICATION_REWRITES)
+ * - object_name lowercased
+ */
+function normalizeGrafanaAlert(rawAlert) {
+    const message = String(rawAlert.message || '').replace(/%/g, ' percent ');
+    let application = rawAlert.application;
+
+    const haystack = `${rawAlert.object_name || ''} ${message}`.toLowerCase();
+    for (const rule of LEGACY_APPLICATION_REWRITES) {
+        if (application !== rule.from) continue;
+        if (rule.when_contains && !haystack.includes(String(rule.when_contains).toLowerCase())) continue;
+        application = rule.to;
+        break;
+    }
+
+    return {
+        ...rawAlert,
+        application,
+        message,
+        object_name: String(rawAlert.object_name || '').toLowerCase()
+    };
 }
 
 // ================== RULE HELPERS ==================
@@ -213,6 +271,7 @@ module.exports = {
     validateGrafanaPatterns,
     replaceTemplateVariables,
     buildIncidentData,
+    normalizeGrafanaAlert,
     matchesGrafanaPattern,
     calculateRuleSpecificity,
     checkFieldConditions,

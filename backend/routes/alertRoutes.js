@@ -11,10 +11,17 @@ const {
 } = require('../schemas/alertSchemas');
 const AlertService = require('../services/alert/AlertService');
 const { validateQuery } = require('../middleware/validation');
-
+const { createLocalCache } = require('../utils/cache');
 const router = express.Router();
 const alertService = new AlertService();
 
+// ================== CACHE ==================
+// Use named local caches from the single cache module — no ad-hoc Maps or janitor intervals.
+const CACHE_TTL = 600_000; // 10 minutes
+const alertCache       = createLocalCache('route-alerts',        { ttlMs: CACHE_TTL, maxEntries: 200 });
+const hourlyHeatmapCache = createLocalCache('route-hourly-heatmap', { ttlMs: CACHE_TTL, maxEntries: 50 });
+
+// ================== COLUMNS ==================
 const ALERT_EXPORT_COLUMNS = [
   ['incident_number', 'Incident'],
   ['panel_title', 'Panel'],
@@ -54,11 +61,9 @@ router.get('/alerts/export.csv', validateQuery(alertsSchema), async (req, res, n
     const batchSize = 1000;
     let page = 1;
     let hasNext = true;
-
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="alerts-export.csv"');
     res.write(`${ALERT_EXPORT_COLUMNS.map(([, label]) => csvCell(label)).join(',')}\n`);
-
     while (hasNext) {
       const result = await alertService.getAlerts({
         ...baseQuery,
@@ -66,28 +71,39 @@ router.get('/alerts/export.csv', validateQuery(alertsSchema), async (req, res, n
         limit: batchSize,
         include_count: false
       });
-
       for (const row of result.data || []) {
         res.write(`${ALERT_EXPORT_COLUMNS.map(([key]) => csvCell(row[key])).join(',')}\n`);
       }
-
       hasNext = !!result.meta?.pagination?.hasNext;
       page += 1;
     }
-
     res.end();
   } catch (err) { next(err); }
 });
 
 router.get('/alerts', validateQuery(alertsSchema), async (req, res, next) => {
   try {
-    const result = await alertService.getAlerts(req.validatedQuery || req.query);
-    res.json({
+    const params = req.validatedQuery || req.query;
+    const cacheKey = JSON.stringify(params);
+    const cached = alertCache.get(cacheKey);
+
+    if (cached) {
+      console.log(`[CACHE HIT] /alerts - ${params.panel_title || 'all panels'}`);
+      return res.json({ ...cached, _cached: true });
+    }
+
+    console.log(`[CACHE MISS] /alerts - ${params.panel_title || 'all panels'}`);
+
+    const result = await alertService.getAlerts(params);
+    const payload = {
       success: result.success,
-      data: result.data,
-      meta: result.meta || {},
-      count: result.meta?.pagination?.total ?? result.data?.length ?? 0
-    });
+      data:    result.data,
+      meta:    result.meta || {},
+      count:   result.meta?.pagination?.total ?? result.data?.length ?? 0
+    };
+
+    alertCache.set(cacheKey, payload);
+    res.json(payload);
   } catch (err) { next(err); }
 });
 
@@ -95,7 +111,24 @@ router.get('/alerts', validateQuery(alertsSchema), async (req, res, next) => {
 router.get('/stats/executive-kpis', validateQuery(statsSchema), handle((q) => alertService.getExecutiveKPIs(q)));
 
 // ================== TEMPORAL ==================
-router.get('/stats/hourly-heatmap', validateQuery(statsSchema), handle((q) => alertService.getHourlyHeatmap(q)));
+router.get('/stats/hourly-heatmap', validateQuery(statsSchema), async (req, res, next) => {
+  try {
+    const params = req.validatedQuery || req.query;
+    const cacheKey = JSON.stringify(params);
+    const cached = hourlyHeatmapCache.get(cacheKey);
+
+    if (cached) {
+      console.log(`[CACHE HIT] /stats/hourly-heatmap`);
+      return res.json({ ...cached, _cached: true });
+    }
+
+    console.log(`[CACHE MISS] /stats/hourly-heatmap`);
+    const result = await alertService.getHourlyHeatmap(params);
+    hourlyHeatmapCache.set(cacheKey, result);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
 router.get('/stats/timeseries', validateQuery(timeseriesSchema), handle((q) => alertService.getTimeseriesStats(q)));
 
 // ================== CATEGORICAL ==================
@@ -103,14 +136,13 @@ router.get('/stats/duration-histogram', validateQuery(statsSchema), handle((q) =
 router.get('/stats/shift-analysis', validateQuery(statsSchema), handle((q) => alertService.getShiftAnalysis(q)));
 
 // ================== ENTITY ==================
-// Distinct panel/app/operator names for UI dropdown population — no date range applied
-// Optional ?panel_title= scopes applications and operators to that panel
 router.get('/stats/filter-options', async (req, res, next) => {
   try {
     const result = await alertService.getFilterOptions({ panel_title: req.query.panel_title });
     res.json(result);
   } catch (err) { next(err); }
 });
+
 router.get('/stats/by-panel', validateQuery(panelStatsSchema), handle((q) => alertService.getPanelStats(q)));
 router.get('/stats/panels', validateQuery(panelResearchSchema), handle((q) => alertService.getPanelList(q)));
 router.get('/stats/panel-analysis', validateQuery(panelResearchSchema), handle((q) => alertService.getPanelAnalysis(q)));

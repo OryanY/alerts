@@ -11,8 +11,6 @@ let mongoDb;
 async function initializeSqlDatabase() {
   try {
     sqlPool = await new sql.ConnectionPool(dbConfig).connect();
-    console.log('Connected to SQL Server.');
-
     // Test connection with record count
     const result = await sqlPool.request().query(
       `SELECT COUNT(*) as total_records FROM dbo.historicalAlerts`
@@ -32,11 +30,8 @@ async function initializeSqlDatabase() {
 async function initializeMongoDatabase() {
   try {
     mongoClient = new MongoClient(mongoConfig.uri);
-    console.log(mongoConfig.uri);
     await mongoClient.connect();
     mongoDb = mongoClient.db(mongoConfig.database);
-
-    console.log('Connected to MongoDB.');
 
     // Test connection by counting system mappings
     const count = await mongoDb

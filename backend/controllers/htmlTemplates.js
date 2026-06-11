@@ -1,4 +1,16 @@
 /**
+ * Escape a value for safe interpolation into HTML text/attributes.
+ * Error messages can echo request input (e.g. application names), so
+ * everything injected into the page below must pass through here.
+ */
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+/**
  * Generate a styled HTML error page matching the application theme
  */
 const getErrorHtml = (error, details = '', action = null) => `
@@ -91,10 +103,10 @@ const getErrorHtml = (error, details = '', action = null) => `
     <div class="container">
         <div class="icon">❌</div>
         <h1>שגיאה ביצירת תקלה</h1>
-        <p>${error}</p>
-        ${details ? `<div class="details">${details}</div>` : ''}
+        <p>${escapeHtml(error)}</p>
+        ${details ? `<div class="details">${escapeHtml(details)}</div>` : ''}
         <div class="buttons">
-            ${action ? `<a href="${action.url}" class="action-btn" target="_blank">${action.label}</a>` : ''}
+            ${action ? `<a href="${escapeHtml(action.url)}" class="action-btn" target="_blank">${escapeHtml(action.label)}</a>` : ''}
             <button class="${action ? 'secondary-btn' : ''}" onclick="window.close()">סגור חלונית</button>
         </div>
     </div>

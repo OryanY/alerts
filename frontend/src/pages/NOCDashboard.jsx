@@ -124,9 +124,6 @@ const NocDashboard = () => {
   }, [setTopBarSlots, clearTopBarSlots, topBarSlots]);
   return (
     <div>
-      {/*
-              נתונים לפי <strong>{selectedPanel}</strong>
-      */}
       {/* Main Dashboard Grid */}
       <Suspense fallback={<div style={styles.suspenseFallback}><LoadingSpinner /></div>}>
 

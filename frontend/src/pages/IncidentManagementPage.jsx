@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Settings, Target } from 'lucide-react'; // Added History icon
+import { Settings, Target, FileSliders } from 'lucide-react';
 
 import IncidentMappings from './IncidentMappings/IncidentMappings.jsx';
 import IncidentRules from './IncidentRules.jsx';
+import IncidentDefaultsTab from '../components/IncidentDefaults/IncidentDefaultsTab.jsx';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { useTopBar } from '../contexts/TopBarContext';
 import { createThemedStyles } from '../utils/themedStyles';
 
 const IncidentManagement = () => {
-  const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules' 
+  const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules' | 'defaults'
 
   const { colors } = useTheme();
   const { setTopBarSlots, clearTopBarSlots } = useTopBar();
@@ -17,6 +18,7 @@ const IncidentManagement = () => {
 
   const isMappings = activeTab === 'mappings';
   const isRules = activeTab === 'rules';
+  const isDefaults = activeTab === 'defaults';
   const topBarSlots = useMemo(() => ({
     controls: (
       <div
@@ -50,9 +52,21 @@ const IncidentManagement = () => {
           <Target size={14} />
           Smart Rules
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('defaults')}
+          className="ops-topbar-segment"
+          style={{
+            background: isDefaults ? colors.semantic.warning : 'transparent',
+            color: isDefaults ? colors.text.inverse : colors.text.secondary,
+          }}
+        >
+          <FileSliders size={14} />
+          Incident Defaults
+        </button>
       </div>
     ),
-  }), [colors, isMappings, isRules]);
+  }), [colors, isMappings, isRules, isDefaults]);
 
   useEffect(() => {
     setTopBarSlots(topBarSlots);
@@ -79,6 +93,7 @@ const IncidentManagement = () => {
       }}>
         {isMappings && <IncidentMappings />}
         {isRules && <IncidentRules />}
+        {isDefaults && <IncidentDefaultsTab />}
       </div>
 
     </div>

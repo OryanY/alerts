@@ -1,14 +1,12 @@
 // services/incident/SystemMappingService.js
 const { ObjectId } = require('mongodb');
-const { LRUCache } = require('lru-cache');
 const { getMongoDb } = require('../../database/connection');
 const { mongoConfig } = require('../../config');
+const { createLocalCache } = require('../../utils/cache');
+const { NotFoundError, ConflictError, ValidationError } = require('../../utils/errors');
 const helpers = require('./incidentHelpers');
 
-const mappingCache = new LRUCache({
-    max: 3,
-    ttl: 5 * 60 * 1000
-});
+const mappingCache = createLocalCache('system-mappings', { ttlMs: 5 * 60 * 1000, maxEntries: 5 });
 
 class SystemMappingService {
     constructor() {
@@ -80,13 +78,13 @@ class SystemMappingService {
         const existingMapping = await this.collection.findOne(query);
         if (existingMapping) {
             const conflicts = exactValues.filter(val => existingMapping.grafana_names.some(p => (typeof p === 'string' ? p : p.value) === val));
-            throw new Error(`Exact match pattern(s) already exist: ${conflicts.join(', ')}`);
+            throw new ConflictError(`Exact match pattern(s) already exist: ${conflicts.join(', ')}`);
         }
     }
 
     async createSystemMapping(mappingData) {
         const namesToUse = mappingData.grafana_names || mappingData.grafana_name;
-        if (!namesToUse) throw new Error('grafana_names is required');
+        if (!namesToUse) throw new ValidationError('grafana_names is required');
 
         const sanitizedPatterns = helpers.validateGrafanaPatterns(namesToUse);
         await this.checkMappingConflicts(sanitizedPatterns);
@@ -120,7 +118,7 @@ class SystemMappingService {
         updateData.updated_at = new Date();
         const objId = new ObjectId(id);
         const result = await this.collection.updateOne({ _id: objId }, { $set: updateData });
-        if (result.matchedCount === 0) throw new Error('System mapping not found');
+        if (result.matchedCount === 0) throw new NotFoundError('System mapping not found');
         this._invalidateCache();
         return this.collection.findOne({ _id: objId });
     }
@@ -129,10 +127,10 @@ class SystemMappingService {
         const objId = new ObjectId(id);
         const db = getMongoDb();
         const rulesCount = await db.collection(mongoConfig.collections.incidentRules).countDocuments({ system_mapping_id: objId });
-        if (rulesCount > 0) throw new Error(`Cannot delete mapping. ${rulesCount} incident rules depend on it.`);
+        if (rulesCount > 0) throw new ConflictError(`Cannot delete mapping. ${rulesCount} incident rules depend on it.`);
 
         const result = await this.collection.deleteOne({ _id: objId });
-        if (result.deletedCount === 0) throw new Error('System mapping not found');
+        if (result.deletedCount === 0) throw new NotFoundError('System mapping not found');
         this._invalidateCache();
         return { message: 'System mapping deleted successfully', deletedCount: result.deletedCount };
     }

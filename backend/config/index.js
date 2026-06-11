@@ -6,58 +6,65 @@ const CONFIG = Object.freeze({
     maxEntries: 1000,
     enabled: true,
   },
-
   duration: {
-    short: parseInt(process.env.DURATION_SHORT_MAX, 10) || 30,
-    medium: parseInt(process.env.DURATION_MEDIUM_MAX, 10) || 300,
+    // Defaults must match the frontend's DEFAULT_CLIENT_CFG bands (frontend is
+    // the source of truth for thresholds — see frontend/src/utils/constants.js)
+    short: parseInt(process.env.DURATION_SHORT_MAX, 10) || 59,
+    medium: parseInt(process.env.DURATION_MEDIUM_MAX, 10) || 299,
     falseWakeupThreshold: parseInt(process.env.DURATION_FALSE_WAKEUP, 10) || 120,
   },
-
   cors: {
     restricted: {
       origin: process.env.NODE_ENV === 'production'
         ? (process.env.ALLOWED_ORIGINS
           ? [...process.env.ALLOWED_ORIGINS.split(','), process.env.FRONTEND_URL].filter(Boolean)
-          : [process.env.FRONTEND_URL]) // Fallback to just Frontend URL if no extra origins list
+          : [process.env.FRONTEND_URL])
         : true,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control']
+      // X-Settings-Key: team key for editing incident defaults — custom headers
+      // must be whitelisted here or the browser's CORS preflight rejects them
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key']
     },
     public: {
-      origin: true, // Allow any origin to connect (needed for external incident creation)
+      origin: true,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control']
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key']
     }
   },
-
   shifts: {
     dayStart: parseInt(process.env.SHIFT_DAY_START, 10) || 8,
     dayEnd: parseInt(process.env.SHIFT_DAY_END, 10) || 22,
     nightStart: parseInt(process.env.SHIFT_NIGHT_START, 10) || 22,
     nightEnd: parseInt(process.env.SHIFT_NIGHT_END, 10) || 8,
   },
-
   server: {
     port: 8080,
     host: '0.0.0.0',
   },
-
   limits: {
     defaultCap: parseInt(process.env.QUERY_DEFAULT_CAP, 10) || 100000,
     maxPageSize: parseInt(process.env.QUERY_MAX_PAGE_SIZE, 10) || 1000,
-    maxDateRangeDays: parseInt(process.env.QUERY_MAX_DATE_RANGE_DAYS, 10) || 100000, // Legacy value, consider lowering
+    maxDateRangeDays: parseInt(process.env.QUERY_MAX_DATE_RANGE_DAYS, 10) || 100000,
     queryTimeout: parseInt(process.env.SQL_QUERY_TIMEOUT_MS, 10) || 30000
   },
-
   clustering: {
-    enabledByDefault: process.env.CLUSTER_ENABLED_DEFAULT !== 'false', // Default to true
+    enabledByDefault: process.env.CLUSTER_ENABLED_DEFAULT !== 'false',
     defaultThreshold: parseInt(process.env.CLUSTER_THRESHOLD_MINUTES, 10) || 15
+  },
+  // --- ServiceNow Configuration ---
+  snow: {
+    url: process.env.SERVICENOW_URL,
+    username: process.env.SERVICENOW_USERNAME,
+    password: process.env.SERVICENOW_PASSWORD,
+    enabled: Boolean(process.env.SERVICENOW_URL)
+  },
+  metrics: {
+    cacheKey: 'metrics:snow_incidents',
+    cacheTTL: parseInt(process.env.METRICS_CACHE_TTL, 10) || 60000 // 60 seconds
   }
 });
-
-const encode = encodeURIComponent;
 
 // SQL Server Configuration
 const dbConfig = {
@@ -73,29 +80,32 @@ const dbConfig = {
     requestTimeout: 60000
   },
   pool: {
-    max: process.env.SQL_POOL_MAX || 10,
-    min: process.env.SQL_POOL_MIN || 2,
+    max: parseInt(process.env.SQL_POOL_MAX, 10) || 10,
+    min: parseInt(process.env.SQL_POOL_MIN, 10) || 2,
     idleTimeoutMillis: 30000
   }
 };
 
-
-// Mongo
+// Mongo Configuration
+const encode = encodeURIComponent;
 const mongoUser = process.env.MONGO_USER;
 const mongoPassword = process.env.MONGO_PASSWORD;
 const mongoHost = process.env.MONGO_HOST;
 const mongoDb = process.env.MONGO_DB;
 const mongoConfig = {
-  uri: mongoHost.includes('localhost') ? `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authSource=admin` : `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true&replicaSet=mgk-grafana2sn-znp`,
+  uri: mongoHost.includes('localhost')
+    ? `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authSource=admin`
+    : `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true&replicaSet=mgk-grafana2sn`,
   database: process.env.MONGO_DB,
   collections: {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',
     assignmentGroups: 'assignment_groups',
-    incidentLogs: 'incident_logs'
-
+    incidentLogs: 'incident_logs',
+    incidentSettings: 'incident_settings'
   }
 };
+
 module.exports = {
   CONFIG,
   dbConfig,

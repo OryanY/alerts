@@ -25,8 +25,11 @@ export const formatHourAndDay = (iso) => {
     if (!iso) return '';
     let d;
     if (typeof iso === 'string') {
-        // Strip any timezone suffix (Z, +03:00, etc.) — the value is already IL time
-        let s = iso.replace(/Z$/, '').replace(/[+-]\d{2}:\d{2}$/, '').trim();
+        // Strip timezone suffix — handle both malformed (+03:) and proper (+03:00, Z)
+        let s = iso
+            .replace(/[+-]\d{2}:?\d{0,2}$/, '')  // Handles +03:, +03:00, +03, etc.
+            .replace(/Z$/, '')
+            .trim();
         // If string misses 'T' (e.g. from SQL CONVERT), replace space with T
         s = s.replace(' ', 'T');
         d = new Date(s);

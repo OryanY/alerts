@@ -1,14 +1,12 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Download, RefreshCw, X, AlertCircle } from 'lucide-react';
-
+import { Search, Download, RefreshCw, X, AlertCircle, LayoutGrid } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useTopBar } from '../contexts/TopBarContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { fetchApi, buildApiUrl } from '../utils/api';
-
 import { LazyInput } from '../components/ui/LazyInput';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
@@ -22,25 +20,22 @@ const ALL_COLUMNS = getAllColumns();
 
 const buildServerFilters = (filters, config) => {
   const normalizedSortOrder = (filters.sort_order || 'desc').toString().toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-  const serverFilters = {};
-
-  ['panel_title', 'application', 'operator', 'object', 'has_incident', 'shift'].forEach((field) => {
+  const serverFilters = {
+    panel_title: filters.panel_title,
+  };
+  ['application', 'operator', 'object', 'has_incident', 'shift'].forEach((field) => {
     if (filters[field] !== undefined && filters[field] !== '') {
       serverFilters[field] = filters[field];
     }
   });
-
   const minDur = filters.min_duration ? parseFloat(filters.min_duration) : null;
   const maxDur = filters.max_duration ? parseFloat(filters.max_duration) : null;
-
   if (minDur !== null && !Number.isNaN(minDur) && (maxDur === null || Number.isNaN(maxDur) || minDur <= maxDur)) {
     serverFilters.min_duration = filters.min_duration;
   }
-
   if (maxDur !== null && !Number.isNaN(maxDur) && (minDur === null || Number.isNaN(minDur) || minDur <= maxDur)) {
     serverFilters.max_duration = filters.max_duration;
   }
-
   if (filters.duration_category) {
     if (filters.duration_category === 'short') {
       serverFilters.max_duration = config.bands?.[0]?.max || 59;
@@ -51,11 +46,9 @@ const buildServerFilters = (filters, config) => {
       serverFilters.min_duration = config.bands?.[2]?.min || 300;
     }
   }
-
   if (filters.search) {
     serverFilters.search = filters.search;
   }
-
   return {
     ...serverFilters,
     sort_by: filters.sort_by || 'time_fired',
@@ -79,7 +72,6 @@ const ExplorerPage = () => {
 
   useEffect(() => {
     if (debounceIdRef.current) clearTimeout(debounceIdRef.current);
-
     debounceIdRef.current = setTimeout(() => {
       setDebouncedFilters(JSON.parse(filtersKey));
       if (didDebounceRef.current) {
@@ -89,7 +81,6 @@ const ExplorerPage = () => {
       }
       debounceIdRef.current = null;
     }, DEBOUNCE_MS);
-
     return () => {
       if (debounceIdRef.current) {
         clearTimeout(debounceIdRef.current);
@@ -124,16 +115,19 @@ const ExplorerPage = () => {
     include_count: true,
   }), [baseQueryParams]);
 
+  const hasPanelSelected = Boolean(filters.panel_title);
+
   const alertsQuery = useQuery({
     queryKey: ['alerts-page', pageParams],
     queryFn: ({ signal }) => fetchApi('/alerts', pageParams, { signal }),
+    enabled: hasPanelSelected,
     placeholderData: (previous) => previous,
   });
 
   const countQuery = useQuery({
     queryKey: ['alerts-count', countParams],
     queryFn: ({ signal }) => fetchApi('/alerts', countParams, { signal }),
-    enabled: Boolean(alertsQuery.data) && !alertsQuery.isFetching,
+    enabled: hasPanelSelected && Boolean(alertsQuery.data) && !alertsQuery.isFetching,
     placeholderData: (previous) => previous,
     staleTime: 15 * 1000,
   });
@@ -142,12 +136,15 @@ const ExplorerPage = () => {
     () => filters.panel_title ? { panel_title: filters.panel_title } : {},
     [filters.panel_title]
   );
+
   const filterOptionsQuery = useQuery({
     queryKey: ['alert-filter-options', filterParams],
     queryFn: ({ signal }) => fetchApi('/stats/filter-options', filterParams, { signal }),
     placeholderData: (previous) => previous,
     staleTime: 5 * 60 * 1000,
   });
+
+  const panelIsLoading = filterOptionsQuery.isPending;
 
   const alerts = alertsQuery.data?.data || [];
   const pagination = alertsQuery.data?.meta?.pagination || {};
@@ -166,17 +163,17 @@ const ExplorerPage = () => {
     const objects = data.objects || [];
 
     return {
-      panels: [{ value: '', label: 'All Panels' }, ...panels.map((p) => ({ value: p, label: p }))],
+      panels: panels.map((p) => ({ value: p, label: p })),
       applications: [
-        { value: '', label: filters.panel_title ? 'All Applications in Panel' : 'All Applications' },
+        { value: '', label: 'All Applications' },
         ...apps.map((a) => ({ value: a, label: a })),
       ],
       operators: [
-        { value: '', label: filters.panel_title ? 'All Operators in Panel' : 'All Operators' },
+        { value: '', label: 'All Operators' },
         ...operators.map((o) => ({ value: o, label: o })),
       ],
       objects: [
-        { value: '', label: filters.panel_title ? 'All Objects in Panel' : 'All Objects' },
+        { value: '', label: 'All Objects' },
         ...objects.map((o) => ({ value: o, label: o })),
       ],
       durations: [
@@ -186,7 +183,7 @@ const ExplorerPage = () => {
         { value: 'long', label: `Long >=${config.bands?.[2]?.min || 300}s` },
       ],
     };
-  }, [filterOptionsQuery.data, filters.panel_title, config.bands]);
+  }, [filterOptionsQuery.data, config.bands]);
 
   const [visibleColumns, setVisibleColumns] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -204,7 +201,6 @@ const ExplorerPage = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-
     saveTimeoutRef.current = setTimeout(() => {
       try {
         window.localStorage.setItem('alertExplorer.visibleColumns', JSON.stringify(visibleColumns));
@@ -212,7 +208,6 @@ const ExplorerPage = () => {
         // ignore
       }
     }, 100);
-
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
@@ -245,7 +240,6 @@ const ExplorerPage = () => {
   const handleSort = (key) => {
     const col = ALL_COLUMNS.find((c) => c.key === key);
     if (!col?.sortable) return;
-
     const newOrder = filters.sort_by === key && filters.sort_order === 'asc' ? 'desc' : 'asc';
     setFilters({ sort_by: key, sort_order: newOrder });
     setPage(1);
@@ -295,6 +289,7 @@ const ExplorerPage = () => {
   const totalPages = exactTotal ? Math.max(1, Math.ceil(exactTotal / PAGE_SIZE)) : null;
   const canGoPrev = rawPage > 1;
   const canGoNext = totalPages ? rawPage < totalPages : hasNext;
+
   const explorerStatus = isInitialLoading
     ? 'Loading alerts'
     : exactTotal !== undefined
@@ -312,11 +307,11 @@ const ExplorerPage = () => {
     actions: (
       <>
         <ColumnVisibilityPanel visibleColumns={visibleColumns} onToggle={handleToggleColumn} />
-        <button onClick={() => refetchAlerts()} disabled={isAlertsFetching} style={S.button.secondary(isAlertsFetching)}>
+        <button onClick={() => refetchAlerts()} disabled={isAlertsFetching || !hasPanelSelected} style={S.button.secondary(isAlertsFetching || !hasPanelSelected)}>
           <RefreshCw size={15} style={{ animation: isAlertsFetching ? 'spin 1s linear infinite' : 'none' }} />
           Refresh
         </button>
-        <button onClick={exportToCsv} disabled={!alerts.length} style={S.button.primary(!alerts.length)}>
+        <button onClick={exportToCsv} disabled={!alerts.length || !hasPanelSelected} style={S.button.primary(!alerts.length || !hasPanelSelected)}>
           <Download size={15} />
           Export CSV
         </button>
@@ -334,6 +329,7 @@ const ExplorerPage = () => {
     S.button,
     alerts.length,
     exportToCsv,
+    hasPanelSelected,
   ]);
 
   useEffect(() => {
@@ -345,17 +341,29 @@ const ExplorerPage = () => {
     return <ErrorCallout message={alertsQuery.error.message} details={alertsQuery.error} />;
   }
 
+  const renderPanelSelectPrompt = () => (
+    <div style={{
+      padding: 44,
+      textAlign: 'center',
+      color: colors.text.secondary,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 12,
+    }}>
+      <LayoutGrid size={48} style={{ color: colors.text.tertiary }} />
+      <div style={{ fontWeight: 700, color: colors.text.primary, fontSize: 16 }}>Select a Panel</div>
+      <div style={{ fontSize: 13 }}>Choose a panel above to view alerts.</div>
+    </div>
+  );
+
   return (
     <div style={S.page}>
       <div style={S.container}>
-        {/*
-              {countQuery.isFetching && <span style={{ color: colors.text.tertiary }}> · counting</span>}
-              {isRefreshing && <span style={{ color: colors.text.tertiary }}> · refreshing</span>}
-        */}
         <section style={{ ...S.card({ padding: 12 }), marginBottom: 12 }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: 10,
             alignItems: 'end',
           }}>
@@ -372,62 +380,94 @@ const ExplorerPage = () => {
                 />
               </div>
             </label>
-
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Panel
-              <SearchableSelect value={filters.panel_title || ''} onChange={(val) => setFilters({ panel_title: val })} options={dropdownOptions.panels} placeholder="All Panels" />
+              <div style={{ position: 'relative' }}>
+                <SearchableSelect
+                  value={filters.panel_title || ''}
+                  onChange={(val) => setFilters({ panel_title: val })}
+                  options={dropdownOptions.panels}
+                  placeholder={panelIsLoading ? 'Loading panels...' : 'Select a panel'}
+                  isLoading={panelIsLoading}
+                />
+              </div>
             </label>
-
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Application
-              <SearchableSelect value={filters.application || ''} onChange={(val) => setFilters({ application: val })} options={dropdownOptions.applications} placeholder="All Applications" />
+              <div style={{ position: 'relative' }}>
+                <SearchableSelect
+                  value={filters.application || ''}
+                  onChange={(val) => setFilters({ application: val })}
+                  options={dropdownOptions.applications}
+                  placeholder="All Applications"
+                />
+              </div>
             </label>
-
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Incident
-              <SearchableSelect
-                value={filters.has_incident || ''}
-                onChange={(val) => setFilters({ has_incident: val })}
-                options={[
-                  { value: '', label: 'All Alerts' },
-                  { value: 'true', label: 'Linked' },
-                  { value: 'false', label: 'No Incident' },
-                ]}
-                placeholder="All Alerts"
-              />
+              <div style={{ position: 'relative' }}>
+                <SearchableSelect
+                  value={filters.has_incident || ''}
+                  onChange={(val) => setFilters({ has_incident: val })}
+                  options={[
+                    { value: '', label: 'All Alerts' },
+                    { value: 'true', label: 'Linked' },
+                    { value: 'false', label: 'No Incident' },
+                  ]}
+                  placeholder="All Alerts"
+                />
+              </div>
             </label>
-
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Operator
-              <SearchableSelect value={filters.operator || ''} onChange={(val) => setFilters({ operator: val })} options={dropdownOptions.operators} placeholder="All Operators" />
+              <div style={{ position: 'relative' }}>
+                <SearchableSelect
+                  value={filters.operator || ''}
+                  onChange={(val) => setFilters({ operator: val })}
+                  options={dropdownOptions.operators}
+                  placeholder="All Operators"
+                />
+              </div>
             </label>
-
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Object
-              <SearchableSelect value={filters.object || ''} onChange={(val) => setFilters({ object: val })} options={dropdownOptions.objects} placeholder="All Objects" />
+              <div style={{ position: 'relative' }}>
+                <SearchableSelect
+                  value={filters.object || ''}
+                  onChange={(val) => setFilters({ object: val })}
+                  options={dropdownOptions.objects}
+                  placeholder="All Objects"
+                />
+              </div>
             </label>
-
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Duration
-              <SearchableSelect value={filters.duration_category || ''} onChange={(val) => setFilters({ duration_category: val })} options={dropdownOptions.durations} placeholder="All Durations" />
+              <div style={{ position: 'relative' }}>
+                <SearchableSelect
+                  value={filters.duration_category || ''}
+                  onChange={(val) => setFilters({ duration_category: val })}
+                  options={dropdownOptions.durations}
+                  placeholder="All Durations"
+                />
+              </div>
             </label>
-
             <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
               Shift
-              <SearchableSelect
-                value={filters.shift || ''}
-                onChange={(val) => setFilters({ shift: val })}
-                options={[
-                  { value: '', label: 'All Shifts' },
-                  { value: 'day', label: 'Day' },
-                  { value: 'night', label: 'Night' },
-                ]}
-                placeholder="All Shifts"
-              />
+              <div style={{ position: 'relative' }}>
+                <SearchableSelect
+                  value={filters.shift || ''}
+                  onChange={(val) => setFilters({ shift: val })}
+                  options={[
+                    { value: '', label: 'All Shifts' },
+                    { value: 'day', label: 'Day' },
+                    { value: 'night', label: 'Night' },
+                  ]}
+                  placeholder="All Shifts"
+                />
+              </div>
             </label>
-
             <div style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Duration Seconds
+              Duration (seconds)
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
                 <LazyInput
                   type="number"
@@ -465,7 +505,9 @@ const ExplorerPage = () => {
         )}
 
         <section style={{ ...S.card({ padding: 0, overflow: 'hidden' }), position: 'relative' }}>
-          {isInitialLoading ? (
+          {!hasPanelSelected ? (
+            renderPanelSelectPrompt()
+          ) : isInitialLoading ? (
             <div style={{ padding: 16 }}>
               <LoadingSkeleton width="100%" height={44} />
               {Array(10).fill().map((_, i) => (
@@ -485,7 +527,6 @@ const ExplorerPage = () => {
                   zIndex: 20,
                 }} />
               )}
-
               <AlertTable
                 alerts={alerts}
                 visibleColumns={visibleOrderedColumns}
@@ -495,7 +536,6 @@ const ExplorerPage = () => {
                 colors={colors}
                 renderShiftBadge={renderShiftBadge}
               />
-
               {alerts.length === 0 && (
                 <div style={{ padding: 44, textAlign: 'center', color: colors.text.secondary }}>
                   <AlertCircle size={32} style={{ marginBottom: 12, color: colors.text.tertiary }} />
@@ -503,7 +543,6 @@ const ExplorerPage = () => {
                   <div style={{ fontSize: 13 }}>Adjust filters or date range.</div>
                 </div>
               )}
-
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -520,7 +559,6 @@ const ExplorerPage = () => {
                     ? `Showing ${startIndex.toLocaleString()}-${endIndex.toLocaleString()}${exactTotal !== undefined ? ` of ${exactTotal.toLocaleString()}` : ''}`
                     : 'No rows'}
                 </div>
-
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button onClick={() => setPage(rawPage - 1)} disabled={!canGoPrev} style={S.button.secondary(!canGoPrev)}>
                     Previous

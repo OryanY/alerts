@@ -1,14 +1,12 @@
 // services/incident/IncidentRuleService.js
 const { ObjectId } = require('mongodb');
-const { LRUCache } = require('lru-cache');
 const { getMongoDb } = require('../../database/connection');
 const { mongoConfig } = require('../../config');
+const { createLocalCache } = require('../../utils/cache');
+const { NotFoundError, ValidationError } = require('../../utils/errors');
 const helpers = require('./incidentHelpers');
 
-const ruleCache = new LRUCache({
-    max: 3,
-    ttl: 5 * 60 * 1000
-});
+const ruleCache = createLocalCache('incident-rules', { ttlMs: 5 * 60 * 1000, maxEntries: 5 });
 
 class IncidentRuleService {
     constructor() {
@@ -88,9 +86,9 @@ class IncidentRuleService {
     async createIncidentRule(ruleData) {
         let mapping = null;
         if (!ruleData.is_global) {
-            if (!ruleData.system_mapping_id) throw new Error('System mapping ID is required for non-global rules');
+            if (!ruleData.system_mapping_id) throw new ValidationError('System mapping ID is required for non-global rules');
             mapping = await this.mappingCollection.findOne({ _id: new ObjectId(ruleData.system_mapping_id) });
-            if (!mapping) throw new Error('System mapping not found');
+            if (!mapping) throw new NotFoundError('System mapping not found');
         }
 
         helpers.validateRuleConditions(ruleData.conditions);
@@ -118,7 +116,7 @@ class IncidentRuleService {
 
         if (system_mapping_id) {
             const mapping = await this.mappingCollection.findOne({ _id: new ObjectId(system_mapping_id) });
-            if (!mapping) throw new Error('System mapping not found');
+            if (!mapping) throw new NotFoundError('System mapping not found');
             updateData.system_mapping_id = mapping._id;
             updateData.grafana_names = mapping.grafana_names;
         }
@@ -131,14 +129,14 @@ class IncidentRuleService {
         updateData.updated_at = new Date();
         const objId = new ObjectId(id);
         const result = await this.collection.updateOne({ _id: objId }, { $set: updateData });
-        if (result.matchedCount === 0) throw new Error('Incident rule not found');
+        if (result.matchedCount === 0) throw new NotFoundError('Incident rule not found');
         this._invalidateCache();
         return this.collection.findOne({ _id: objId });
     }
 
     async deleteIncidentRule(id) {
         const result = await this.collection.deleteOne({ _id: new ObjectId(id) });
-        if (result.deletedCount === 0) throw new Error('Incident rule not found');
+        if (result.deletedCount === 0) throw new NotFoundError('Incident rule not found');
         this._invalidateCache();
         return { message: 'Incident rule deleted successfully', deletedCount: result.deletedCount };
     }
@@ -146,7 +144,7 @@ class IncidentRuleService {
     async toggleIncidentRule(id, enabled) {
         const objId = new ObjectId(id);
         const result = await this.collection.updateOne({ _id: objId }, { $set: { enabled, updated_at: new Date() } });
-        if (result.matchedCount === 0) throw new Error('Incident rule not found');
+        if (result.matchedCount === 0) throw new NotFoundError('Incident rule not found');
         this._invalidateCache();
         return { message: `Incident rule ${enabled ? 'enabled' : 'disabled'} successfully` };
     }

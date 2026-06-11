@@ -1,5 +1,5 @@
 // contexts/ClientConfigContext.jsx — Global client configuration and date range state
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 import { toYMD_IL } from '../utils/dateUtils';
 const ClientConfigContext = createContext();
@@ -88,7 +88,7 @@ export const ClientConfigProvider = ({ children }) => {
     }
   }, [selectedPanel]);
 
-  const updateConfig = (newConfig) => {
+  const updateConfig = useCallback((newConfig) => {
     const toInt = (v, fallback) => {
       const parsed = parseInt(v, 10);
       return Number.isFinite(parsed) ? parsed : fallback;
@@ -113,35 +113,35 @@ export const ClientConfigProvider = ({ children }) => {
     };
 
     setClientCfg(sanitized);
-  };
+  }, []);
 
-  const resetConfig = () => {
+  const resetConfig = useCallback(() => {
     setClientCfg(DEFAULT_CLIENT_CFG);
     try {
       localStorage.removeItem('client_cfg');
     } catch (e) {
       console.warn('Failed to remove client config from localStorage:', e);
     }
-  };
+  }, []);
 
-  const setDateRange = (newRange) => {
+  const setDateRange = useCallback((newRange) => {
     setDateRangeState(prev => ({
       ...prev,
       ...newRange
     }));
-  };
+  }, []);
 
-  const setPresetRange = (days) => {
+  const setPresetRange = useCallback((days) => {
     const now = Date.now();
     setDateRangeState({
       start_date: toYMD_IL(now - (days - 1) * 864e5),
       end_date: toYMD_IL(now)
     });
-  };
+  }, []);
 
-  const setSelectedPanel = (panel) => {
+  const setSelectedPanel = useCallback((panel) => {
     setSelectedPanelState(panel);
-  };
+  }, []);
 
   // Generate API params from config
   const getApiParams = useCallback(() => {
@@ -159,19 +159,18 @@ export const ClientConfigProvider = ({ children }) => {
     };
   }, [clientCfg]);
 
-  const value = {
+  // Memoized so consumers only re-render when actual state changes
+  const value = useMemo(() => ({
     config: clientCfg,
     updateConfig,
     resetConfig,
     getApiParams,
-    // NEW: Global date range
     dateRange,
     setDateRange,
     setPresetRange,
-    // NEW: Global panel filter
     selectedPanel,
     setSelectedPanel
-  };
+  }), [clientCfg, updateConfig, resetConfig, getApiParams, dateRange, setDateRange, setPresetRange, selectedPanel, setSelectedPanel]);
 
   return (
     <ClientConfigContext.Provider value={value}>
