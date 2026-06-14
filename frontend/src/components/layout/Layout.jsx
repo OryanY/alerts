@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Eye, Settings, FileText, BookOpen, Activity, History } from 'lucide-react';
+import { AlertTriangle, BarChart3, Eye, Settings, FileText, BookOpen, Activity } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useClientConfig } from '../../contexts/ClientConfigContext';
 import { TopBarContext } from '../../contexts/TopBarContext';
@@ -13,7 +13,6 @@ const navigationItems = [
   { path: '/research', label: 'Research', icon: FileText },
   { path: '/incident', label: 'Incidents', icon: AlertTriangle },
   { path: '/incident-stats', label: 'Incident BI', icon: BarChart3 },
-  { path: '/history', label: 'History', icon: History },
   { path: '/how-to-use', label: 'How To Use', icon: BookOpen },
 ];
 
@@ -35,12 +34,9 @@ export const Layout = () => {
     (location.pathname.startsWith('/settings') ? { label: 'Settings' } : null);
   const showDateControls = routesWithDateControls.some((path) => isActivePath(path));
   const settingsActive = location.pathname.startsWith('/settings');
-  const navKeyStyle = (active) => ({
-    borderColor: active ? `${colors.brand.primary}55` : 'transparent',
-    background: active ? `${colors.brand.primary}12` : 'transparent',
-    color: active ? colors.brand.primary : colors.text.secondary,
-    boxShadow: active ? `0 8px 18px ${colors.brand.primary}16` : 'none',
-  });
+  const navKeyStyle = (active) => active
+    ? { background: colors.bg.tertiary, color: colors.text.primary, fontWeight: 500 }
+    : { color: colors.text.secondary, fontWeight: 400 };
   const setTopBarSlots = useCallback((slots) => setTopBarSlotsState(slots || {}), []);
   const clearTopBarSlots = useCallback(() => setTopBarSlotsState({}), []);
   const topBarContextValue = useMemo(
@@ -64,6 +60,7 @@ export const Layout = () => {
             borderRight: `1px solid ${colors.border.primary}`,
           }}
         >
+          <div className="ops-brand" style={{ color: colors.text.primary }}>Alerts</div>
           <nav className="ops-nav">
             {navigationItems.map(({ path, label, icon: Icon }) => {
               const active = isActivePath(path);
@@ -73,15 +70,14 @@ export const Layout = () => {
                   onClick={() => navigate(path)}
                   className={`ops-nav-button${active ? ' ops-nav-button-active' : ''}`}
                   style={navKeyStyle(active)}
-                  title={label}
                   aria-label={label}
-                  data-label={label}
                 >
-                  <span
-                    className="ops-nav-lamp"
-                    style={{ background: active ? colors.brand.primary : 'transparent' }}
+                  <Icon
+                    size={17}
+                    strokeWidth={1.8}
+                    style={{ color: active ? colors.brand.primary : 'currentColor', flexShrink: 0 }}
                   />
-                  <Icon size={18} strokeWidth={active ? 2.5 : 2} />
+                  <span className="ops-nav-label">{label}</span>
                 </button>
               );
             })}
@@ -138,7 +134,7 @@ export const Layout = () => {
                   background: settingsActive ? `${colors.brand.primary}14` : colors.bg.secondary,
                   color: settingsActive ? colors.brand.primary : colors.text.primary,
                   fontSize: 12,
-                  fontWeight: 800,
+                  fontWeight: 500,
                   cursor: 'pointer',
                 }}
               >

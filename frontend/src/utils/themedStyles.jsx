@@ -98,8 +98,8 @@ export const createThemedStyles = (raw) => {
       padding: 12,
       textAlign: 'left',
       cursor: 'pointer',
-      fontWeight: 600,
-      borderBottom: `2px solid ${colors.border.primary}`,
+      fontWeight: 500,
+      borderBottom: `1px solid ${colors.border.primary}`,
       color: colors.text.primary
     },
 
@@ -133,7 +133,7 @@ export const createThemedStyles = (raw) => {
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 500,
         background: disabled
           ? colors.brand.primary + '50'
           : colors.brand.primary,
@@ -150,7 +150,7 @@ export const createThemedStyles = (raw) => {
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 500,
         background: disabled
           ? colors.bg.tertiary
           : colors.bg.secondary,
@@ -170,7 +170,7 @@ export const createThemedStyles = (raw) => {
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 500,
         background: disabled
           ? colors.semantic.error + '60'
           : colors.semantic.error,
@@ -187,7 +187,7 @@ export const createThemedStyles = (raw) => {
         borderRadius: 6,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 500,
         background: disabled
           ? colors.semantic.success + '60'
           : colors.semantic.success,
@@ -227,7 +227,7 @@ export const createThemedStyles = (raw) => {
         padding: '4px 12px',
         borderRadius: 12,
         fontSize: 12,
-        fontWeight: 600,
+        fontWeight: 500,
         ...variants[variant],
       };
     },

@@ -48,7 +48,7 @@ a {
 .ops-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: 212px minmax(0, 1fr);
 }
 
 .ops-sidebar {
@@ -61,60 +61,40 @@ a {
   z-index: 60;
 }
 
+.ops-brand {
+  padding: 18px 16px 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
 .ops-nav {
   display: grid;
-  gap: 10px;
-  padding: 14px 10px 12px;
-  justify-items: center;
+  gap: 2px;
+  padding: 6px 8px;
 }
 
 .ops-nav-button {
-  position: relative;
-  width: 48px;
-  min-height: 48px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  place-items: center;
-  padding: 0;
-  border-width: 1px;
-  border-style: solid;
-  border-radius: 12px;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: start;
   cursor: pointer;
+  background: transparent;
 }
 
-.ops-nav-button::after {
-  content: attr(data-label);
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-  min-width: max-content;
-  padding: 6px 9px;
-  border-radius: 6px;
-  background: #111827;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 80;
+.ops-nav-button:hover {
+  background: rgba(148, 163, 184, 0.1);
 }
 
-.ops-nav-button:hover::after {
-  opacity: 1;
-  transform: translate(2px, -50%);
-}
-
-.ops-nav-lamp {
-  position: absolute;
-  right: -11px;
-  top: 13px;
-  bottom: 13px;
-  width: 3px;
-  border-radius: 999px;
+.ops-nav-label {
+  white-space: nowrap;
 }
 
 .ops-sidebar-footer {
@@ -152,7 +132,7 @@ a {
 .ops-topbar-status {
   color: inherit;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
   padding-inline-start: 10px;
   border-inline-start: 1px solid rgba(148, 163, 184, 0.35);
   opacity: 0.85;
@@ -189,7 +169,7 @@ a {
   padding: 0 10px;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -210,7 +190,7 @@ a {
   border: 0;
   border-radius: 6px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -343,9 +323,13 @@ a {
     padding: 8px;
   }
 
+  .ops-brand {
+    display: none;
+  }
+
   .ops-nav-button {
-    width: 48px;
-    min-height: 44px;
+    width: auto;
+    min-height: 40px;
   }
 
   .ops-nav-button::after {

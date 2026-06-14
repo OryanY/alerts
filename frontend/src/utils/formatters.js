@@ -21,19 +21,23 @@ export const formatDuration = (seconds) => {
     const s = Math.round(Number(seconds));
     if (isNaN(s)) return '—';
 
-    if (s < 60) return `${s}s`;
-
-    // Minutes
-    if (s < 3600) {
+    let out;
+    if (s < 60) {
+        out = `${s}s`;
+    } else if (s < 3600) {
         const m = Math.floor(s / 60);
         const remS = s % 60;
-        return remS > 0 ? `${m}m ${remS}s` : `${m}m`;
+        out = remS > 0 ? `${m}m ${remS}s` : `${m}m`;
+    } else {
+        const h = Math.floor(s / 3600);
+        const remM = Math.floor((s % 3600) / 60);
+        out = remM > 0 ? `${h}h ${remM}m` : `${h}h`;
     }
 
-    // Hours
-    const h = Math.floor(s / 3600);
-    const remM = Math.floor((s % 3600) / 60);
-    return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+    // Wrap in a Unicode left-to-right isolate (U+2066 … U+2069) so the Latin
+    // units (45s, 2m 30s) keep their order and don't smear when rendered next
+    // to Hebrew text, e.g. "45s ממוצע". Invisible; display-only callers.
+    return `⁦${out}⁩`;
 };
 
 /**

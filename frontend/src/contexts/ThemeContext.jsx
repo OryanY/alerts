@@ -65,10 +65,10 @@ const baseThemes = {
       quinary: '#EF4444',
     },
     shadow: {
-      sm: '0 1px 2px rgba(0,0,0,0.05)',
-      md: '0 4px 6px rgba(0,0,0,0.1)',
-      lg: '0 10px 15px rgba(0,0,0,0.1)',
-      xl: '0 20px 25px rgba(0,0,0,0.1)',
+      sm: '0 1px 2px rgba(0,0,0,0.04)',
+      md: '0 1px 3px rgba(0,0,0,0.06)',
+      lg: '0 2px 8px rgba(0,0,0,0.07)',
+      xl: '0 4px 14px rgba(0,0,0,0.08)',
     },
   },
 
@@ -125,10 +125,10 @@ const baseThemes = {
       infoText: '#BFDBFE',
     },
     shadow: {
-      sm: '0 1px 2px rgba(0,0,0,0.3)',
-      md: '0 4px 6px rgba(0,0,0,0.4)',
-      lg: '0 10px 15px rgba(0,0,0,0.5)',
-      xl: '0 20px 25px rgba(0,0,0,0.6)',
+      sm: '0 1px 2px rgba(0,0,0,0.2)',
+      md: '0 1px 3px rgba(0,0,0,0.3)',
+      lg: '0 2px 8px rgba(0,0,0,0.35)',
+      xl: '0 4px 14px rgba(0,0,0,0.4)',
     },
   },
 };
@@ -155,13 +155,15 @@ export const ThemeProvider = ({ children }) => {
   const computed = useMemo(() => {
     const base = baseThemes[theme];
 
+    // Minimal/flat: these are kept as keys for backward compatibility, but each
+    // now resolves to a single solid color — no gradients anywhere in the UI.
     const gradients = {
-      infoGradient: `linear-gradient(135deg, ${base.semantic.infoBg} 0%, ${withAlpha(base.semantic.info, '10')} 100%)`,
-      warningGradient: `linear-gradient(135deg, ${base.semantic.warningBg} 0%, ${withAlpha(base.semantic.warning, '10')} 100%)`,
-      successGradient: `linear-gradient(135deg, ${base.semantic.successBg} 0%, ${withAlpha(base.semantic.success, '10')} 100%)`,
-      errorGradient: `linear-gradient(135deg, ${base.semantic.errorBg} 0%, ${withAlpha(base.semantic.error, '10')} 100%)`,
-      neutralSoftGradient: `linear-gradient(135deg, ${base.bg.secondary} 0%, ${base.bg.tertiary} 100%)`,
-      headerBarGradient: `linear-gradient(90deg, ${base.brand.primary}, ${base.brand.purple}, ${base.semantic.info})`,
+      infoGradient: base.semantic.infoBg,
+      warningGradient: base.semantic.warningBg,
+      successGradient: base.semantic.successBg,
+      errorGradient: base.semantic.errorBg,
+      neutralSoftGradient: base.bg.tertiary,
+      headerBarGradient: base.border.primary,
     };
 
     // Pattern colors
