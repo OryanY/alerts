@@ -13,25 +13,16 @@ const CONFIG = Object.freeze({
     medium: parseInt(process.env.DURATION_MEDIUM_MAX, 10) || 299,
     falseWakeupThreshold: parseInt(process.env.DURATION_FALSE_WAKEUP, 10) || 120,
   },
+  // Single allow-any-origin CORS config (UI and API are separate pods, so the
+  // browser needs CORS; there's no auth for an origin allowlist to protect).
+  // origin:true reflects the caller's origin — required because credentials
+  // can't be combined with '*'. X-Settings-Key is a custom header, so it must be
+  // whitelisted or the browser's preflight rejects PUT/DELETE /settings.
   cors: {
-    restricted: {
-      origin: process.env.NODE_ENV === 'production'
-        ? (process.env.ALLOWED_ORIGINS
-          ? [...process.env.ALLOWED_ORIGINS.split(','), process.env.FRONTEND_URL].filter(Boolean)
-          : [process.env.FRONTEND_URL])
-        : true,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      // X-Settings-Key: team key for editing incident defaults — custom headers
-      // must be whitelisted here or the browser's CORS preflight rejects them
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key']
-    },
-    public: {
-      origin: true,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key']
-    }
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key']
   },
   shifts: {
     dayStart: parseInt(process.env.SHIFT_DAY_START, 10) || 8,

@@ -38,11 +38,11 @@ app.use(helmet({
   contentSecurityPolicy: false // Allow for development - configure for production
 }));
 
-// CORS configuration
-const restrictedCors = cors(CONFIG.cors.restricted);
-const publicCors = cors(CONFIG.cors.public);
-
-app.use('/api/health', publicCors);
+// CORS — one allow-any-origin config for every route. The UI and API run as
+// separate pods (different origins), so the browser needs these headers to read
+// API responses; CORS is browser-only and never gates Postman/curl/server
+// clients, and there's no cookie/session auth for an allowlist to protect.
+app.use(cors(CONFIG.cors));
 
 // Compression and parsing
 app.use(compression());
@@ -67,13 +67,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// API Routes
-app.use('/from-grafana', publicCors, incidentRoutes);
-
-// Stats/BI data: restrict to the configured frontend origin(s) in production.
-app.use('/api', restrictedCors, alertRoutes);
-// Incident creation is called by external systems (Grafana), so it stays public.
-app.use('/api/incidents', publicCors, incidentRoutes);
+// API Routes (CORS applied globally above)
+app.use('/from-grafana', incidentRoutes);
+app.use('/api', alertRoutes);
+app.use('/api/incidents', incidentRoutes);
 
 app.use('/metrics', metricsRoutes);
 
