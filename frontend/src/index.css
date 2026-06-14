@@ -15,10 +15,9 @@ body,
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: #f9fafb;
-  color: #111827;
+  background: var(--color-bg-primary, #f9fafb);
+  color: var(--color-text-primary, #111827);
   font-size: 14px;
-  letter-spacing: 0;
 }
 
 button,
@@ -26,7 +25,6 @@ input,
 select,
 textarea {
   font: inherit;
-  letter-spacing: 0;
 }
 
 button {
@@ -45,78 +43,76 @@ a {
   color: inherit;
 }
 
+/* ===== App shell: top nav, optional contextual sub-bar, then content ===== */
 .ops-shell {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: 212px minmax(0, 1fr);
-}
-
-.ops-sidebar {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.ops-topnav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 0 16px;
   position: sticky;
   top: 0;
-  align-self: start;
   z-index: 60;
 }
 
 .ops-brand {
-  padding: 18px 16px 12px;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  margin-inline-end: 6px;
 }
 
 .ops-nav {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 2px;
-  padding: 6px 8px;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .ops-nav-button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 36px;
-  padding: 7px 10px;
+  padding: 6px 12px;
   border: 0;
-  border-radius: 8px;
-  font-size: 13px;
-  text-align: start;
-  cursor: pointer;
+  border-radius: var(--radius-md, 6px);
   background: transparent;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .ops-nav-button:hover {
   background: rgba(148, 163, 184, 0.1);
 }
 
-.ops-nav-label {
-  white-space: nowrap;
+.ops-nav-right {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
-.ops-sidebar-footer {
-  margin-top: auto;
-  padding: 10px;
-  display: none;
-  place-items: center;
-}
-
-.ops-workspace {
+.ops-main {
   min-width: 0;
+  padding: 16px;
 }
 
+/* ===== Contextual sub-bar (status, date controls, page actions) ===== */
 .ops-topbar {
   min-height: 46px;
-  padding: 0 16px;
+  padding: 8px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
   position: sticky;
-  top: 0;
+  top: 52px;
   z-index: 50;
 }
 
@@ -134,7 +130,7 @@ a {
   font-size: 12px;
   font-weight: 500;
   padding-inline-start: 10px;
-  border-inline-start: 1px solid rgba(148, 163, 184, 0.35);
+  border-inline-start: 1px solid var(--color-border-primary, rgba(148, 163, 184, 0.35));
   opacity: 0.85;
 }
 
@@ -145,7 +141,6 @@ a {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  overflow: visible;
 }
 
 .ops-topbar-actions {
@@ -190,10 +185,11 @@ a {
   border: 0;
   border-radius: 6px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
+/* ===== Legacy utility classes (now reading theme tokens) ===== */
 .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -201,26 +197,26 @@ a {
 }
 
 .card {
-  background: #ffffff;
-  border-radius: 6px;
-  border: 1px solid #e5e7eb;
+  background: var(--color-bg-secondary, #ffffff);
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--color-border-primary, #e5e7eb);
 }
 
 .btn {
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md, 6px);
   border: none;
   cursor: pointer;
   font-size: 13px;
 }
 
 .btn-primary {
-  background: #3b82f6;
+  background: var(--color-brand-primary, #2563eb);
   color: #fff;
 }
 
 .btn-secondary {
-  background: #6b7280;
+  background: var(--color-text-secondary, #6b7280);
   color: #fff;
 }
 
@@ -228,16 +224,18 @@ a {
 .select {
   min-height: 36px;
   padding: 7px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border: 1px solid var(--color-border-secondary, #d1d5db);
+  border-radius: var(--radius-md, 6px);
   font-size: 13px;
   outline: none;
+  background: var(--color-bg-secondary, #ffffff);
+  color: var(--color-text-primary, #111827);
 }
 
 .input:focus,
 .select:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+  border-color: var(--color-border-focus, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
 .grid {
@@ -256,8 +254,8 @@ a {
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #f3f4f6;
-  border-top: 3px solid #3b82f6;
+  border: 3px solid var(--color-bg-tertiary, #f3f4f6);
+  border-top: 3px solid var(--color-brand-primary, #2563eb);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 12px;
@@ -295,55 +293,29 @@ a {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-border-secondary, #d1d5db);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--color-text-tertiary, #9ca3af);
 }
 
 @media (max-width: 900px) {
-  .ops-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .ops-sidebar {
+  .ops-topnav {
+    flex-wrap: wrap;
     min-height: auto;
+    padding: 8px 12px;
     position: static;
-    border-right: 0 !important;
-    border-bottom: 1px solid #e5e7eb;
   }
 
   .ops-nav {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    overflow-x: auto;
-    padding: 8px;
-  }
-
-  .ops-brand {
-    display: none;
-  }
-
-  .ops-nav-button {
-    width: auto;
-    min-height: 40px;
-  }
-
-  .ops-nav-button::after {
-    display: none;
-  }
-
-  .ops-sidebar-footer {
-    padding: 8px 10px 8px 4px;
+    order: 3;
+    flex-basis: 100%;
   }
 
   .ops-topbar {
     position: static;
-    min-height: auto;
-    padding: 8px 12px;
     flex-wrap: wrap;
   }
 

@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Eye, Settings, FileText, BookOpen, Activity } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useClientConfig } from '../../contexts/ClientConfigContext';
 import { TopBarContext } from '../../contexts/TopBarContext';
@@ -8,18 +7,18 @@ import { ThemeToggle } from './ThemeToggle';
 import { DateRangePicker } from '../ui/DateRangePicker';
 
 const navigationItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: Activity },
-  { path: '/explorer', label: 'Explorer', icon: Eye },
-  { path: '/research', label: 'Research', icon: FileText },
-  { path: '/incident', label: 'Incidents', icon: AlertTriangle },
-  { path: '/incident-stats', label: 'Incident BI', icon: BarChart3 },
-  { path: '/how-to-use', label: 'How To Use', icon: BookOpen },
+  { path: '/dashboard', label: 'Dashboard' },
+  { path: '/explorer', label: 'Explorer' },
+  { path: '/research', label: 'Research' },
+  { path: '/incident', label: 'Incidents' },
+  { path: '/incident-stats', label: 'Incident BI' },
+  { path: '/how-to-use', label: 'How to use' },
 ];
 
 const routesWithDateControls = ['/dashboard', '/explorer', '/research', '/incident-stats'];
 
 export const Layout = () => {
-  const { colors, styles: S } = useTheme();
+  const { colors } = useTheme();
   const { dateRange, setDateRange, setPresetRange } = useClientConfig();
   const [topBarSlots, setTopBarSlotsState] = useState({});
   const location = useLocation();
@@ -34,9 +33,12 @@ export const Layout = () => {
     (location.pathname.startsWith('/settings') ? { label: 'Settings' } : null);
   const showDateControls = routesWithDateControls.some((path) => isActivePath(path));
   const settingsActive = location.pathname.startsWith('/settings');
-  const navKeyStyle = (active) => active
-    ? { background: colors.bg.tertiary, color: colors.text.primary, fontWeight: 500 }
+
+  // Active tab: primary text + a thin accent underline. Inactive: muted, no decoration.
+  const navTabStyle = (active) => active
+    ? { color: colors.text.primary, fontWeight: 500, boxShadow: `inset 0 -2px 0 ${colors.brand.primary}` }
     : { color: colors.text.secondary, fontWeight: 400 };
+
   const setTopBarSlots = useCallback((slots) => setTopBarSlotsState(slots || {}), []);
   const clearTopBarSlots = useCallback(() => setTopBarSlotsState({}), []);
   const topBarContextValue = useMemo(
@@ -44,66 +46,55 @@ export const Layout = () => {
     [topBarSlots, setTopBarSlots, clearTopBarSlots]
   );
 
+  const showSubbar = showDateControls || topBarSlots.status || topBarSlots.controls || topBarSlots.actions;
+
   return (
     <TopBarContext.Provider value={topBarContextValue}>
-      <div
-        className="ops-shell"
-        style={{
-          background: colors.bg.primary,
-          color: colors.text.primary,
-        }}
-      >
-        <aside
-          className="ops-sidebar"
-          style={{
-            background: colors.bg.secondary,
-            borderRight: `1px solid ${colors.border.primary}`,
-          }}
+      <div className="ops-shell" style={{ background: colors.bg.primary, color: colors.text.primary }}>
+        <header
+          className="ops-topnav"
+          style={{ background: colors.bg.secondary, borderBottom: `1px solid ${colors.border.primary}` }}
         >
-          <div className="ops-brand" style={{ color: colors.text.primary }}>Alerts</div>
+          <span className="ops-brand">Alerts</span>
+
           <nav className="ops-nav">
-            {navigationItems.map(({ path, label, icon: Icon }) => {
-              const active = isActivePath(path);
-              return (
-                <button
-                  key={path}
-                  onClick={() => navigate(path)}
-                  className={`ops-nav-button${active ? ' ops-nav-button-active' : ''}`}
-                  style={navKeyStyle(active)}
-                  aria-label={label}
-                >
-                  <Icon
-                    size={17}
-                    strokeWidth={1.8}
-                    style={{ color: active ? colors.brand.primary : 'currentColor', flexShrink: 0 }}
-                  />
-                  <span className="ops-nav-label">{label}</span>
-                </button>
-              );
-            })}
+            {navigationItems.map(({ path, label }) => (
+              <button
+                key={path}
+                onClick={() => navigate(path)}
+                className="ops-nav-button"
+                style={navTabStyle(isActivePath(path))}
+                aria-current={isActivePath(path) ? 'page' : undefined}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
 
-          <div className="ops-sidebar-footer">
+          <div className="ops-nav-right">
+            <button
+              type="button"
+              onClick={() => navigate('/settings')}
+              className="ops-nav-button"
+              style={navTabStyle(settingsActive)}
+              aria-current={settingsActive ? 'page' : undefined}
+            >
+              Settings
+            </button>
             <ThemeToggle variant="compact" />
           </div>
-        </aside>
+        </header>
 
-        <div className="ops-workspace">
-          <header
+        {showSubbar && (
+          <div
             className="ops-topbar"
-            style={{
-              background: colors.bg.secondary,
-              borderBottom: `1px solid ${colors.border.primary}`,
-            }}
+            style={{ background: colors.bg.secondary, borderBottom: `1px solid ${colors.border.primary}` }}
           >
             <div className="ops-topbar-title" style={{ color: colors.text.secondary, fontSize: 13 }}>
               <span>{activeItem?.label || 'Alerts'}</span>
-              {topBarSlots.status && (
-                <span className="ops-topbar-status">
-                  {topBarSlots.status}
-                </span>
-              )}
+              {topBarSlots.status && <span className="ops-topbar-status">{topBarSlots.status}</span>}
             </div>
+
             {(showDateControls || topBarSlots.controls) && (
               <div className="ops-topbar-controls">
                 {showDateControls && (
@@ -117,38 +108,14 @@ export const Layout = () => {
                 {topBarSlots.controls}
               </div>
             )}
-            <div className="ops-topbar-actions">
-              {topBarSlots.actions}
-              <button
-                type="button"
-                onClick={() => navigate('/settings')}
-                title="Settings"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  minHeight: 32,
-                  padding: '0 10px',
-                  borderRadius: 6,
-                  border: `1px solid ${settingsActive ? colors.brand.primary : colors.border.primary}`,
-                  background: settingsActive ? `${colors.brand.primary}14` : colors.bg.secondary,
-                  color: settingsActive ? colors.brand.primary : colors.text.primary,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                <Settings size={15} />
-                Settings
-              </button>
-              <ThemeToggle variant="compact" />
-            </div>
-          </header>
 
-          <main style={S.main}>
-            <Outlet />
-          </main>
-        </div>
+            <div className="ops-topbar-actions">{topBarSlots.actions}</div>
+          </div>
+        )}
+
+        <main className="ops-main">
+          <Outlet />
+        </main>
       </div>
     </TopBarContext.Provider>
   );
