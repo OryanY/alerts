@@ -44,4 +44,15 @@ class ValidationError extends AppError {
     }
 }
 
-module.exports = { AppError, NotFoundError, MappingNotFoundError, ConflictError, ValidationError };
+/**
+ * ServiceNow rejected the request or was unreachable/disabled when creating a
+ * record. Thrown so callers never receive a 200 "created" for a ticket that
+ * was never created. Maps to HTTP 502 by default.
+ */
+class ServiceNowError extends AppError {
+    constructor(message = 'ServiceNow request failed', status = 502) {
+        super(message, status, 'SERVICENOW_ERROR');
+    }
+}
+
+module.exports = { AppError, NotFoundError, MappingNotFoundError, ConflictError, ValidationError, ServiceNowError };

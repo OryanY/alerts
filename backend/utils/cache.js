@@ -19,6 +19,9 @@
 // named cache here so every cache is discoverable and clearable.
 // -------------------------------------------------------------------
 const { getMongoDb } = require('../database/connection');
+const { logger } = require('./logger');
+
+const log = logger.tagged('cache');
 
 // ==================== LOCAL TIER ====================
 
@@ -77,7 +80,7 @@ async function cacheGet(key) {
             .findOne({ _id: key, expiresAt: { $gt: new Date() } });
         return doc ? doc.value : null;
     } catch (err) {
-        console.warn(`[SharedCache] GET failed for key "${key}":`, err.message);
+        log.warn(`shared GET failed for key "${key}"`, err.message);
         return null;
     }
 }
@@ -94,7 +97,7 @@ async function cacheSet(key, value, ttlMs) {
                 { upsert: true }
             );
     } catch (err) {
-        console.warn(`[SharedCache] SET failed for key "${key}":`, err.message);
+        log.warn(`shared SET failed for key "${key}"`, err.message);
     }
 }
 
@@ -103,7 +106,7 @@ async function cacheDel(key) {
     try {
         await getMongoDb().collection(SHARED_COLLECTION).deleteOne({ _id: key });
     } catch (err) {
-        console.warn(`[SharedCache] DEL failed for key "${key}":`, err.message);
+        log.warn(`shared DEL failed for key "${key}"`, err.message);
     }
 }
 
@@ -114,7 +117,7 @@ async function cacheDelByPrefix(prefix) {
             .collection(SHARED_COLLECTION)
             .deleteMany({ _id: { $regex: `^${prefix}` } });
     } catch (err) {
-        console.warn(`[SharedCache] DEL-prefix failed for "${prefix}":`, err.message);
+        log.warn(`shared DEL-prefix failed for "${prefix}"`, err.message);
     }
 }
 
@@ -127,9 +130,9 @@ async function ensureCacheIndex() {
         await getMongoDb()
             .collection(SHARED_COLLECTION)
             .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, background: true });
-        console.log('[SharedCache] TTL index ensured on shared_cache collection.');
+        log.debug('TTL index ensured on shared_cache collection');
     } catch (err) {
-        console.warn('[SharedCache] Could not create TTL index:', err.message);
+        log.warn('could not create shared_cache TTL index', err.message);
     }
 }
 

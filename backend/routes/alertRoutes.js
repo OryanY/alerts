@@ -12,14 +12,17 @@ const {
 const AlertService = require('../services/alert/AlertService');
 const { validateQuery } = require('../middleware/validation');
 const { createLocalCache } = require('../utils/cache');
+const { logger } = require('../utils/logger');
 const router = express.Router();
 const alertService = new AlertService();
+const log = logger.tagged('alerts');
 
 // ================== CACHE ==================
 // Use named local caches from the single cache module — no ad-hoc Maps or janitor intervals.
 const CACHE_TTL = 600_000; // 10 minutes
 const alertCache       = createLocalCache('route-alerts',        { ttlMs: CACHE_TTL, maxEntries: 200 });
 const hourlyHeatmapCache = createLocalCache('route-hourly-heatmap', { ttlMs: CACHE_TTL, maxEntries: 50 });
+const statsCache       = createLocalCache('route-stats',         { ttlMs: CACHE_TTL, maxEntries: 300 });
 
 // ================== COLUMNS ==================
 const ALERT_EXPORT_COLUMNS = [
@@ -44,14 +47,24 @@ const csvCell = (value) => {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
-const handle = (serviceFn) => async (req, res, next) => {
+// Runs a stats service fn and memoizes the {success,data,meta} payload per
+// query in a named local cache. For read-only BI/stats endpoints (historical
+// data, so short-TTL staleness is fine).
+const cachedHandle = (cache, serviceFn) => async (req, res, next) => {
   try {
-    const result = await serviceFn(req.validatedQuery || req.query);
-    if (result.success === false) return res.status(500).json(result);
-    res.json({ success: true, data: result.data, meta: result.meta || {} });
-  } catch (err) {
-    next(err);
-  }
+    const params = req.validatedQuery || req.query;
+    // Namespace by route path: a shared statsCache must not let two endpoints
+    // with identical params collide and serve each other's payload.
+    const cacheKey = `${req.path}|${JSON.stringify(params)}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json({ ...cached, _cached: true });
+
+    const result = await serviceFn(params);
+    if (result.success === false) return res.status(500).json(result); // don't cache failures
+    const payload = { success: true, data: result.data, meta: result.meta || {} };
+    cache.set(cacheKey, payload);
+    res.json(payload);
+  } catch (err) { next(err); }
 };
 
 // ================== ALERTS ==================
@@ -88,13 +101,14 @@ router.get('/alerts', validateQuery(alertsSchema), async (req, res, next) => {
     const cached = alertCache.get(cacheKey);
 
     if (cached) {
-      console.log(`[CACHE HIT] /alerts - ${params.panel_title || 'all panels'}`);
+      log.debug(`cache hit /alerts - ${params.panel_title || 'all panels'}`);
       return res.json({ ...cached, _cached: true });
     }
 
-    console.log(`[CACHE MISS] /alerts - ${params.panel_title || 'all panels'}`);
+    log.debug(`cache miss /alerts - ${params.panel_title || 'all panels'}`);
 
     const result = await alertService.getAlerts(params);
+    if (result.success === false) return res.status(500).json(result); // don't cache failures
     const payload = {
       success: result.success,
       data:    result.data,
@@ -108,7 +122,7 @@ router.get('/alerts', validateQuery(alertsSchema), async (req, res, next) => {
 });
 
 // ================== EXECUTIVE/SUMMARY ==================
-router.get('/stats/executive-kpis', validateQuery(statsSchema), handle((q) => alertService.getExecutiveKPIs(q)));
+router.get('/stats/executive-kpis', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getExecutiveKPIs(q)));
 
 // ================== TEMPORAL ==================
 router.get('/stats/hourly-heatmap', validateQuery(statsSchema), async (req, res, next) => {
@@ -118,38 +132,46 @@ router.get('/stats/hourly-heatmap', validateQuery(statsSchema), async (req, res,
     const cached = hourlyHeatmapCache.get(cacheKey);
 
     if (cached) {
-      console.log(`[CACHE HIT] /stats/hourly-heatmap`);
+      log.debug('cache hit /stats/hourly-heatmap');
       return res.json({ ...cached, _cached: true });
     }
 
-    console.log(`[CACHE MISS] /stats/hourly-heatmap`);
+    log.debug('cache miss /stats/hourly-heatmap');
     const result = await alertService.getHourlyHeatmap(params);
+    if (result && result.success === false) return res.status(500).json(result); // don't cache failures
     hourlyHeatmapCache.set(cacheKey, result);
     res.json(result);
   } catch (err) { next(err); }
 });
 
-router.get('/stats/timeseries', validateQuery(timeseriesSchema), handle((q) => alertService.getTimeseriesStats(q)));
+router.get('/stats/timeseries', validateQuery(timeseriesSchema), cachedHandle(statsCache, (q) => alertService.getTimeseriesStats(q)));
 
 // ================== CATEGORICAL ==================
-router.get('/stats/duration-histogram', validateQuery(statsSchema), handle((q) => alertService.getDurationHistogram(q)));
-router.get('/stats/shift-analysis', validateQuery(statsSchema), handle((q) => alertService.getShiftAnalysis(q)));
+router.get('/stats/duration-histogram', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getDurationHistogram(q)));
+router.get('/stats/shift-analysis', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getShiftAnalysis(q)));
 
 // ================== ENTITY ==================
 router.get('/stats/filter-options', async (req, res, next) => {
   try {
+    // Full-table DISTINCT scan (no date filter) — cache it; dropdown data changes slowly.
+    const cacheKey = `filter-options|${req.query.panel_title || 'all'}`;
+    const cached = statsCache.get(cacheKey);
+    if (cached) return res.json({ ...cached, _cached: true });
+
     const result = await alertService.getFilterOptions({ panel_title: req.query.panel_title });
+    if (result.success === false) return res.status(500).json(result);
+    statsCache.set(cacheKey, result);
     res.json(result);
   } catch (err) { next(err); }
 });
 
-router.get('/stats/by-panel', validateQuery(panelStatsSchema), handle((q) => alertService.getPanelStats(q)));
-router.get('/stats/panels', validateQuery(panelResearchSchema), handle((q) => alertService.getPanelList(q)));
-router.get('/stats/panel-analysis', validateQuery(panelResearchSchema), handle((q) => alertService.getPanelAnalysis(q)));
-router.get('/stats/top-applications', validateQuery(statsSchema), handle((q) => alertService.getTopApplications(q)));
-router.get('/stats/top-nodes-by-app', validateQuery(statsSchema), handle((q) => alertService.getTopNodesByApp(q)));
-router.get('/stats/top-objects-by-app', validateQuery(statsSchema), handle((q) => alertService.getTopObjectsByApp(q)));
-router.get('/stats/consecutive-days', validateQuery(statsSchema), handle((q) => alertService.getConsecutiveDaysNodes(q)));
-router.get('/stats/incident-stats', validateQuery(statsSchema), handle((q) => alertService.getIncidentStats(q)));
+router.get('/stats/by-panel', validateQuery(panelStatsSchema), cachedHandle(statsCache, (q) => alertService.getPanelStats(q)));
+router.get('/stats/panels', validateQuery(panelResearchSchema), cachedHandle(statsCache, (q) => alertService.getPanelList(q)));
+router.get('/stats/panel-analysis', validateQuery(panelResearchSchema), cachedHandle(statsCache, (q) => alertService.getPanelAnalysis(q)));
+router.get('/stats/top-applications', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getTopApplications(q)));
+router.get('/stats/top-nodes-by-app', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getTopNodesByApp(q)));
+router.get('/stats/top-objects-by-app', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getTopObjectsByApp(q)));
+router.get('/stats/consecutive-days', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getConsecutiveDaysNodes(q)));
+router.get('/stats/incident-stats', validateQuery(statsSchema), cachedHandle(statsCache, (q) => alertService.getIncidentStats(q)));
 
 module.exports = router;

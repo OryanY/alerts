@@ -4,6 +4,9 @@ const { DateTime } = require('luxon');
 const { getSqlPool } = require('../../database/connection');
 const queries = require('../../database/queries/alertQueries');
 const { CONFIG } = require('../../config');
+const { logger } = require('../../utils/logger');
+
+const log = logger.tagged('alerts');
 
 class AlertService {
     constructor(sqlPool = null) {
@@ -29,21 +32,29 @@ class AlertService {
     _buildWhereClause(params, request) {
         const conditions = [];
 
-        if (params.start_date) {
-            const utcStart = DateTime.fromISO(params.start_date, { zone: 'Asia/Jerusalem' })
-                .startOf('day')
-                .toUTC()
-                .toJSDate();
-            request.input('start_date', sql.DateTime, utcStart);
-            conditions.push("time_fired >= @start_date");
-        }
-        if (params.end_date) {
-            const utcEnd = DateTime.fromISO(params.end_date, { zone: 'Asia/Jerusalem' })
-                .endOf('day')
-                .toUTC()
-                .toJSDate();
-            request.input('end_date', sql.DateTime, utcEnd);
-            conditions.push("time_fired <= @end_date");
+        // Date window — ALWAYS bounded to at most maxDateRangeDays. This is the
+        // real cost guard: it stops an unbounded full-table scan (missing dates
+        // default to the most recent window) and caps any single request to ~1
+        // year, so /api/stats can't be used to hammer SQL Server with huge scans.
+        {
+            const zone = 'Asia/Jerusalem';
+            const maxDays = CONFIG.limits?.maxDateRangeDays || 365;
+            const endDt = params.end_date
+                ? DateTime.fromISO(params.end_date, { zone }).endOf('day')
+                : DateTime.now().setZone(zone).endOf('day');
+            const end = endDt.isValid ? endDt : DateTime.now().setZone(zone).endOf('day');
+
+            let start = params.start_date
+                ? DateTime.fromISO(params.start_date, { zone }).startOf('day')
+                : end.minus({ days: maxDays }).startOf('day');
+            if (!start.isValid || end.diff(start, 'days').days > maxDays) {
+                start = end.minus({ days: maxDays }).startOf('day');
+            }
+
+            request.input('start_date', sql.DateTime, start.toUTC().toJSDate());
+            request.input('end_date', sql.DateTime, end.toUTC().toJSDate());
+            conditions.push('time_fired >= @start_date');
+            conditions.push('time_fired <= @end_date');
         }
         if (params.panel_title) {
             request.input('panel_title', sql.NVarChar, params.panel_title);
@@ -228,7 +239,7 @@ class AlertService {
                 try {
                     raw_alerts = JSON.parse(r.raw_alerts_json);
                 } catch (e) {
-                    console.error('Failed to parse raw_alerts_json', e);
+                    log.error('failed to parse raw_alerts_json', e.message);
                 }
             }
 
@@ -360,10 +371,18 @@ class AlertService {
         const result = await req.query(queries.DISTINCT_FILTER_OPTIONS);
         const rows = result.recordset || [];
 
-        const panels = [...new Set(rows.map(r => r.panel_title).filter(Boolean))].sort();
         const applications = [...new Set(rows.map(r => r.application).filter(Boolean))].sort();
         const operators = [...new Set(rows.map(r => r.operator).filter(Boolean))].sort();
         const objects = [...new Set(rows.map(r => r.object).filter(Boolean))].sort();
+
+        let panels;
+        if (params.panel_title) {
+            // Fetch all panels unfiltered so the user can switch panels
+            const panelsResult = await pool.request().query(queries.DISTINCT_PANELS);
+            panels = (panelsResult.recordset || []).map(r => r.panel_title).filter(Boolean);
+        } else {
+            panels = [...new Set(rows.map(r => r.panel_title).filter(Boolean))].sort();
+        }
 
         return { success: true, data: { panels, applications, operators, objects } };
     }
@@ -421,7 +440,7 @@ class AlertService {
                 }
             };
         } catch (error) {
-            console.error('Error fetching incident stats:', error);
+            log.error('error fetching incident stats', error.message);
             return {
                 success: false,
                 error: { message: 'Failed to fetch incident stats' }
@@ -555,7 +574,7 @@ class AlertService {
                 }
             };
         } catch (error) {
-            console.error('Error fetching panel analysis:', error);
+            log.error('error fetching panel analysis', error.message);
             return {
                 success: false,
                 error: { message: 'Failed to fetch panel analysis' }

@@ -1,35 +1,20 @@
 // services/incident/IncidentService.js
 // Orchestrates incident/alert creation against ServiceNow:
 // mapping lookup → rule evaluation → payload build (per incident settings)
-// → ServiceNow API call → Mongo audit log.
-const { getMongoDb } = require('../../database/connection');
-const { mongoConfig } = require('../../config');
+// → ServiceNow API call.
 const { ServiceNowClient } = require('./ServiceNowClient');
-const { MappingNotFoundError, ValidationError } = require('../../utils/errors');
+const { MappingNotFoundError, ValidationError, ServiceNowError } = require('../../utils/errors');
+const { logger } = require('../../utils/logger');
 const helpers = require('./incidentHelpers');
 
-const INCIDENT_LOG_TTL_SECONDS = 7776000; // 90 days
+const log = logger.tagged('incident');
 
 class IncidentService {
     constructor(mappingService, ruleService, settingsService) {
         this.mappingService = mappingService;
         this.ruleService = ruleService;
         this.settingsService = settingsService;
-        this._collections = null;
         this._serviceNowClient = null;
-    }
-
-    get db() {
-        if (!this._collections) {
-            const mdb = getMongoDb();
-            this._collections = {
-                incidentLogs: mdb.collection(mongoConfig.collections.incidentLogs)
-            };
-            this._collections.incidentLogs
-                .createIndex({ created_at: 1 }, { expireAfterSeconds: INCIDENT_LOG_TTL_SECONDS, background: true })
-                .catch(() => {});
-        }
-        return this._collections;
     }
 
     get serviceNowClient() {
@@ -51,12 +36,15 @@ class IncidentService {
         const { application } = alertData;
         if (!application) throw new ValidationError('Alert must have an application field');
 
-        const systemMapping = await this.mappingService.getMappingByApplication(application);
+        // Mapping lookup and rule fetch are independent — run them concurrently.
+        const [systemMapping, allRules] = await Promise.all([
+            this.mappingService.getMappingByApplication(application),
+            this.ruleService.getIncidentRules(application)
+        ]);
         if (!systemMapping && requireMapping) {
             throw new MappingNotFoundError(`No system mapping found for application: ${application}`);
         }
 
-        const allRules = await this.ruleService.getIncidentRules(application);
         const enabledRules = allRules.filter(r => r.enabled !== false);
 
         // findAllMatches returns matches sorted by specificity (highest first).
@@ -81,20 +69,22 @@ class IncidentService {
         const incidentData = helpers.buildIncidentData(systemMapping, mergedOverrides, alertData, settings);
         const result = await this.serviceNowClient.createIncident(incidentData);
 
-        // Fire-and-forget audit log
-        this.db.incidentLogs.insertOne({
+        // ServiceNow failures come back as { success:false } (the client never
+        // throws). Surface them so callers don't get a 200 "created" for a
+        // ticket that was never created.
+        if (result.success === false) {
+            throw new ServiceNowError(
+                result.error || result.message || 'ServiceNow incident creation failed',
+                result.status
+            );
+        }
+
+        log.info('Incident created', {
             application: alertData.application,
-            alert_source: alertData,
-            incident_payload: incidentData,
-            servicenow_result: result,
-            process_info: {
-                mapping_used: systemMapping._id,
-                mapping_name: systemMapping.service_offering,
-                applied_rules: rulesToApply.map(r => r.rule_name),
-                rule_stack_snapshot: rulesToApply.map(r => ({ name: r.rule_name, id: r._id, overrides: r.incident_overrides }))
-            },
-            created_at: new Date()
-        }).catch(err => console.error('Failed to log incident:', err));
+            incident_number: result?.incident_number,
+            success: true,
+            rules: rulesToApply.map(r => r.rule_name)
+        });
 
         const winningRule = rulesToApply.length > 0 ? rulesToApply[rulesToApply.length - 1] : null;
         return {
@@ -168,6 +158,13 @@ class IncidentService {
 
         const serviceNowResult = await this.serviceNowClient.createTiudAlert(alertPayload);
 
+        if (serviceNowResult.success === false) {
+            throw new ServiceNowError(
+                serviceNowResult.error || serviceNowResult.message || 'ServiceNow alert creation failed',
+                serviceNowResult.status
+            );
+        }
+
         return {
             alertPayload,
             serviceNowResult,
@@ -212,23 +209,6 @@ class IncidentService {
             generated_incident: incidentData,
             hierarchy_explanation: ["1. Specific Rules (Applied Last / High Priority)", "2. Global Rules (Applied First / Low Priority)", "3. Base System Mapping (Defaults)"]
         };
-    }
-
-    // ================== HISTORY / LOGS ==================
-
-    async getIncidentHistory(limit = 50, skip = 0, search = null) {
-        const query = {};
-        if (search) {
-            // Escape regex metacharacters — search is user input, not a pattern
-            const safeSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            query.$or = [
-                { 'application': { $regex: safeSearch, $options: 'i' } },
-                { 'servicenow_result.incident_number': { $regex: safeSearch, $options: 'i' } }
-            ];
-        }
-        const total = await this.db.incidentLogs.countDocuments(query);
-        const logs = await this.db.incidentLogs.find(query).sort({ created_at: -1 }).skip(skip).limit(limit).toArray();
-        return { logs, total };
     }
 }
 

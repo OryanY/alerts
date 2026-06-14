@@ -1,4 +1,24 @@
 // database/queries/alertQueries.js
+// ---------------------------------------------------------------------------
+// SINGLE SOURCE OF TRUTH for the BI query building blocks. The clustering
+// "15-minute storm" rule and the Israel-local timezone conversion are defined
+// ONCE here and interpolated into every query below — change them in one place.
+// ---------------------------------------------------------------------------
+
+// Gap (minutes) to the previous alert of the same panel+application. A new
+// cluster starts when this exceeds @cluster_threshold.
+const CLUSTER_GAP_MIN = `DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired)`;
+
+// Running cluster id: cumulative count of "new cluster" boundaries.
+const CLUSTER_ID_WINDOW = `SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired)`;
+
+// Total cluster duration in seconds: first alert's start → last alert's resolution.
+const CLUSTER_DURATION_SEC = `DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired)))`;
+
+// Convert a stored UTC datetime to Israel local time. Change the zone string
+// here (e.g. to 'Asia/Jerusalem' for SQL Server on Linux) and every query follows.
+const TZ_TO_IL = `AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time'`;
+
 module.exports = {
   // Distinct panel/app/operator names — no date range, for dropdown population.
   // When @panel_title is set, scopes applications + operators to that panel only.
@@ -10,11 +30,17 @@ module.exports = {
       AND (@panel_title IS NULL OR panel_title = @panel_title)
     ORDER BY panel_title ASC, application ASC
   `,
+  DISTINCT_PANELS: `
+    SELECT DISTINCT panel_title 
+    FROM dbo.historicalAlerts WITH (NOLOCK) 
+    WHERE panel_title IS NOT NULL 
+    ORDER BY panel_title ASC
+  `,
   SELECT_ALERTS: `
     SELECT {TOP_CLAUSE}
       incident_id, panel_title, application, node_name, network, object, operator,
-      CONVERT(varchar(23), time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time', 126) AS time_fired,
-      CONVERT(varchar(23), time_resolved AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time', 126) AS time_resolved,
+      CONVERT(varchar(23), time_fired ${TZ_TO_IL}, 126) AS time_fired,
+      CONVERT(varchar(23), time_resolved ${TZ_TO_IL}, 126) AS time_resolved,
       duration_sec, message, key_field, incident_number, incident_sys_id, history_id
     FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE} {ORDER_CLAUSE} {PAGINATION_CLAUSE}
   `,
@@ -29,16 +55,16 @@ module.exports = {
     ),
     Marked AS (
         SELECT *,
-        CASE WHEN ABS(DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired)) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        CASE WHEN ABS(${CLUSTER_GAP_MIN}) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
         FROM Filtered
     ),
     Grouped AS (
-        SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked
+        SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked
     ),
     Clusters AS (
         SELECT 
             cluster_id, panel_title, application, MIN(time_fired) AS time_fired, MAX(time_resolved) AS time_resolved,
-            DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS duration_sec, 
+            ${CLUSTER_DURATION_SEC} AS duration_sec, 
             COUNT(*) AS cluster_count,
             MAX(node_name) AS node_name,
             MAX(network) AS network, MAX(object) AS object, MAX(operator) AS operator,
@@ -49,13 +75,13 @@ module.exports = {
     )
     SELECT 
         c.incident_id, c.panel_title, c.application, c.node_name, c.network, c.object, c.operator, 
-        CONVERT(varchar(23), c.time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time', 126) AS time_fired,
-        CONVERT(varchar(23), c.time_resolved AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time', 126) AS time_resolved,
+        CONVERT(varchar(23), c.time_fired ${TZ_TO_IL}, 126) AS time_fired,
+        CONVERT(varchar(23), c.time_resolved ${TZ_TO_IL}, 126) AS time_resolved,
         c.duration_sec, c.message, c.key_field, c.incident_number, 
         c.incident_sys_id, c.history_id, c.cluster_count,
         (
             SELECT
-                CONVERT(varchar(23), g.time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time', 126) AS time_fired,
+                CONVERT(varchar(23), g.time_fired ${TZ_TO_IL}, 126) AS time_fired,
                 g.duration_sec, g.message, g.object, g.node_name
             FROM Grouped g 
             WHERE g.cluster_id = c.cluster_id 
@@ -74,11 +100,11 @@ module.exports = {
     ),
     Marked AS (
         SELECT *,
-        CASE WHEN ABS(DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired)) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        CASE WHEN ABS(${CLUSTER_GAP_MIN}) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
         FROM Filtered
     ),
     Grouped AS (
-        SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked
+        SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked
     ),
     Clusters AS (
         SELECT cluster_id, panel_title, application
@@ -92,7 +118,7 @@ module.exports = {
   SELECT_BASIC_RECORDS: `SELECT TOP (@limit_param) {FIELDS} FROM dbo.historicalAlerts {WHERE_CLAUSE} ORDER BY time_fired DESC`,
   HOURLY_HEATMAP: `
     WITH FilteredAlerts AS (
-      SELECT duration_sec, DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}
+      SELECT duration_sec, DATEPART(HOUR, time_fired ${TZ_TO_IL}) AS hour FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}
     ),
     HourBuckets AS (
       SELECT DISTINCT hour,
@@ -101,7 +127,7 @@ module.exports = {
              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_sec) OVER (PARTITION BY hour) AS median_duration
       FROM FilteredAlerts
     ),
-    AllHours AS (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS hour FROM sys.objects)
+    AllHours AS (SELECT hour FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)) AS H(hour))
     SELECT ah.hour, ISNULL(hb.count, 0) AS count, ISNULL(hb.avg_duration, 0) AS avg_duration, ISNULL(hb.median_duration, 0) AS median_duration
     FROM AllHours ah LEFT JOIN HourBuckets hb ON ah.hour = hb.hour ORDER BY ah.hour
   `,
@@ -114,12 +140,12 @@ module.exports = {
   `,
   SHIFT_ANALYSIS: `
     SELECT 
-      CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 'Day' ELSE 'Night' END AS shift,
+      CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_end THEN 'Day' ELSE 'Night' END AS shift,
       COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration, MIN(duration_sec) AS min_duration, MAX(duration_sec) AS max_duration,
       COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_wakeups, COUNT(CASE WHEN duration_sec > @false_wakeup_threshold THEN 1 END) AS true_alerts,
       COUNT(DISTINCT panel_title) AS unique_panels, COUNT(DISTINCT operator) AS unique_operators
     FROM dbo.historicalAlerts {WHERE_CLAUSE}
-    GROUP BY CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 'Day' ELSE 'Night' END
+    GROUP BY CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_end THEN 'Day' ELSE 'Night' END
   `,
   PANEL_LIST: `
     SELECT panel_title, COUNT(*) AS alert_count, COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_positive_count, ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration, COUNT(DISTINCT application) AS application_count
@@ -128,18 +154,18 @@ module.exports = {
   CLUSTERED_PANEL_LIST: `
     WITH Marked AS (
         SELECT time_fired, duration_sec, panel_title, application, 
-        CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster 
+        CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster 
         FROM dbo.historicalAlerts {WHERE_CLAUSE}
     ),
     Grouped AS (
-        SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id 
+        SELECT time_fired, duration_sec, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id 
         FROM Marked
     ),
     Clusters AS (
         SELECT 
             panel_title,
             application,
-            DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration 
+            ${CLUSTER_DURATION_SEC} AS cluster_duration 
         FROM Grouped GROUP BY cluster_id, panel_title, application
     )
     SELECT 
@@ -167,17 +193,17 @@ module.exports = {
   CLUSTERED_PANEL_STATS: `
     WITH Marked AS (
         SELECT time_fired, duration_sec, panel_title, application, 
-        CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster 
+        CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster 
         FROM dbo.historicalAlerts {WHERE_CLAUSE}
     ),
     Grouped AS (
-        SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id 
+        SELECT time_fired, duration_sec, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id 
         FROM Marked
     ),
     Clusters AS (
         SELECT 
             panel_title, application,
-            DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration
+            ${CLUSTER_DURATION_SEC} AS cluster_duration
         FROM Grouped GROUP BY cluster_id, panel_title, application
     ),
     PanelStats AS (
@@ -197,11 +223,11 @@ module.exports = {
   `,
   CLUSTERED_TOP_APPLICATIONS: `
     WITH Marked AS (SELECT time_fired, duration_sec, application, node_name, panel_title,
-      CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+      CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
       FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
+    Grouped AS (SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
     Clusters AS (SELECT application, COUNT(DISTINCT node_name) AS node_count,
-      DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration
+      ${CLUSTER_DURATION_SEC} AS cluster_duration
       FROM Grouped GROUP BY cluster_id, application, panel_title)
     SELECT TOP (@limit_param) application, COUNT(*) AS alert_count, MAX(node_count) AS node_count, ROUND(AVG(CAST(cluster_duration AS FLOAT)), 2) AS avg_duration
     FROM Clusters GROUP BY application ORDER BY alert_count DESC
@@ -209,22 +235,22 @@ module.exports = {
   TOP_NODES_BY_APP: `
     SELECT TOP (@limit_param) node_name, CASE WHEN COUNT(DISTINCT object) > 1 THEN 'Multiple (' + CAST(COUNT(DISTINCT object) AS VARCHAR) + ')' ELSE MAX(object) END AS object,
       COUNT(*) AS alert_count,
-      MAX(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS last_alert,
+      MAX(time_fired ${TZ_TO_IL}) AS last_alert,
       ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration
     FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY node_name ORDER BY alert_count DESC
   `,
   CLUSTERED_TOP_NODES_BY_APP: `
     WITH Marked AS (SELECT time_fired, duration_sec, node_name, object, panel_title, application,
-      CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+      CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
       FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
-    Clusters AS (SELECT MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration,
+    Grouped AS (SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
+    Clusters AS (SELECT MIN(time_fired) AS cluster_start, ${CLUSTER_DURATION_SEC} AS cluster_duration,
       MAX(node_name) AS node_name, MAX(object) AS object
       FROM Grouped GROUP BY cluster_id, panel_title, application)
     SELECT TOP (@limit_param) node_name,
       CASE WHEN COUNT(DISTINCT object) > 1 THEN 'Multiple (' + CAST(COUNT(DISTINCT object) AS VARCHAR) + ')' ELSE MAX(object) END AS object,
       COUNT(*) AS alert_count,
-      MAX(cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS last_alert,
+      MAX(cluster_start ${TZ_TO_IL}) AS last_alert,
       ROUND(AVG(CAST(cluster_duration AS FLOAT)), 2) AS avg_duration
     FROM Clusters GROUP BY node_name ORDER BY alert_count DESC
   `,
@@ -232,31 +258,31 @@ module.exports = {
     SELECT TOP (@limit_param) ISNULL(object, 'Unknown') AS object, 
       COUNT(*) AS alert_count,
       COUNT(DISTINCT node_name) AS node_count,
-      MAX(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS last_alert,
+      MAX(time_fired ${TZ_TO_IL}) AS last_alert,
       ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration
     FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY ISNULL(object, 'Unknown') ORDER BY alert_count DESC
   `,
   CLUSTERED_TOP_OBJECTS_BY_APP: `
     WITH Marked AS (SELECT time_fired, duration_sec, node_name, object, panel_title, application,
-      CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+      CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
       FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
-    Clusters AS (SELECT MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration,
+    Grouped AS (SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
+    Clusters AS (SELECT MIN(time_fired) AS cluster_start, ${CLUSTER_DURATION_SEC} AS cluster_duration,
       MAX(node_name) AS node_name, ISNULL(MAX(object), 'Unknown') AS object
       FROM Grouped GROUP BY cluster_id, panel_title, application)
     SELECT TOP (@limit_param) object, COUNT(*) AS alert_count,
       COUNT(DISTINCT node_name) AS node_count,
-      MAX(cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS last_alert,
+      MAX(cluster_start ${TZ_TO_IL}) AS last_alert,
       ROUND(AVG(CAST(cluster_duration AS FLOAT)), 2) AS avg_duration
     FROM Clusters GROUP BY object ORDER BY alert_count DESC
   `,
   CONSECUTIVE_DAYS_NODES: `
     WITH DailyAlerts AS (
       SELECT node_name,
-             CAST(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE) AS alert_date,
+             CAST(time_fired ${TZ_TO_IL} AS DATE) AS alert_date,
              COUNT(*) as daily_count
       FROM dbo.historicalAlerts {WHERE_CLAUSE}
-      GROUP BY node_name, CAST(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE)
+      GROUP BY node_name, CAST(time_fired ${TZ_TO_IL} AS DATE)
     ),
     ConsecutiveGroups AS (SELECT node_name, alert_date, daily_count, DATEADD(day, -DENSE_RANK() OVER (PARTITION BY node_name ORDER BY alert_date), alert_date) AS grp FROM DailyAlerts),
     Grouped AS (SELECT node_name, grp, COUNT(*) AS consecutive_days, SUM(daily_count) as total_alerts, MIN(alert_date) AS first_alert_date, MAX(alert_date) AS last_alert_date FROM ConsecutiveGroups GROUP BY node_name, grp)
@@ -264,16 +290,16 @@ module.exports = {
   `,
   CLUSTERED_CONSECUTIVE_DAYS_NODES: `
     WITH Marked AS (SELECT time_fired, duration_sec, node_name, panel_title, application,
-      CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+      CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
       FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
+    Grouped AS (SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
     Clusters AS (SELECT MIN(time_fired) AS cluster_start, MAX(node_name) AS node_name FROM Grouped GROUP BY cluster_id, panel_title, application),
     DailyAlerts AS (
       SELECT node_name,
-             CAST(cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE) AS alert_date,
+             CAST(cluster_start ${TZ_TO_IL} AS DATE) AS alert_date,
              COUNT(*) as daily_count
       FROM Clusters
-      GROUP BY node_name, CAST(cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE)
+      GROUP BY node_name, CAST(cluster_start ${TZ_TO_IL} AS DATE)
     ),
     ConsecutiveGroups AS (SELECT node_name, alert_date, daily_count, DATEADD(day, -DENSE_RANK() OVER (PARTITION BY node_name ORDER BY alert_date), alert_date) AS grp FROM DailyAlerts),
     GroupedCon AS (SELECT node_name, grp, COUNT(*) AS consecutive_days, SUM(daily_count) as total_alerts, MIN(alert_date) AS first_alert_date, MAX(alert_date) AS last_alert_date FROM ConsecutiveGroups GROUP BY node_name, grp)
@@ -284,36 +310,36 @@ module.exports = {
     MedianCTE AS (SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_sec) OVER () AS median_val FROM FilteredAlerts)
     SELECT COUNT(*) AS total_alerts, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration, ISNULL((SELECT TOP 1 median_val FROM MedianCTE), 0) AS median_duration, MIN(duration_sec) AS min_duration, MAX(duration_sec) AS max_duration,
       COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_wakeups, COUNT(CASE WHEN duration_sec > @false_wakeup_threshold THEN 1 END) AS true_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_alerts,
-      COUNT(CASE WHEN (DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND duration_sec > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
-      COUNT(CASE WHEN (DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND duration_sec <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
+      COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_alerts,
+      COUNT(CASE WHEN (DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end) AND duration_sec > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
+      COUNT(CASE WHEN (DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end) AND duration_sec <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
     FROM FilteredAlerts
   `,
   TIMESERIES: `
-    SELECT CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
+    SELECT CAST((time_fired ${TZ_TO_IL}) AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
       COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
-      COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
-    FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il
+      COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_end THEN 1 END) AS day_count,
+      COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_count
+    FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY CAST((time_fired ${TZ_TO_IL}) AS DATE) ORDER BY date_il
   `,
   CLUSTERED_KPI_STATS: `
-    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
-    Clusters AS (SELECT cluster_id, panel_title, application, MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application),
+    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
+    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
+    Clusters AS (SELECT cluster_id, panel_title, application, MIN(time_fired) AS cluster_start, ${CLUSTER_DURATION_SEC} AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application),
     FilteredClusters AS (SELECT * FROM Clusters {CLUSTER_FILTER}),
     MedianCTE AS (SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cluster_duration) OVER () AS median_val FROM FilteredClusters)
     SELECT COUNT(*) AS total_alerts, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration, ISNULL((SELECT TOP 1 median_val FROM MedianCTE), 0) AS median_duration, MIN(cluster_duration) AS min_duration, MAX(cluster_duration) AS max_duration,
       COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_wakeups, COUNT(CASE WHEN cluster_duration > @false_wakeup_threshold THEN 1 END) AS true_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_alerts,
-      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND cluster_duration > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
-      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND cluster_duration <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
+      COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_alerts,
+      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end) AND cluster_duration > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
+      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end) AND cluster_duration <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
     FROM FilteredClusters
   `,
   CLUSTERED_HOURLY_HEATMAP: `
-    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}),
-    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
-    Clusters AS (SELECT MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application),
-    FilteredAlerts AS (SELECT cluster_duration, DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour FROM Clusters),
+    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts WITH (NOLOCK) {WHERE_CLAUSE}),
+    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
+    Clusters AS (SELECT MIN(time_fired) AS cluster_start, ${CLUSTER_DURATION_SEC} AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application),
+    FilteredAlerts AS (SELECT cluster_duration, DATEPART(HOUR, cluster_start ${TZ_TO_IL}) AS hour FROM Clusters),
     HourBuckets AS (
         SELECT DISTINCT hour,
             COUNT(*) OVER (PARTITION BY hour) AS count,
@@ -321,35 +347,35 @@ module.exports = {
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cluster_duration) OVER (PARTITION BY hour) AS median_duration
         FROM FilteredAlerts
     ),
-    AllHours AS (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS hour FROM sys.objects)
+    AllHours AS (SELECT hour FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)) AS H(hour))
     SELECT ah.hour, ISNULL(hb.count, 0) AS count, ISNULL(hb.avg_duration, 0) AS avg_duration, ISNULL(hb.median_duration, 0) AS median_duration
     FROM AllHours ah LEFT JOIN HourBuckets hb ON ah.hour = hb.hour ORDER BY ah.hour
     OPTION (RECOMPILE)
   `,
   CLUSTERED_DURATION_HISTOGRAM: `
-    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
-    Clusters AS (SELECT DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application)
+    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
+    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
+    Clusters AS (SELECT ${CLUSTER_DURATION_SEC} AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application)
     SELECT COUNT(CASE WHEN cluster_duration <= @dur_short_max THEN 1 END) AS short_count, COUNT(CASE WHEN cluster_duration > @dur_short_max AND cluster_duration <= @dur_medium_max THEN 1 END) AS medium_count, COUNT(CASE WHEN cluster_duration > @dur_medium_max THEN 1 END) AS long_count FROM Clusters
   `,
   CLUSTERED_SHIFT_ANALYSIS: `
-    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, operator, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, operator, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
-    Clusters AS (SELECT MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration, panel_title, MAX(operator) AS operator FROM Grouped GROUP BY cluster_id, panel_title, application)
-    SELECT CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 'Day' ELSE 'Night' END AS shift,
+    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, operator, CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
+    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, operator, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
+    Clusters AS (SELECT MIN(time_fired) AS cluster_start, ${CLUSTER_DURATION_SEC} AS cluster_duration, panel_title, MAX(operator) AS operator FROM Grouped GROUP BY cluster_id, panel_title, application)
+    SELECT CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_end THEN 'Day' ELSE 'Night' END AS shift,
       COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration, MIN(cluster_duration) AS min_duration, MAX(cluster_duration) AS max_duration,
       COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_wakeups, COUNT(CASE WHEN cluster_duration > @false_wakeup_threshold THEN 1 END) AS true_alerts
-    FROM Clusters GROUP BY CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 'Day' ELSE 'Night' END
+    FROM Clusters GROUP BY CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_end THEN 'Day' ELSE 'Night' END
   `,
   CLUSTERED_TIMESERIES: `
-    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
-    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked),
-    Clusters AS (SELECT MIN(time_fired) AS cluster_start, DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application)
-    SELECT CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+    WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
+    Grouped AS (SELECT time_fired, duration_sec, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
+    Clusters AS (SELECT MIN(time_fired) AS cluster_start, ${CLUSTER_DURATION_SEC} AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application)
+    SELECT CAST((cluster_start ${TZ_TO_IL}) AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
       COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
-      COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
-    FROM Clusters GROUP BY CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il
+      COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_end THEN 1 END) AS day_count,
+      COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_count
+    FROM Clusters GROUP BY CAST((cluster_start ${TZ_TO_IL}) AS DATE) ORDER BY date_il
   `,
   UNCLUSTERED_TOP_NOISY_ALERTS: `
     WITH MessageStats AS (
@@ -370,16 +396,16 @@ module.exports = {
             duration_sec,
             message,
             panel_title, application,
-            CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+            CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
         FROM dbo.historicalAlerts {WHERE_CLAUSE}
     ),
     Grouped AS (
-        SELECT time_fired, duration_sec, message, panel_title, application, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked
+        SELECT time_fired, duration_sec, message, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked
     ),
     Clusters AS (
         SELECT 
             MAX(message) as message,
-            DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration 
+            ${CLUSTER_DURATION_SEC} AS cluster_duration 
         FROM Grouped GROUP BY cluster_id, panel_title, application
     )
     SELECT TOP 10
@@ -398,16 +424,16 @@ module.exports = {
 
     WITH Marked AS (
         SELECT time_fired, duration_sec, panel_title, application, operator, message,
-        CASE WHEN ABS(DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired)) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster 
+        CASE WHEN ABS(${CLUSTER_GAP_MIN}) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster 
         FROM dbo.historicalAlerts {WHERE_CLAUSE}
     ),
     Grouped AS (
-        SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked
+        SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked
     ),
     Clusters AS (
         SELECT 
             MIN(time_fired) AS cluster_start, 
-            DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECOND, ISNULL(duration_sec, 0), time_fired))) AS cluster_duration,
+            ${CLUSTER_DURATION_SEC} AS cluster_duration,
             MAX(message) AS message
         FROM Grouped GROUP BY cluster_id, panel_title, application
     )
@@ -417,21 +443,21 @@ module.exports = {
     WITH MedianCTE AS (SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cluster_duration) OVER () AS median_val FROM #TempClusters)
     SELECT COUNT(*) AS total_alerts, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration, ISNULL((SELECT TOP 1 median_val FROM MedianCTE), 0) AS median_duration, MIN(cluster_duration) AS min_duration, MAX(cluster_duration) AS max_duration,
       COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_wakeups, COUNT(CASE WHEN cluster_duration > @false_wakeup_threshold THEN 1 END) AS true_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_alerts,
-      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND cluster_duration > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
-      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND cluster_duration <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
+      COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_alerts,
+      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end) AND cluster_duration > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
+      COUNT(CASE WHEN (DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end) AND cluster_duration <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
     FROM #TempClusters;
 
     -- 2. Timeseries
-    SELECT CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+    SELECT CAST((cluster_start ${TZ_TO_IL}) AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
       COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
-      COUNT(CASE WHEN DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
-    FROM #TempClusters GROUP BY CAST((cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il;
+      COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_end THEN 1 END) AS day_count,
+      COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_count
+    FROM #TempClusters GROUP BY CAST((cluster_start ${TZ_TO_IL}) AS DATE) ORDER BY date_il;
 
     -- 3. Heatmap
-    WITH HourBuckets AS (SELECT DATEPART(HOUR, cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour, cluster_duration FROM #TempClusters),
-    AllHours AS (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS hour FROM sys.objects)
+    WITH HourBuckets AS (SELECT DATEPART(HOUR, cluster_start ${TZ_TO_IL}) AS hour, cluster_duration FROM #TempClusters),
+    AllHours AS (SELECT hour FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)) AS H(hour))
     SELECT ah.hour, ISNULL(COUNT(hb.hour), 0) AS count, ISNULL(AVG(CAST(hb.cluster_duration AS FLOAT)), 0) AS avg_duration
     FROM AllHours ah LEFT JOIN HourBuckets hb ON ah.hour = hb.hour GROUP BY ah.hour ORDER BY ah.hour;
 
@@ -460,21 +486,21 @@ module.exports = {
     WITH MedianCTE AS (SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_sec) OVER () AS median_val FROM #TempRaw)
     SELECT COUNT(*) AS total_alerts, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration, ISNULL((SELECT TOP 1 median_val FROM MedianCTE), 0) AS median_duration, MIN(duration_sec) AS min_duration, MAX(duration_sec) AS max_duration,
       COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_wakeups, COUNT(CASE WHEN duration_sec > @false_wakeup_threshold THEN 1 END) AS true_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_alerts,
-      COUNT(CASE WHEN (DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND duration_sec > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
-      COUNT(CASE WHEN (DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end) AND duration_sec <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
+      COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_alerts,
+      COUNT(CASE WHEN (DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end) AND duration_sec > @false_wakeup_threshold THEN 1 END) AS night_true_wakeups,
+      COUNT(CASE WHEN (DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end) AND duration_sec <= @false_wakeup_threshold THEN 1 END) AS night_false_wakeups
     FROM #TempRaw;
 
     -- 2. Timeseries
-    SELECT CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
+    SELECT CAST((time_fired ${TZ_TO_IL}) AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
       COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
-      COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_start AND DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_end THEN 1 END) AS day_count,
-      COUNT(CASE WHEN DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') < @day_start OR DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') >= @day_end THEN 1 END) AS night_count
-    FROM #TempRaw GROUP BY CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) ORDER BY date_il;
+      COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_end THEN 1 END) AS day_count,
+      COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_count
+    FROM #TempRaw GROUP BY CAST((time_fired ${TZ_TO_IL}) AS DATE) ORDER BY date_il;
 
     -- 3. Heatmap
-    WITH HourBuckets AS (SELECT DATEPART(HOUR, time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS hour, duration_sec FROM #TempRaw),
-    AllHours AS (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS hour FROM sys.objects)
+    WITH HourBuckets AS (SELECT DATEPART(HOUR, time_fired ${TZ_TO_IL}) AS hour, duration_sec FROM #TempRaw),
+    AllHours AS (SELECT hour FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23)) AS H(hour))
     SELECT ah.hour, ISNULL(COUNT(hb.hour), 0) AS count, ISNULL(AVG(CAST(hb.duration_sec AS FLOAT)), 0) AS avg_duration
     FROM AllHours ah LEFT JOIN HourBuckets hb ON ah.hour = hb.hour GROUP BY ah.hour ORDER BY ah.hour;
 
@@ -500,6 +526,12 @@ module.exports = {
   // INCIDENT BI QUERIES (UNCLUSTERED)
   // ==========================================
   UNCLUSTERED_INCIDENT_STATS_BATCH: `
+    -- Materialize the filtered rows ONCE, then run all 4 aggregates against the
+    -- temp table instead of re-scanning dbo.historicalAlerts four times.
+    IF OBJECT_ID('tempdb..#TempInc') IS NOT NULL DROP TABLE #TempInc;
+    SELECT panel_title, application, incident_number, time_fired
+    INTO #TempInc FROM dbo.historicalAlerts {WHERE_CLAUSE};
+
     -- 1. Coverage Stats
     SELECT
       COUNT(*) AS total_alerts,
@@ -512,7 +544,7 @@ module.exports = {
       COUNT(DISTINCT application) AS total_apps,
       COUNT(DISTINCT CASE WHEN incident_number IS NOT NULL THEN application END) AS apps_with_incidents,
       CAST(COUNT(incident_number) * 1.0 / NULLIF(COUNT(DISTINCT incident_number), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
-    FROM dbo.historicalAlerts {WHERE_CLAUSE};
+    FROM #TempInc;
 
     -- 2. By Team
     SELECT TOP 25
@@ -523,7 +555,7 @@ module.exports = {
       COUNT(*) - COUNT(incident_number) AS no_incident,
       CAST(COUNT(incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS coverage_pct,
       CAST(COUNT(incident_number) * 1.0 / NULLIF(COUNT(DISTINCT incident_number), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
-    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    FROM #TempInc
     GROUP BY panel_title
     ORDER BY unique_incidents DESC;
 
@@ -536,19 +568,21 @@ module.exports = {
       COUNT(*) - COUNT(incident_number) AS no_incident,
       CAST(COUNT(incident_number) * 100.0 / NULLIF(COUNT(*), 0) AS DECIMAL(5,1)) AS coverage_pct,
       CAST(COUNT(incident_number) * 1.0 / NULLIF(COUNT(DISTINCT incident_number), 0) AS DECIMAL(5,1)) AS avg_alerts_per_incident
-    FROM dbo.historicalAlerts {WHERE_CLAUSE}
+    FROM #TempInc
     GROUP BY application
     ORDER BY unique_incidents DESC;
 
     -- 4. Daily Trend
     SELECT
-      CAST(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE) AS date_il,
+      CAST(time_fired ${TZ_TO_IL} AS DATE) AS date_il,
       COUNT(*) AS total_alerts,
       COUNT(incident_number) AS alerts_covered,
       COUNT(DISTINCT incident_number) AS unique_incidents
-    FROM dbo.historicalAlerts {WHERE_CLAUSE}
-    GROUP BY CAST(time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time' AS DATE)
+    FROM #TempInc
+    GROUP BY CAST(time_fired ${TZ_TO_IL} AS DATE)
     ORDER BY date_il;
+
+    DROP TABLE #TempInc;
   `,
 
   CLUSTERED_INCIDENT_STATS_BATCH: `
@@ -556,11 +590,11 @@ module.exports = {
 
     WITH Marked AS (
         SELECT time_fired, incident_number, panel_title, application,
-        CASE WHEN DATEDIFF(MINUTE, LAG(time_fired) OVER (PARTITION BY panel_title, application ORDER BY time_fired), time_fired) > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
+        CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster
         FROM dbo.historicalAlerts {WHERE_CLAUSE}
     ),
     Grouped AS (
-        SELECT *, SUM(is_new_cluster) OVER (PARTITION BY panel_title, application ORDER BY time_fired) AS cluster_id FROM Marked
+        SELECT *, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked
     ),
     ClusterStats AS (
         SELECT 
@@ -621,13 +655,13 @@ module.exports = {
 
     -- 4. Daily Trend
     SELECT 
-      CAST((c.cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il,
+      CAST((c.cluster_start ${TZ_TO_IL}) AS DATE) AS date_il,
       COUNT(c.cluster_id) AS total_alerts, 
       SUM(CASE WHEN c.unique_tickets_in_cluster > 0 THEN 1 ELSE 0 END) AS alerts_covered,
       MAX(ISNULL(u.unique_incidents, 0)) AS unique_incidents
     FROM #TempIncidentClusters c 
-    LEFT JOIN (SELECT CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) AS date_il, COUNT(DISTINCT incident_number) AS unique_incidents FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY CAST((time_fired AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE)) u ON CAST((c.cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) = u.date_il
-    GROUP BY CAST((c.cluster_start AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time') AS DATE) 
+    LEFT JOIN (SELECT CAST((time_fired ${TZ_TO_IL}) AS DATE) AS date_il, COUNT(DISTINCT incident_number) AS unique_incidents FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY CAST((time_fired ${TZ_TO_IL}) AS DATE)) u ON CAST((c.cluster_start ${TZ_TO_IL}) AS DATE) = u.date_il
+    GROUP BY CAST((c.cluster_start ${TZ_TO_IL}) AS DATE) 
     ORDER BY date_il;
 
     DROP TABLE #TempIncidentClusters;

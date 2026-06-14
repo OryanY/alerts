@@ -17,6 +17,9 @@ const metricsRoutes = require('./routes/metrics');
 // Import utilities
 const { validateEnvironmentVariables } = require('./config/validateEnv');
 const { queryLogger } = require('./middleware/queryLogger');
+const { logger } = require('./utils/logger');
+
+const log = logger.tagged('server');
 
 // Setup global handlers
 
@@ -36,6 +39,7 @@ app.use(helmet({
 }));
 
 // CORS configuration
+const restrictedCors = cors(CONFIG.cors.restricted);
 const publicCors = cors(CONFIG.cors.public);
 
 app.use('/api/health', publicCors);
@@ -66,7 +70,9 @@ app.get('/api/health', (req, res) => {
 // API Routes
 app.use('/from-grafana', publicCors, incidentRoutes);
 
-app.use('/api', publicCors, alertRoutes);
+// Stats/BI data: restrict to the configured frontend origin(s) in production.
+app.use('/api', restrictedCors, alertRoutes);
+// Incident creation is called by external systems (Grafana), so it stays public.
 app.use('/api/incidents', publicCors, incidentRoutes);
 
 app.use('/metrics', metricsRoutes);
@@ -89,9 +95,9 @@ app.use((err, req, res, next) => {
   const status = err.status || 500;
 
   if (status >= 500) {
-    console.error(`[Server Error] ${req.method} ${req.path}`, err);
+    log.error(`${req.method} ${req.path}`, { message: err.message, stack: err.stack });
   } else {
-    console.warn(`[Client Error] ${req.method} ${req.path}`, err.message);
+    log.warn(`${req.method} ${req.path}`, err.message);
   }
 
   res.status(status).json({
@@ -111,25 +117,24 @@ let isShuttingDown = false;
 
 async function startServer() {
   try {
-    //Connect to mongo
-    console.log('Starting Alert Management API...');
+    log.info('Starting Alert Management API...');
     await initializeSqlDatabase();
     await initializeMongoDatabase();
     await ensureCacheIndex();
-    console.log('Databases initialized.');
+    log.info('Databases initialized');
 
     // Pre-warm ServiceNow data cache in the background
-    console.log('Pre-warming ServiceNow reference caches...');
-    incidentRoutes.incidentService.getAssignmentGroups().catch(e => console.error('Failed to pre-cache groups:', e.message));
-    incidentRoutes.incidentService.getServiceOfferings().catch(e => console.error('Failed to pre-cache offerings:', e.message));
-    incidentRoutes.incidentService.getBusinessServices().catch(e => console.error('Failed to pre-cache business services:', e.message));
-    incidentRoutes.incidentService.getNetworks().catch(e => console.error('Failed to pre-cache networks:', e.message));
+    log.info('Pre-warming ServiceNow reference caches...');
+    incidentRoutes.incidentService.getAssignmentGroups().catch(e => log.error('failed to pre-cache groups', e.message));
+    incidentRoutes.incidentService.getServiceOfferings().catch(e => log.error('failed to pre-cache offerings', e.message));
+    incidentRoutes.incidentService.getBusinessServices().catch(e => log.error('failed to pre-cache business services', e.message));
+    incidentRoutes.incidentService.getNetworks().catch(e => log.error('failed to pre-cache networks', e.message));
 
     server = app.listen(PORT, () => {
-      console.log(`Alert Management API Server Started on Port ${PORT}`);
+      log.info(`Server started on port ${PORT} (log level: ${logger.level})`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error.message);
+    log.error('failed to start server', error.message);
     process.exit(1);
   }
 }
@@ -137,7 +142,7 @@ async function startServer() {
 async function shutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log('Shutting down server...');
+  log.info('Shutting down server...');
   if (server) await new Promise(resolve => server.close(resolve));
   await closeConnections();
   process.exit(0);

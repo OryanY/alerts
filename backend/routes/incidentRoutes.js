@@ -56,16 +56,19 @@ router.get('/alert', validateQuery(serviceNowAlertSchema), controller.createServ
 // Reading is open to everyone. If the env var is unset, edits stay open
 // (dev convenience) and a warning is logged at startup.
 const crypto = require('crypto');
+const { logger } = require('../utils/logger');
 const SETTINGS_KEY = process.env.INCIDENT_SETTINGS_KEY || '';
 if (!SETTINGS_KEY) {
-  console.warn('⚠️ INCIDENT_SETTINGS_KEY is not set — incident settings edits are open to all viewers');
+  logger.tagged('incident').warn('INCIDENT_SETTINGS_KEY is not set — incident settings edits are open to all viewers');
 }
+// Hash both sides to a fixed 32 bytes before comparing: constant-time, no
+// length leak, and bounds the work done on attacker-controlled header input.
+const sha256 = (value) => crypto.createHash('sha256').update(String(value)).digest();
+const SETTINGS_KEY_HASH = SETTINGS_KEY ? sha256(SETTINGS_KEY) : null;
 const requireSettingsKey = (req, res, next) => {
   if (!SETTINGS_KEY) return next();
   const provided = req.get('X-Settings-Key') || '';
-  const a = Buffer.from(provided);
-  const b = Buffer.from(SETTINGS_KEY);
-  if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
+  if (crypto.timingSafeEqual(sha256(provided), SETTINGS_KEY_HASH)) return next();
   return res.status(403).json({
     success: false,
     error: 'Team key required',
@@ -114,9 +117,6 @@ router.patch('/incident-rules/:id/toggle',
   controller.toggleIncidentRule
 );
 
-
-// ================== HISTORY / LOGS ==================
-router.get('/incident-logs', controller.getIncidentLogs);
 
 // ================== GRAFANA WEBHOOK ==================
 router.get('/', controller.createIncidentFromGrafana);

@@ -2,6 +2,9 @@
 const sql = require('mssql');
 const { MongoClient } = require('mongodb');
 const { dbConfig, mongoConfig } = require('../config');
+const { logger } = require('../utils/logger');
+
+const log = logger.tagged('db');
 
 let sqlPool;
 let mongoClient;
@@ -15,13 +18,11 @@ async function initializeSqlDatabase() {
     const result = await sqlPool.request().query(
       `SELECT COUNT(*) as total_records FROM dbo.historicalAlerts`
     );
-    console.log(
-      `Database contains ${result.recordset[0].total_records} historical alerts`
-    );
+    log.info(`SQL connected — ${result.recordset[0].total_records} historical alerts`);
 
     return sqlPool;
   } catch (err) {
-    console.error('Failed to connect to SQL Server:', err);
+    log.error('failed to connect to SQL Server', err.message);
     process.exit(1);
   }
 }
@@ -37,11 +38,11 @@ async function initializeMongoDatabase() {
     const count = await mongoDb
       .collection(mongoConfig.collections.systemMappings)
       .countDocuments();
-    console.log(`MongoDB contains ${count} system mapping documents`);
+    log.info(`MongoDB connected — ${count} system mapping documents`);
 
     return mongoDb;
   } catch (err) {
-    console.error('Failed to connect to MongoDB:', err);
+    log.error('failed to connect to MongoDB', err.message);
     process.exit(1);
   }
 }
@@ -68,13 +69,13 @@ async function closeConnections() {
 
   if (sqlPool) {
     promises.push(
-      sqlPool.close().then(() => console.log('SQL Server connection closed'))
+      sqlPool.close().then(() => log.info('SQL Server connection closed'))
     );
   }
 
   if (mongoClient) {
     promises.push(
-      mongoClient.close().then(() => console.log('MongoDB connection closed'))
+      mongoClient.close().then(() => log.info('MongoDB connection closed'))
     );
   }
 

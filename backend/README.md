@@ -57,7 +57,16 @@ backend/
 See [.env.example](.env.example) for the full annotated list. Required:
 `SQL_SERVER`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD`, `MONGO_HOST`, `MONGO_DB`, `MONGO_USER`, `MONGO_PASSWORD`, `SERVICENOW_URL`, `SERVICENOW_USERNAME`, `SERVICENOW_PASSWORD`, `NODE_ENV`, `FRONTEND_URL`.
 
+Optional:
+- `INCIDENT_SETTINGS_KEY` — team key to edit incident defaults (sent as `X-Settings-Key`).
+- `LOG_LEVEL` — `error|warn|info|debug` (default `info` in prod, `debug` in dev).
+- `LOG_HTTP_SUCCESS` — log successful HTTP requests? Default `false` in prod, `true` in dev (errors always logged).
+
 ## API Surface
+
+### Observability
+- All logging goes through `utils/logger.js` (levels gated by `LOG_LEVEL`); never `console.*` directly. HTTP request logging policy (silent paths, success logging, redaction) lives in `REQUEST_LOG_POLICY` in the same file.
+- There is **no incident audit log**. To inspect what an alert would produce (mapping, rules, generated payload) without creating a ticket, use `POST /api/incidents/incident/simulate`.
 
 ### Health
 - `GET /api/health`
@@ -76,15 +85,14 @@ All stats endpoints accept the client threshold params (`dur_short_max`, `dur_me
 - `GET|POST /alert` — create TIUD alert record
 - `GET|POST /incident-with-alert` — combined creation
 - CRUD: `/system-mappings`, `/incident-rules` (+ `PATCH /incident-rules/:id/toggle`)
-- `GET|PUT|DELETE /settings` — incident field configuration (content templates + default field fillers). Stored in the `incident_settings` Mongo collection, edited from the UI (Incidents → Incident Defaults), read fresh on every incident creation so changes apply without a restart. **PUT/DELETE require the team key** (`INCIDENT_SETTINGS_KEY` env var, sent as `X-Settings-Key`); reading is open. Required fields, literal fields, and the legacy Grafana application rewrites are code-managed (`services/incident/incidentSettingsDefaults.js`, `incidentHelpers.js`).
-- `GET /incident-logs` — creation history (Mongo, 90-day TTL)
+- `GET|PUT|DELETE /settings` — incident field configuration (content templates + default field fillers). Stored in the `incident_settings` Mongo collection, edited from the UI (Incidents → Incident Defaults). Cached with a 30s local cache, invalidated on write, so changes apply within the TTL on every pod and immediately on the writing pod — no restart. **PUT/DELETE require the team key** (`INCIDENT_SETTINGS_KEY` env var, sent as `X-Settings-Key`); reading is open. Required fields, literal fields, and the legacy Grafana application rewrites are code-managed (`services/incident/incidentSettingsDefaults.js`, `incidentHelpers.js`).
 
 ### Metrics (`/metrics`)
-ServiceNow live incident counts with team/state/tag filters, cached 60s in the shared Mongo cache. Consumed by external dashboards — treat its query/filter behavior as a frozen contract.
+ServiceNow live incident counts with team/state/tag filters, cached 60s in the shared (Mongo) cache tier. Consumed by external dashboards — treat its query/filter behavior as a frozen contract.
 
 ## Architecture Notes
 
 1. **SQL safety invariant:** user values are ALWAYS bound via `request.input()`; query templates only ever interpolate code-controlled fragments (`{WHERE_CLAUSE}`, validated `sort_by`, etc.). Keep it that way.
 2. **Deduplication is external:** an n8n workflow dedups alerts upstream. `createIncidentFromAlert` always creates a ticket.
-3. **Caching:** prefer `utils/sharedCache.js` (Mongo-backed, cross-replica) per CLAUDE.md. Some legacy in-process caches remain in `alertRoutes.js` and the mapping/rule services — slated for unification.
+3. **Caching:** all caching goes through `utils/cache.js` — the single source of truth. Two tiers: `createLocalCache(name, opts)` for per-process TTL caching of Mongo-sourced data (mappings, rules, settings, route responses), and the shared Mongo-backed tier (`cacheGet`/`cacheSet`/`cacheDelByPrefix`) for expensive *external* calls (ServiceNow reference data, metrics) so only one pod per TTL hits upstream. Never create ad-hoc `Map`/`lru-cache` instances — register a named cache instead.
 4. **ServiceNow field names** like `u_perational_impact` are intentionally spelled to match the real instance schema (including typos). Placeholder values for mandatory fields (`u_phone_voip`, `u_computer_name`) are deliberate.

@@ -1,8 +1,10 @@
 // routes/metrics.js
 const express = require('express');
 const axios = require('axios');
-const { cacheGet, cacheSet } = require('../utils/cache');
+const { cacheGet, cacheSet, createLocalCache } = require('../utils/cache');
+const { logger } = require('../utils/logger');
 
+const log = logger.tagged('metrics');
 const router = express.Router();
 
 // --- Configuration ---
@@ -18,26 +20,40 @@ const CONFIG = {
 
 // Shared cache key & TTL
 const INCIDENTS_CACHE_KEY = 'metrics:snow_incidents';
+// Shared cache reduces ServiceNow calls across pods, but does not fully prevent
+// cross-pod stampedes on cache miss unless cacheGet/cacheSet implements locking.
 const CACHE_TTL = 60_000; // 60 seconds
 
-// --- Helper: Fetch Incidents (shared cache) ---
-async function fetchIncidents() {
-    // 1. Check shared MongoDB cache
-    const cached = await cacheGet(INCIDENTS_CACHE_KEY);
-    if (cached) {
-        return cached;
+// Tiny per-pod cache in front of the shared tier so a burst of dashboard polls
+// doesn't do a Mongo round-trip per request. `inFlight` coalesces concurrent
+// misses into a single upstream load (no thundering herd to ServiceNow).
+const LOCAL_TTL = 5_000; // 5 seconds
+const localIncidents = createLocalCache('metrics-incidents', { ttlMs: LOCAL_TTL, maxEntries: 1 });
+let inFlight = null;
+
+// Shared cache → ServiceNow. Only reached on a local-cache miss.
+async function loadIncidents() {
+    // 1. Try shared MongoDB cache — degrades gracefully if Mongo is down
+    let shared = null;
+    try {
+        shared = await cacheGet(INCIDENTS_CACHE_KEY);
+    } catch (err) {
+        log.warn('shared cache read failed, falling back to ServiceNow', err.message);
     }
+    if (shared) return shared;
 
     // 2. Cache miss → fetch from ServiceNow
     const url = `${CONFIG.snow.baseUrl}/api/now/table/incident`;
 
-    const query =
-        'short_descriptionNOT LIKEקפצה התראה על^' +
-        'assignment_group.parent=8bbb2b2c610221109c674479f2d24d4c^' +
-        'ORassignment_group=8bbb2b2c610221109c674479f2d24d4c^' +
-        'stateIN1,2,3,4,10^' +
-        'NQsys_tags.2835e6abc8fdde94936bc4e3b4e68a9b=2835e6abc8fdde94936bc4e3b4e68a9b^ORsys_tags.9c9158defdf9f9d027b38e3391c730ab=9c9158defdf9f9d027b38e3391c730ab' +
-        'stateNOT IN6,7,8';
+    const query = [
+        'short_descriptionNOT LIKEקפצה התראה על',
+        'assignment_group.parent=8bbb2b2c610221109c674479f2d24d4c',
+        'ORassignment_group=8bbb2b2c610221109c674479f2d24d4c',
+        'stateIN1,2,3,4,10',
+        'NQsys_tags.2835e6abc8fdde94936bc4e3b4e68a9b=2835e6abc8fdde94936bc4e3b4e68a9b',
+        'ORsys_tags.9c9158defdf9f9d027b38e3391c730ab=9c9158defdf9f9d027b38e3391c730ab',
+        'stateNOT IN6,7,8',
+    ].join('^');
 
     const params = {
         sysparm_query: query,
@@ -52,20 +68,44 @@ async function fetchIncidents() {
 
     let data = response.data.result;
 
-    // Clean up the assignment_group object (remove 'link' key)
+    // Clean up the assignment_group object (remove 'link' key) and pre-add normalized 'team' property
     if (Array.isArray(data)) {
         data = data.map(item => {
+            const teamName = item.assignment_group?.display_value ?? '';
             if (item.assignment_group && typeof item.assignment_group === 'object') {
                 delete item.assignment_group.link;
             }
-            return item;
+            return { ...item, team: teamName };
         });
     }
 
-    // 3. Write to shared cache — all other pods will now read from here
-    await cacheSet(INCIDENTS_CACHE_KEY, data, CACHE_TTL);
+    // 3. Write to shared cache — failure here degrades performance, not correctness
+    try {
+        await cacheSet(INCIDENTS_CACHE_KEY, data, CACHE_TTL);
+    } catch (err) {
+        log.warn('shared cache write failed, continuing without cache', err.message);
+    }
 
     return data;
+}
+
+// --- Helper: Fetch Incidents (local cache → shared cache → ServiceNow) ---
+async function fetchIncidents() {
+    const local = localIncidents.get('all');
+    if (local) return local;
+
+    // Coalesce concurrent misses: only the first caller loads, the rest await it.
+    if (!inFlight) {
+        inFlight = loadIncidents()
+            .then(data => { localIncidents.set('all', data); return data; })
+            .finally(() => { inFlight = null; });
+    }
+    return inFlight;
+}
+
+// --- Helper: Parse boolean-like query param ---
+function isTrue(value) {
+    return String(value).toLowerCase() === 'true';
 }
 
 // --- Helper: Apply State Filter ---
@@ -75,7 +115,7 @@ function applyStateFilter(incidents, stateParam) {
     const states = stateParam.split(',').map(s => s.trim().toLowerCase());
 
     return incidents.filter(item => {
-        const stateVal = item.state || '';
+        const stateVal = String(item.state || '');
         const stateLower = stateVal.toLowerCase();
 
         return states.some(s => {
@@ -88,17 +128,28 @@ function applyStateFilter(incidents, stateParam) {
     });
 }
 
+// --- Helper: Apply System Failure Filter ---
+function applySystemFailureFilter(incidents, systemFailureParam) {
+    if (!systemFailureParam || systemFailureParam.toLowerCase() === 'all') return incidents;
+
+    const value = systemFailureParam.toLowerCase();
+
+    return incidents.filter(item => {
+        const sf = String(item.u_system_failure || '').toLowerCase();
+        if (value === 'true')  return sf === 'true'  || item.u_system_failure === 'אמת';
+        if (value === 'false') return sf === 'false' || item.u_system_failure === 'שקר';
+        return true;
+    });
+}
+
 // --- Main Route: /metrics ---
 router.get('/', async (req, res) => {
     const { team, state, system_failure, details, tag } = req.query;
     try {
         const data = await fetchIncidents();
 
-        // Add 'team' field
-        let processedData = data.map(item => {
-            const teamName = item.assignment_group?.display_value ?? '';
-            return { ...item, team: teamName };
-        });
+        // Use cached pre-normalized data
+        let processedData = data;
 
         // Exclude specific tags
         processedData = processedData.filter(item => {
@@ -111,12 +162,11 @@ router.get('/', async (req, res) => {
             if (team.toLowerCase() === 'tipul') {
                 const excludedTeam = '851/ צוות Tequila';
                 processedData = processedData.filter(item => item.team !== excludedTeam);
-                processedData = processedData.filter(item => !(item.sys_tags || '').includes('פחות קריטי'));
+                processedData = processedData.filter(item => !String(item.sys_tags || '').includes('פחות קריטי'));
             } else if (team.toLowerCase() !== 'all') {
-                const foundTeam = processedData.find(item => item.team.toLowerCase().includes(team.toLowerCase()));
-                processedData = foundTeam
-                    ? processedData.filter(item => item.team === foundTeam.team)
-                    : [];
+                processedData = processedData.filter(item =>
+                    String(item.team || '').toLowerCase().includes(team.toLowerCase())
+                );
             }
         }
 
@@ -124,25 +174,18 @@ router.get('/', async (req, res) => {
         processedData = applyStateFilter(processedData, state);
 
         // Filter by System Failure
-        if (system_failure && system_failure !== 'all') {
-            processedData = processedData.filter(item => {
-                const sf = (item.u_system_failure || '').toLowerCase();
-                if (system_failure === 'true')  return sf === 'true'  || item.u_system_failure === 'אמת';
-                if (system_failure === 'false') return sf === 'false' || item.u_system_failure === 'שקר';
-                return true;
-            });
-        }
+        processedData = applySystemFailureFilter(processedData, system_failure);
 
         // Filter by Tag
         if (tag) {
-            processedData = processedData.filter(item => (item.sys_tags || '').includes(tag));
+            processedData = processedData.filter(item => String(item.sys_tags || '').includes(tag));
         }
 
-        if (details === 'true' || details === true) return res.json(processedData);
+        if (isTrue(details)) return res.json(processedData);
         return res.json({ count: processedData.length });
 
     } catch (error) {
-        console.error('Error in /metrics:', error);
+        log.error('error in /metrics', error.message);
         res.status(500).json({ error: 'Failed to fetch metrics', details: error.message });
     }
 });
@@ -159,12 +202,6 @@ router.get('/line-failures', async (req, res) => {
             return tags.includes('תקלות קווים') || tags.includes('תקלות פריסה');
         });
 
-        // Add team field
-        processedData = processedData.map(item => ({
-            ...item,
-            team: item.assignment_group?.display_value ?? ''
-        }));
-
         // Filter by specific tag
         if (tag) {
             if (tag === 'קווים') {
@@ -178,27 +215,22 @@ router.get('/line-failures', async (req, res) => {
 
         // Team Filter
         if (team && team.toLowerCase() !== 'all') {
-            processedData = processedData.filter(item => item.team.toLowerCase().includes(team.toLowerCase()));
+            processedData = processedData.filter(item =>
+                String(item.team || '').toLowerCase().includes(team.toLowerCase())
+            );
         }
 
         // State Filter
         processedData = applyStateFilter(processedData, state);
 
         // System Failure Filter
-        if (system_failure && system_failure !== 'all') {
-            processedData = processedData.filter(item => {
-                const sf = (item.u_system_failure || '').toLowerCase();
-                if (system_failure === 'true')  return sf === 'true'  || item.u_system_failure === 'אמת';
-                if (system_failure === 'false') return sf === 'false' || item.u_system_failure === 'שקר';
-                return true;
-            });
-        }
+        processedData = applySystemFailureFilter(processedData, system_failure);
 
-        if (details === 'true') return res.json(processedData);
+        if (isTrue(details)) return res.json(processedData);
         return res.json({ count: processedData.length });
 
     } catch (error) {
-        console.error('Error in /metrics/line-failures:', error);
+        log.error('error in /metrics/line-failures', error.message);
         res.status(500).json({ error: 'Failed to fetch line failures' });
     }
 });

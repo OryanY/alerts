@@ -5,6 +5,10 @@
  * @module validateEnv
  */
 
+const { logger } = require('../utils/logger');
+
+const log = logger.tagged('env');
+
 /**
  * Required environment variables for production
  */
@@ -54,25 +58,21 @@ function validateEnvironmentVariables() {
 
     // In production, fail fast if required vars are missing
     if (isProduction && missing.length > 0) {
-        console.error('❌ Missing required environment variables:');
-        missing.forEach(v => console.error(`   - ${v}`));
+        log.error(`missing required environment variables: ${missing.join(', ')}`);
         process.exit(1);
     }
 
     // In development, just warn
     if (!isProduction && missing.length > 0) {
-        console.warn('⚠️  Missing required environment variables (required in production):');
-        missing.forEach(v => console.warn(`   - ${v}`));
+        log.warn(`missing required environment variables (required in production): ${missing.join(', ')}`);
     }
 
     // Always warn about recommended vars
     if (warnings.length > 0) {
-        console.warn('⚠️  Missing recommended environment variables:');
-        warnings.forEach(v => console.warn(`   - ${v}`));
+        log.warn(`missing recommended environment variables: ${warnings.join(', ')}`);
     }
 
-    // Log environment info
-    console.log(`📋 Environment: ${process.env.NODE_ENV || 'development'}`);
+    log.info(`environment: ${process.env.NODE_ENV || 'development'}`);
 }
 
 module.exports = { validateEnvironmentVariables, REQUIRED_ENV_VARS, RECOMMENDED_ENV_VARS };

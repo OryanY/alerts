@@ -46,7 +46,7 @@ const CONFIG = Object.freeze({
   limits: {
     defaultCap: parseInt(process.env.QUERY_DEFAULT_CAP, 10) || 100000,
     maxPageSize: parseInt(process.env.QUERY_MAX_PAGE_SIZE, 10) || 1000,
-    maxDateRangeDays: parseInt(process.env.QUERY_MAX_DATE_RANGE_DAYS, 10) || 100000,
+    maxDateRangeDays: 365, // hard cap on a query's scanned window (enforced in AlertService._buildWhereClause)
     queryTimeout: parseInt(process.env.SQL_QUERY_TIMEOUT_MS, 10) || 30000
   },
   clustering: {
@@ -92,16 +92,19 @@ const mongoUser = process.env.MONGO_USER;
 const mongoPassword = process.env.MONGO_PASSWORD;
 const mongoHost = process.env.MONGO_HOST;
 const mongoDb = process.env.MONGO_DB;
+// The replicaSet name must match the cluster's setName EXACTLY or the driver
+// refuses to connect (startup fails). Overridable via env; the default is the
+// known-good cluster name used before the recent refactor.
+const mongoReplicaSet = process.env.MONGO_REPLICA_SET || 'mgk-grafana2sn-znp';
 const mongoConfig = {
   uri: mongoHost.includes('localhost')
     ? `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authSource=admin`
-    : `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true&replicaSet=mgk-grafana2sn`,
+    : `mongodb://${encode(mongoUser)}:${encode(mongoPassword)}@${mongoHost}/${mongoDb}?authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true&replicaSet=${mongoReplicaSet}`,
   database: process.env.MONGO_DB,
   collections: {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',
     assignmentGroups: 'assignment_groups',
-    incidentLogs: 'incident_logs',
     incidentSettings: 'incident_settings'
   }
 };

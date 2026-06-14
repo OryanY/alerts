@@ -11,7 +11,10 @@
 // ---------------------------------------------------------------
 const { getErrorHtml } = require('./htmlTemplates');
 const { AppError, MappingNotFoundError } = require('../utils/errors');
+const { logger } = require('../utils/logger');
 const helpers = require('../services/incident/incidentHelpers');
+
+const log = logger.tagged('incident');
 
 // Hebrew user-facing messages for the HTML (webhook) error pages
 const HTML_MESSAGES = {
@@ -20,6 +23,16 @@ const HTML_MESSAGES = {
     alertFailed: 'אירעה שגיאה ביצירת ההתראה',
     combinedFailed: 'אירעה שגיאה ביצירת התקלה וההתראה',
     grafanaFailed: 'אירעה שגיאה ביצירת התקלה'
+};
+
+// Friendly `error` category derived from the typed error itself, so a 400
+// validation error is never mislabeled "System mapping not found".
+const ERROR_CATEGORY_BY_CODE = {
+    NOT_FOUND: 'Resource not found',
+    NO_SYSTEM_MAPPING: 'No system mapping found',
+    CONFLICT: 'Conflict',
+    VALIDATION_ERROR: 'Validation failed',
+    SERVICENOW_ERROR: 'ServiceNow request failed'
 };
 
 class IncidentController {
@@ -52,7 +65,8 @@ class IncidentController {
         if (err instanceof AppError) {
             return res.status(err.status).json({
                 success: false,
-                error: label || err.message,
+                // Category from the actual error type; `label` is only a fallback.
+                error: ERROR_CATEGORY_BY_CODE[err.code] || label || err.message,
                 details: err.message
             });
         }
@@ -103,7 +117,7 @@ class IncidentController {
             const result = await this.incidentService.createIncidentFromAlert(req.validatedQuery);
             this._redirectOrJson(res, result, 'Incident created successfully', result?.serviceNowResult?.link);
         } catch (err) {
-            console.error('❌ Error GET /incident: %s', err.message);
+            log.error('GET /incident failed', err.message);
             this._respondHtmlError(res, err, HTML_MESSAGES.incidentFailed);
         }
     };
@@ -130,26 +144,27 @@ class IncidentController {
                 { object_name, application, node_name, message, time_created, operator }
             );
 
-            console.log('📥 Received Grafana Alert (Legacy Route):', alertData);
+            log.debug('received Grafana alert (legacy route)', alertData);
             const result = await this.incidentService.createIncidentFromAlert(alertData);
             this._redirectOrJson(res, result, 'Incident created successfully via Grafana Route', result?.serviceNowResult?.link);
         } catch (err) {
-            console.error('❌ Error in /from-grafana:', err.message);
+            log.error('/from-grafana failed', err.message);
             this._respondHtmlError(res, err, HTML_MESSAGES.grafanaFailed);
         }
     };
 
     // ================== TIUD ALERT ==================
 
-    /** GET|POST /alert — create a TIUD alert record. */
-    createServiceNowAlert = async (req, res) => {
+    /** GET|POST /alert — create a TIUD alert record. GET = browser/webhook (HTML on error), POST = programmatic (JSON). */
+    createServiceNowAlert = async (req, res, next) => {
         try {
             const alertData = req.validatedQuery || req.validatedBody;
-            console.log('Creating ServiceNow alert (%s):', req.method, alertData);
+            log.debug(`creating TIUD alert (${req.method})`, alertData);
             const result = await this.incidentService.createServiceNowAlert(alertData);
             this._redirectOrJson(res, result, 'ServiceNow alert created successfully', result?.serviceNowResult?.link);
         } catch (err) {
-            console.error('❌ Error %s /alert: %s', req.method, err.message);
+            log.error(`${req.method} /alert failed`, err.message);
+            if (req.method === 'POST') return this._respondJsonError(res, next, err, 'ServiceNow alert creation failed');
             this._respondHtmlError(res, err, HTML_MESSAGES.alertFailed);
         }
     };
@@ -174,19 +189,19 @@ class IncidentController {
                 user: params.user
             };
 
-            console.log('GET /incident-with-alert →', { alertData, createAlert, linkToIncident });
+            log.debug('GET /incident-with-alert', { alertData, createAlert, linkToIncident });
             const result = await this.incidentService.createIncidentWithAlert(alertData, createAlert, linkToIncident);
 
             const link = result.incident?.serviceNowResult?.link || result.alert?.serviceNowResult?.link;
             this._redirectOrJson(res, result, 'Incident and alert created successfully', link);
         } catch (err) {
-            console.error('❌ Error GET /incident-with-alert: %s', err.message);
+            log.error('GET /incident-with-alert failed', err.message);
             this._respondHtmlError(res, err, HTML_MESSAGES.combinedFailed);
         }
     };
 
-    /** POST /incident-with-alert — programmatic use. */
-    createIncidentWithAlertPOST = async (req, res) => {
+    /** POST /incident-with-alert — programmatic use (JSON in/out). */
+    createIncidentWithAlertPOST = async (req, res, next) => {
         try {
             const { alert, create_servicenow_alert = true, link_to_incident = true } = req.body;
             if (!alert) {
@@ -197,11 +212,11 @@ class IncidentController {
                 });
             }
 
-            console.log('POST /incident-with-alert →', { alert, create_servicenow_alert, link_to_incident });
+            log.debug('POST /incident-with-alert', { alert, create_servicenow_alert, link_to_incident });
             const result = await this.incidentService.createIncidentWithAlert(alert, create_servicenow_alert, link_to_incident);
             res.json({ success: true, message: 'Incident and alert created successfully', data: result });
         } catch (err) {
-            this._respondHtmlError(res, err, HTML_MESSAGES.combinedFailed);
+            this._respondJsonError(res, next, err, 'Incident and alert creation failed');
         }
     };
 
@@ -326,15 +341,6 @@ class IncidentController {
         }
     };
 
-    // ================== HISTORY / LOGS ==================
-
-    getIncidentLogs = async (req, res, next) => {
-        try {
-            const { limit = 50, skip = 0, search = '' } = req.query;
-            const result = await this.incidentService.getIncidentHistory(parseInt(limit, 10), parseInt(skip, 10), search);
-            res.json({ success: true, data: result.logs, count: result.total, meta: { limit, skip, search } });
-        } catch (err) { next(err); }
-    };
 }
 
 module.exports = { IncidentController };

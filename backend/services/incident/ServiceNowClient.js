@@ -1,6 +1,9 @@
 // services/incident/ServiceNowClient.js - ServiceNow API integration
 const axios = require('axios');
 const { cacheGet, cacheSet } = require('../../utils/cache');
+const { logger } = require('../../utils/logger');
+
+const log = logger.tagged('servicenow');
 
 // 24-hour TTL for ServiceNow reference data (groups, networks, offerings, etc.)
 const SN_CACHE_TTL = 86_400_000; // 24 hours in ms
@@ -30,12 +33,12 @@ class ServiceNowClient {
 
     async createIncident(incidentData) {
         if (!this.isEnabled()) {
-            console.log('❌ ServiceNow integration disabled or not configured');
+            log.warn('integration disabled or not configured');
             return { success: false, message: 'ServiceNow integration disabled' };
         }
 
         try {
-            console.log('Sending to ServiceNow:', JSON.stringify(incidentData, null, 2));
+            log.debug('creating incident', incidentData);
 
             const response = await axios({
                 method: 'POST',
@@ -46,7 +49,7 @@ class ServiceNowClient {
                 timeout: 10000
             });
 
-            console.log('✅ ServiceNow incident created:', response.data.result.number);
+            log.info('incident created', response.data.result.number);
 
             return {
                 success: true,
@@ -55,7 +58,7 @@ class ServiceNowClient {
                 link: `${this.url}/nav_to.do?uri=incident.do?sys_id=${response.data.result.sys_id}`
             };
         } catch (error) {
-            console.error('❌ ServiceNow API Error:', error.response?.data || error.message);
+            log.error('API error creating incident', error.response?.data || error.message);
             return {
                 success: false,
                 error: error.response?.data?.error?.message || error.message,
@@ -97,7 +100,7 @@ class ServiceNowClient {
         if (appendQuery) query = query ? `${query}^${appendQuery}` : appendQuery;
 
         if (!table) {
-            console.warn(`⚠️ No ServiceNow table configured for ${cacheKey}`);
+            log.warn(`no table configured for ${cacheKey}`);
             return [];
         }
 
@@ -140,11 +143,11 @@ class ServiceNowClient {
 
             // ── 3. Write to shared cache ───────────────────────────────
             await cacheSet(mongoKey, items, SN_CACHE_TTL);
-            console.log(`✅ SharedCache SET ${items.length} ${cacheKey} (key: ${mongoKey})`);
+            log.debug(`cached ${items.length} ${cacheKey} (key: ${mongoKey})`);
 
             return items;
         } catch (error) {
-            console.error(`❌ Error fetching ${cacheKey} (query: ${queryHash}):`, error.message);
+            log.error(`error fetching ${cacheKey} (query: ${queryHash})`, error.message);
             return [];
         }
     }
@@ -215,12 +218,12 @@ class ServiceNowClient {
 
     async createTiudAlert(alertData) {
         if (!this.isEnabled()) {
-            console.log('❌ ServiceNow integration disabled or not configured');
+            log.warn('integration disabled or not configured');
             return { success: false, message: 'ServiceNow integration disabled' };
         }
 
         try {
-            console.log('Sending to ServiceNow:', JSON.stringify(alertData, null, 2));
+            log.debug('creating TIUD alert', alertData);
 
             const response = await axios({
                 method: 'POST',
@@ -231,7 +234,7 @@ class ServiceNowClient {
                 timeout: 10000
             });
 
-            console.log('✅ ServiceNow Alert created:', response.data.result.u_number);
+            log.info('TIUD alert created', response.data.result.u_number);
 
             return {
                 success:      true,
@@ -240,7 +243,7 @@ class ServiceNowClient {
                 link:         `${this.url}/nav_to.do?uri=u_tiud_atraot.do?sys_id=${response.data.result.sys_id}`
             };
         } catch (error) {
-            console.error('❌ ServiceNow API Error:', error.response?.data || error.message);
+            log.error('API error creating TIUD alert', error.response?.data || error.message);
             return {
                 success: false,
                 error:   error.response?.data?.error?.message || error.message,
