@@ -17,12 +17,17 @@ import { AlertTable } from '../components/ui/AlertTable';
 const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 50;
 const ALL_COLUMNS = getAllColumns();
+const ALL_PANELS = '__all__';
 
 const buildServerFilters = (filters, config) => {
   const normalizedSortOrder = (filters.sort_order || 'desc').toString().toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-  const serverFilters = {
-    panel_title: filters.panel_title,
-  };
+  const isAllPanels = filters.panel_title === ALL_PANELS;
+  const serverFilters = {};
+  // A specific panel filters server-side. "All panels" sends no panel_title (so
+  // the query spans every panel) and forces a flat list: clustering across all
+  // panels is the expensive path and isn't meaningful for a global browse.
+  if (filters.panel_title && !isAllPanels) serverFilters.panel_title = filters.panel_title;
+  if (isAllPanels) serverFilters.clustering_enabled = false;
   ['application', 'operator', 'object', 'has_incident', 'shift'].forEach((field) => {
     if (filters[field] !== undefined && filters[field] !== '') {
       serverFilters[field] = filters[field];
@@ -116,24 +121,39 @@ const ExplorerPage = () => {
   }), [baseQueryParams]);
 
   const hasPanelSelected = Boolean(filters.panel_title);
+  const isAllPanels = filters.panel_title === ALL_PANELS;
 
   const alertsQuery = useQuery({
     queryKey: ['alerts-page', pageParams],
     queryFn: ({ signal }) => fetchApi('/alerts', pageParams, { signal }),
     enabled: hasPanelSelected,
-    placeholderData: (previous) => previous,
+    placeholderData: (previous, previousQuery) => {
+      const prevParams = previousQuery?.queryKey?.[1];
+      if (prevParams && prevParams.panel_title === pageParams.panel_title) {
+        return previous;
+      }
+      return undefined;
+    },
   });
 
   const countQuery = useQuery({
     queryKey: ['alerts-count', countParams],
     queryFn: ({ signal }) => fetchApi('/alerts', countParams, { signal }),
-    enabled: hasPanelSelected && Boolean(alertsQuery.data) && !alertsQuery.isFetching,
-    placeholderData: (previous) => previous,
+    // Skip the exact count for "all panels": counting every row/cluster is the
+    // expensive part, so the footer falls back to hasNext-based navigation.
+    enabled: hasPanelSelected && !isAllPanels && Boolean(alertsQuery.data) && !alertsQuery.isFetching,
+    placeholderData: (previous, previousQuery) => {
+      const prevParams = previousQuery?.queryKey?.[1];
+      if (prevParams && prevParams.panel_title === countParams.panel_title) {
+        return previous;
+      }
+      return undefined;
+    },
     staleTime: 15 * 1000,
   });
 
   const filterParams = useMemo(
-    () => filters.panel_title ? { panel_title: filters.panel_title } : {},
+    () => (filters.panel_title && filters.panel_title !== ALL_PANELS) ? { panel_title: filters.panel_title } : {},
     [filters.panel_title]
   );
 
@@ -163,7 +183,7 @@ const ExplorerPage = () => {
     const objects = data.objects || [];
 
     return {
-      panels: panels.map((p) => ({ value: p, label: p })),
+      panels: [{ value: ALL_PANELS, label: 'All panels' }, ...panels.map((p) => ({ value: p, label: p }))],
       applications: [
         { value: '', label: 'All Applications' },
         ...apps.map((a) => ({ value: a, label: a })),
