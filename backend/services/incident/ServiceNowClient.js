@@ -212,6 +212,275 @@ class ServiceNowClient {
         });
     }
 
+    /**
+     * Fetch Business-Service → Service-Offering pairs from cmdb_ci_rel.
+     *
+     * parent = Business Service, child = Service Offering (confirmed by the
+     * business owner). Unlike the flat reference fetchers above, each row is a
+     * structured pair carrying BOTH the sys_id (value) and display name (label)
+     * for parent and child, so the UI can store the spacing-proof sys_id while
+     * showing the human-readable name.
+     *
+     * Everything instance-specific (relationship type, network field) is
+     * env-driven and intentionally permissive by default: ServiceNow CMDB data
+     * is frequently incomplete (missing rel types, missing networks), which is
+     * why the mapping form always keeps a manual-override escape hatch. A wrong
+     * filter here degrades to "fewer/no suggestions", never to a hard failure.
+     */
+    async fetchServiceRelationships(network = null) {
+        if (!this.isEnabled()) return [];
+
+        const table  = process.env.SN_REL_TABLE  || 'cmdb_ci_rel';
+        // Request the plain reference (→ sys_id) AND the dot-walked name (→ display
+        // name). `parent` alone returns the sys_id; `parent.name` returns the name.
+        const fields = process.env.SN_REL_FIELDS || 'parent,parent.name,child,child.name';
+        const typeQuery = process.env.SN_REL_TYPE_QUERY || '';
+
+        // {network} is substituted with the chosen network. The default keeps
+        // CIs that have no network set (ISEMPTY) so incomplete data still
+        // surfaces rather than silently vanishing.
+        const networkTemplate = process.env.SN_REL_NETWORK_FILTER
+            || 'parent.u_network_ciLIKE{network}^ORchild.u_network_ciLIKE{network}^ORparent.u_network_ciISEMPTY';
+
+        const clauses = [];
+        if (typeQuery) clauses.push(typeQuery);
+        if (network)   clauses.push(networkTemplate.replace(/\{network\}/g, network));
+        const query = clauses.join('^');
+
+        const queryHash = query || 'all';
+        const mongoKey  = `sn:serviceRelationships:${queryHash}`;
+        const cached    = await cacheGet(mongoKey);
+        if (cached) return cached;
+
+        try {
+            const response = await axios({
+                method: 'GET',
+                url: `${this.url}/api/now/table/${table}`,
+                params: {
+                    sysparm_query:  query,
+                    sysparm_fields: fields,
+                    sysparm_limit:  1000
+                },
+                headers: { 'Accept': 'application/json' },
+                auth:    { username: this.username, password: this.password },
+                timeout: 10000
+            });
+
+            // sys_id from the plain ref field. ServiceNow may return it as a bare
+            // string or as a { value, link } object depending on version/config.
+            const refValue = (field) => {
+                if (field == null) return '';
+                if (typeof field === 'string') return field.trim();
+                return String(field.value || '').trim();
+            };
+            // Display name from the dot-walked `<base>.name` key, falling back to
+            // a display_value object if display-value mode is ever turned on.
+            const refLabel = (row, base) => {
+                const dotted = row[`${base}.name`];
+                if (typeof dotted === 'string' && dotted.trim()) return dotted.trim();
+                const field = row[base];
+                if (field && typeof field === 'object' && field.display_value) return String(field.display_value).trim();
+                return '';
+            };
+
+            // Dedupe child offerings; the first parent seen for a child wins.
+            const byChild = new Map();
+            for (const row of response.data.result) {
+                const childValue  = refValue(row.child);
+                const childLabel  = refLabel(row, 'child');
+                const parentValue = refValue(row.parent);
+                const parentLabel = refLabel(row, 'parent');
+                if (!childValue && !childLabel) continue;
+
+                const key = childValue || childLabel;
+                if (byChild.has(key)) continue;
+                byChild.set(key, {
+                    parent: { value: parentValue || parentLabel, label: parentLabel || parentValue },
+                    child:  { value: childValue  || childLabel,  label: childLabel  || childValue  }
+                });
+            }
+
+            const pairs = Array.from(byChild.values())
+                .sort((a, b) => a.child.label.localeCompare(b.child.label));
+
+            await cacheSet(mongoKey, pairs, SN_CACHE_TTL);
+            log.debug(`cached ${pairs.length} service relationships (key: ${mongoKey})`);
+            return pairs;
+        } catch (error) {
+            log.error(`error fetching service relationships (query: ${queryHash})`, error.message);
+            return [];
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Offering-driven mandatory fields (UI + Data policies)
+    // ------------------------------------------------------------------ //
+
+    /** Thin GET wrapper for ServiceNow Table API reads. Returns result[] or throws. */
+    async _snGet(table, params) {
+        const response = await axios({
+            method: 'GET',
+            url: `${this.url}/api/now/table/${table}`,
+            params: { sysparm_limit: 200, ...params },
+            headers: { 'Accept': 'application/json' },
+            auth:    { username: this.username, password: this.password },
+            timeout: 10000
+        });
+        return response.data.result || [];
+    }
+
+    /** Extract a sys_id from a field that may be a bare string or a { value } object. */
+    static _sysId(field) {
+        if (field == null) return '';
+        if (typeof field === 'string') return field.trim();
+        return String(field.value || '').trim();
+    }
+
+    /**
+     * Fields that ServiceNow makes mandatory once a given Service Offering is
+     * selected (e.g. OpenShift → "deployment link"). Reads BOTH policy types:
+     *
+     *   - UI Policies  (sys_ui_policy / sys_ui_policy_action): the fields that
+     *     "open up" on the form when the offering is chosen.
+     *   - Data Policies (sys_data_policy / sys_data_policy_rule): the same idea
+     *     but enforced server-side on API inserts.
+     *
+     * A policy is considered relevant when its `conditions` encoded query
+     * references the offering's sys_id (reference conditions store sys_ids).
+     * Everything is best-effort and env-tunable; any failure degrades to an
+     * empty list so the mapping form never breaks.
+     *
+     * @returns {Promise<Array<{ name: string, label: string, source: 'ui'|'data' }>>}
+     */
+    async fetchOfferingMandatoryFields(offeringSysId) {
+        if (!this.isEnabled() || !offeringSysId) return [];
+
+        const mongoKey = `sn:offeringMandatory:${offeringSysId}`;
+        const cached   = await cacheGet(mongoKey);
+        if (cached) return cached;
+
+        const [uiFields, dataFields] = await Promise.all([
+            this._fetchUiPolicyMandatory(offeringSysId).catch(e => {
+                log.warn(`ui-policy mandatory lookup failed (${offeringSysId})`, e.message);
+                return [];
+            }),
+            this._fetchDataPolicyMandatory(offeringSysId).catch(e => {
+                log.warn(`data-policy mandatory lookup failed (${offeringSysId})`, e.message);
+                return [];
+            })
+        ]);
+
+        // Dedupe by field name; first source seen wins (UI listed first).
+        const byName = new Map();
+        for (const f of [...uiFields, ...dataFields]) {
+            if (f.name && !byName.has(f.name)) byName.set(f.name, f);
+        }
+        const fields = Array.from(byName.values()).sort((a, b) => a.label.localeCompare(b.label));
+
+        await cacheSet(mongoKey, fields, SN_CACHE_TTL);
+        log.debug(`cached ${fields.length} offering-mandatory fields (key: ${mongoKey})`);
+        return fields;
+    }
+
+    async _fetchUiPolicyMandatory(offeringSysId) {
+        const policyTable = process.env.SN_UI_POLICY_TABLE        || 'sys_ui_policy';
+        const actionTable = process.env.SN_UI_POLICY_ACTION_TABLE || 'sys_ui_policy_action';
+        const baseQuery   = process.env.SN_UI_POLICY_QUERY        || 'active=true^table=incident';
+
+        const policies = await this._snGet(policyTable, {
+            sysparm_query:  `${baseQuery}^conditionsLIKE${offeringSysId}`,
+            sysparm_fields: 'sys_id',
+            sysparm_limit:  100
+        });
+        const ids = policies.map(p => ServiceNowClient._sysId(p.sys_id)).filter(Boolean);
+        if (!ids.length) return [];
+
+        const actions = await this._snGet(actionTable, {
+            sysparm_query:  `ui_policyIN${ids.join(',')}^mandatory=true`,
+            sysparm_fields: 'field'
+        });
+        return actions
+            .map(a => {
+                const name = (typeof a.field === 'string' ? a.field : ServiceNowClient._sysId(a.field)).trim();
+                return name ? { name, label: name, source: 'ui' } : null;
+            })
+            .filter(Boolean);
+    }
+
+    async _fetchDataPolicyMandatory(offeringSysId) {
+        const policyTable = process.env.SN_DATA_POLICY_TABLE      || 'sys_data_policy';
+        const ruleTable   = process.env.SN_DATA_POLICY_RULE_TABLE || 'sys_data_policy_rule';
+        const baseQuery   = process.env.SN_DATA_POLICY_QUERY      || 'active=true^model_table=incident';
+
+        const policies = await this._snGet(policyTable, {
+            sysparm_query:  `${baseQuery}^conditionsLIKE${offeringSysId}`,
+            sysparm_fields: 'sys_id',
+            sysparm_limit:  100
+        });
+        const ids = policies.map(p => ServiceNowClient._sysId(p.sys_id)).filter(Boolean);
+        if (!ids.length) return [];
+
+        // `field` may be a plain element string or a sys_dictionary reference,
+        // so request both the raw value and the dot-walked element/label.
+        const rules = await this._snGet(ruleTable, {
+            sysparm_query:  `sys_data_policyIN${ids.join(',')}^mandatory=true`,
+            sysparm_fields: 'field,field.element,field.column_label'
+        });
+        return rules
+            .map(r => {
+                const name = (r['field.element']
+                    || (typeof r.field === 'string' ? r.field : ServiceNowClient._sysId(r.field))).trim();
+                const label = (r['field.column_label'] || name).trim();
+                return name ? { name, label, source: 'data' } : null;
+            })
+            .filter(Boolean);
+    }
+
+    // ------------------------------------------------------------------ //
+    //  User and Email resolution
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Resolve a username to their ServiceNow sys_id.
+     * Queries by email matching "${username}@d360.dom".
+     */
+    async getSysIdByUser(username) {
+        const fallbackSysId = "b52e61db853a7d549dd83f48caed07f5";
+        const domain = "d360.dom";
+        if (!this.isEnabled() || !username) {
+            return fallbackSysId;
+        }
+
+        const email = `${username}@${domain}`;
+
+        try {
+            const response = await axios({
+                method: 'GET',
+                url: `${this.url}/api/now/table/sys_user`,
+                params: {
+                    sysparm_query: `email=${email}`,
+                    sysparm_fields: 'sys_id',
+                    sysparm_limit: 1
+                },
+                headers: { 'Accept': 'application/json' },
+                auth:    { username: this.username, password: this.password },
+                timeout: 10000
+            });
+
+            const result = response.data.result;
+            if (!result || (Array.isArray(result) && result.length === 0)) {
+                log.info(`No user found with email: ${email}, using fallback sys_id`);
+                return fallbackSysId;
+            }
+
+            const userRecord = Array.isArray(result) ? result[0] : result;
+            return userRecord?.sys_id || fallbackSysId;
+        } catch (error) {
+            log.error(`Error fetching user sys_id by email ${email}:`, error.message);
+            return fallbackSysId;
+        }
+    }
+
     // ------------------------------------------------------------------ //
     //  TIUD alert creation
     // ------------------------------------------------------------------ //

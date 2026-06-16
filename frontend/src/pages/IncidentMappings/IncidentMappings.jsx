@@ -44,6 +44,23 @@ const IncidentMappings = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [assignmentGroups, setAssignmentGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem('incident_mappings_view_mode') || 'compact';
+    } catch {
+      return 'compact';
+    }
+  });
+
+  const toggleViewMode = () => {
+    setViewMode((prev) => {
+      const next = prev === 'compact' ? 'expanded' : 'compact';
+      try {
+        localStorage.setItem('incident_mappings_view_mode', next);
+      } catch {}
+      return next;
+    });
+  };
 
   const fetchMappings = async () => {
     try {
@@ -150,8 +167,8 @@ const IncidentMappings = () => {
     const groupLabel = assignmentGroups.find(g => g.value === m.assignment_group)?.label || '';
 
     const fieldsToCheck = [
-      m.service_offering,
-      m.business_service,
+      m.service_offering_label || m.service_offering,
+      m.business_service_label || m.business_service,
       m.assignment_group,
       groupLabel
     ];
@@ -223,7 +240,7 @@ const IncidentMappings = () => {
   return (
     <div
       style={{
-        maxWidth: '100%',
+        maxWidth: '1000px',
         margin: '0 auto',
         color: colors.text.primary,
       }}
@@ -284,6 +301,8 @@ const IncidentMappings = () => {
         onRefresh={fetchMappings}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
+        viewMode={viewMode}
+        onToggleViewMode={toggleViewMode}
       />
 
       {/* FORM */}
@@ -316,6 +335,7 @@ const IncidentMappings = () => {
           assignmentGroups={assignmentGroups}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          viewMode={viewMode}
         />
       )}
     </div>

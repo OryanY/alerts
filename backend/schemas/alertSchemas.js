@@ -118,7 +118,7 @@ const timeseriesSchema = Joi.object({
   ...baseSchema,
   panel_title: Joi.string().trim().max(100).optional(),
   // Time series specific parameters
-  granularity: Joi.string().valid('hour', 'day').default('day'),
+  granularity: Joi.string().valid('hour', 'day', 'week', 'month').default('day'),
   fill_gaps: Joi.boolean().default(false)
 }).custom((value, helpers) => {
   // Validate date range is required for time series

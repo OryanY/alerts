@@ -1,5 +1,5 @@
 // pages/NOCDashboard.jsx — High-level dashboard for NOC operations
-import { useMemo, Suspense, useEffect } from 'react';
+import { useMemo, useState, Suspense, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -37,6 +37,24 @@ import { createChartConfig } from '../utils/chartConfig';
 import { formatDuration } from '../utils/formatters';
 import { asArray, getPrevPeriodText } from '../utils/dateUtils';
 
+// Render a trend bucket's covered span as "X - Y" for the tooltip.
+// date_il is the bucket START (day = that day, week = its Monday, month = the 1st).
+const formatBucketRange = (d, granularity) => {
+  const start = new Date(d);
+  if (isNaN(start.getTime())) return d;
+  const fmt = (dt) => dt.toLocaleDateString('en-IL', { month: 'short', day: 'numeric' });
+  if (granularity === 'week') {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6); // Monday + 6 = Sunday
+    return `${fmt(start)} - ${fmt(end)}`;
+  }
+  if (granularity === 'month') {
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0); // last day of month
+    return `${fmt(start)} - ${fmt(end)}`;
+  }
+  return start.toLocaleDateString('en-IL', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+
 const NocDashboard = () => {
 
   const {
@@ -48,6 +66,9 @@ const NocDashboard = () => {
 
   const { Legend, getDurationColorFromBands } = useDurationBands(config);
   const { colors, styles: S } = useTheme(); // ✅ Get pre-computed styles
+
+  // Calendar granularity for the "alerts over time" trend chart.
+  const [trendGranularity, setTrendGranularity] = useState('day');
   const { setTopBarSlots, clearTopBarSlots } = useTopBar();
   const chartConfig = useMemo(() => createChartConfig(colors), [colors]);
 
@@ -66,7 +87,7 @@ const NocDashboard = () => {
   const shifts = useApiData('/stats/shift-analysis', customParams);
   const duration = useApiData('/stats/duration-histogram', customParams);
   const heatmap = useApiData('/stats/hourly-heatmap', customParams);
-  const timeseries = useApiData('/stats/timeseries', customParams);
+  const timeseries = useApiData('/stats/timeseries', { ...customParams, granularity: trendGranularity });
 
   const { data: panelsList } = useApiData('/stats/panels', panelListParams);
   // Always fetch detailed panel stats un-filtered, so the widget stays consistent
@@ -74,7 +95,10 @@ const NocDashboard = () => {
   // Memoize so asArray doesn't return a new reference on every render
   const panelOptions = useMemo(() => asArray(panelsList), [panelsList]);
   const panelSelectOptions = useMemo(
-    () => panelOptions.map(p => ({ value: p.panel_title, label: `${p.panel_title} (${p.alert_count})` })),
+    () => panelOptions.map(p => ({
+      value: p.panel_title,
+      label: `${p.panel_title} (${p.alert_count}${p.pct_of_total != null ? ` · ${p.pct_of_total}%` : ''})`,
+    })),
     [panelOptions]
   );
   const panelStatsRows = asArray(panelStats.data);
@@ -386,6 +410,32 @@ const NocDashboard = () => {
             icon={TrendingUp}
             loading={timeseries.loading}
             error={timeseries.error}
+            legend={
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[
+                  { key: 'day', label: 'יום' },
+                  { key: 'week', label: 'שבוע' },
+                  { key: 'month', label: 'חודש' },
+                ].map((o) => (
+                  <button
+                    key={o.key}
+                    onClick={() => setTrendGranularity(o.key)}
+                    style={{
+                      padding: '2px 12px',
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                      border: `1px solid ${colors.border.primary}`,
+                      background: trendGranularity === o.key ? colors.chart.primary : colors.bg.tertiary,
+                      color: trendGranularity === o.key ? '#fff' : colors.text.secondary,
+                      fontWeight: trendGranularity === o.key ? 600 : 400,
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            }
           >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={timeseriesRows}>
@@ -405,13 +455,7 @@ const NocDashboard = () => {
                 <YAxis yAxisId="right" orientation="right" {...chartConfig.axis} />
                 <Tooltip
                   {...chartConfig.tooltip}
-                  labelFormatter={(d) => {
-                    try {
-                      return new Date(d).toLocaleDateString('en-IL', { weekday: 'short', month: 'short', day: 'numeric' });
-                    } catch {
-                      return d;
-                    }
-                  }}
+                  labelFormatter={(d) => formatBucketRange(d, trendGranularity)}
                   formatter={(value, name) => [
                     name.includes('Duration') ? formatDuration(value) : value,
                     name

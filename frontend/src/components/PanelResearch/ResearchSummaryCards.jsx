@@ -39,7 +39,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.semantic.warning }}
                     />
-                    <Tooltip content="סה״כ התראות (או אירועים מאוחדים) בתקופה שנבחרה.">
+                    <Tooltip content="סה״כ התראות (או אירועים מאוחדים) בתקופה שנבחרה." position="bottom">
                         <span
                             style={{
                                 fontSize: 12,
@@ -87,7 +87,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.chart.primary }}
                     />
-                    <Tooltip content="משך זמן ממוצע וחציון (טיפוסי)">
+                    <Tooltip content="משך זמן ממוצע וחציון (טיפוסי)" position="bottom">
                         <span
                             style={{
                                 fontSize: 12,
@@ -126,7 +126,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.semantic.error }}
                     />
-                    <Tooltip content={`אחוז ההתראות שנחשבות כשווא (משך קצר מ-${thresholdMin} דקות).`}>
+                    <Tooltip content={`אחוז ההתראות שנחשבות כשווא (משך קצר מ-${thresholdMin} דקות).`} position="bottom">
                         <span
                             style={{
                                 fontSize: 12,
@@ -174,7 +174,7 @@ const ResearchSummaryCards = ({ summary }) => {
                         size={20}
                         style={{ color: colors.brand.secondary }}
                     />
-                    <Tooltip content="מספר התראות לילה שחצו את סף התראות השווא.">
+                    <Tooltip content="מספר התראות לילה שחצו את סף התראות השווא." position="bottom">
                         <span
                             style={{
                                 fontSize: 12,
@@ -230,7 +230,7 @@ const ResearchSummaryCards = ({ summary }) => {
                                         : colors.text.secondary,
                         }}
                     />
-                    <Tooltip content="מגמת נפח ההתראות בהשוואה לחצי הראשון של התקופה שנבחרה.">
+                    <Tooltip content="מגמת נפח ההתראות בהשוואה לחצי הראשון של התקופה שנבחרה." position="bottom">
                         <span
                             style={{
                                 fontSize: 12,

@@ -73,10 +73,29 @@ export const getPrevPeriodText = (dateRange) => {
         };
         const start = parseLocal(dateRange.start_date);
         const end = parseLocal(dateRange.end_date);
+        const fmt = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+
+        // Calendar-aware: whole-month selections compare to the same number of
+        // whole months immediately before (keeps in sync with backend
+        // _getPreviousPeriod). Otherwise fall back to "same length, day before".
+        const startsOnFirst = start.getDate() === 1;
+        const endIsFirst = end.getDate() === 1;
+        const lastDayOfEndMonth = new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate();
+        const endIsMonthLast = end.getDate() === lastDayOfEndMonth;
+        if (startsOnFirst && (endIsFirst || endIsMonthLast)) {
+            const monthDiff = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+            const months = monthDiff + (endIsMonthLast ? 1 : 0);
+            if (months >= 1) {
+                const prevStart = new Date(start.getFullYear(), start.getMonth() - months, 1);
+                // First-of-month to first-of-month, matching the selection convention
+                // (e.g. May "01/05 - 01/06" compares to April "01/04 - 01/05").
+                return `(${fmt(prevStart)} - ${fmt(start)})`;
+            }
+        }
+
         const duration = end - start;
         const prevEnd = new Date(start.getTime() - 86400000);
         const prevStart = new Date(prevEnd.getTime() - duration);
-        const fmt = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
         return `(${fmt(prevStart)} - ${fmt(prevEnd)})`;
     } catch {
         return '';

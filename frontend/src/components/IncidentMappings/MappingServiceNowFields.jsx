@@ -10,10 +10,12 @@ const MappingServiceNowFields = ({
     setForm,
     networks,
     loadingNetworks,
-    businessServices,
-    loadingBusiness,
-    serviceOfferings,
-    loadingOfferings,
+    businessOptions,
+    offeringOptions,
+    loadingRelationships,
+    onNetworkChange,
+    onBusinessChange,
+    onOfferingChange,
     useOtherNetwork,
     setUseOtherNetwork,
     otherNetwork,
@@ -36,6 +38,8 @@ const MappingServiceNowFields = ({
         ...options,
         { value: OTHER_VALUE, label: '+ Other (Manual Entry)' }
     ];
+
+    const hasNetwork = Boolean(form.u_network) || useOtherNetwork;
 
     const inputStyle = {
         width: '100%',
@@ -70,8 +74,8 @@ const MappingServiceNowFields = ({
                         Network
                     </label>
                     {useOtherNetwork && (
-                        <button 
-                            type="button" 
+                        <button
+                            type="button"
                             onClick={() => { setUseOtherNetwork(false); setForm({...form, u_network: ''}); }}
                             style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                         >
@@ -93,13 +97,7 @@ const MappingServiceNowFields = ({
                         <SearchableSelect
                             options={getOptionsWithOther(networks)}
                             value={form.u_network}
-                            onChange={(val) => {
-                                if (val === OTHER_VALUE) {
-                                    setUseOtherNetwork(true);
-                                } else {
-                                    setForm({ ...form, u_network: val, business_service: '', service_offering: '' });
-                                }
-                            }}
+                            onChange={onNetworkChange}
                             placeholder="Select Network..."
                             loading={loadingNetworks}
                         />
@@ -108,62 +106,16 @@ const MappingServiceNowFields = ({
                 {errors.u_network && <span style={errorStyle}>{errors.u_network}</span>}
             </div>
 
-            {/* 2. Business Service (Depends on Network) */}
-            <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
-                        Business Service
-                    </label>
-                    {useOtherBusiness && (
-                        <button 
-                            type="button" 
-                            onClick={() => { setUseOtherBusiness(false); setForm({...form, business_service: ''}); }}
-                            style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                        >
-                            <ChevronLeft size={12} /> Back to List
-                        </button>
-                    )}
-                </div>
-                {useOtherBusiness ? (
-                    <input
-                        type="text"
-                        autoFocus
-                        placeholder="Enter business service manually..."
-                        value={otherBusiness}
-                        onChange={(e) => setOtherBusiness(e.target.value)}
-                        style={{ ...inputStyle, borderColor: errors.business_service ? colors.semantic.error : colors.border.primary }}
-                    />
-                ) : (
-                    <div style={{ border: errors.business_service ? `1px solid ${colors.semantic.error}` : 'none', borderRadius: 8 }}>
-                        <SearchableSelect
-                            options={getOptionsWithOther(businessServices)}
-                            value={form.business_service}
-                            disabled={!form.u_network && !useOtherNetwork}
-                            onChange={(val) => {
-                                if (val === OTHER_VALUE) {
-                                    setUseOtherBusiness(true);
-                                } else {
-                                    setForm({ ...form, business_service: val, service_offering: '' });
-                                }
-                            }}
-                            placeholder={(!form.u_network && !useOtherNetwork) ? "Select Network First" : "Select Business Service..."}
-                            loading={loadingBusiness}
-                        />
-                    </div>
-                )}
-                {errors.business_service && <span style={errorStyle}>{errors.business_service}</span>}
-            </div>
-
-            {/* 3. Service Offering (Depends on Business Service) */}
+            {/* 2. Service Offering (child) — drives the Business Service auto-fill */}
             <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
                         Service Offering
                     </label>
                     {useOtherOffering && (
-                        <button 
-                            type="button" 
-                            onClick={() => { setUseOtherOffering(false); setForm({...form, service_offering: ''}); }}
+                        <button
+                            type="button"
+                            onClick={() => { setUseOtherOffering(false); setForm({...form, service_offering: '', service_offering_label: ''}); }}
                             style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                         >
                             <ChevronLeft size={12} /> Back to List
@@ -182,22 +134,56 @@ const MappingServiceNowFields = ({
                 ) : (
                     <div style={{ border: errors.service_offering ? `1px solid ${colors.semantic.error}` : 'none', borderRadius: 8 }}>
                         <SearchableSelect
-                            options={getOptionsWithOther(serviceOfferings)}
+                            options={getOptionsWithOther(offeringOptions)}
                             value={form.service_offering}
-                            disabled={!form.business_service && !useOtherBusiness}
-                            onChange={(val) => {
-                                if (val === OTHER_VALUE) {
-                                    setUseOtherOffering(true);
-                                } else {
-                                    setForm({ ...form, service_offering: val });
-                                }
-                            }}
-                            placeholder={(!form.business_service && !useOtherBusiness) ? "Select Business Service First" : "Select Service Offering..."}
-                            loading={loadingOfferings}
+                            disabled={!hasNetwork}
+                            onChange={onOfferingChange}
+                            placeholder={!hasNetwork ? 'Select Network First' : 'Select Service Offering...'}
+                            loading={loadingRelationships}
                         />
                     </div>
                 )}
                 {errors.service_offering && <span style={errorStyle}>{errors.service_offering}</span>}
+            </div>
+
+            {/* 3. Business Service (parent) — auto-filled from the offering, still editable */}
+            <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: colors.text.secondary }}>
+                        Business Service
+                    </label>
+                    {useOtherBusiness && (
+                        <button
+                            type="button"
+                            onClick={() => { setUseOtherBusiness(false); setForm({...form, business_service: '', business_service_label: ''}); }}
+                            style={{ background: 'none', border: 'none', color: colors.brand.primary, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        >
+                            <ChevronLeft size={12} /> Back to List
+                        </button>
+                    )}
+                </div>
+                {useOtherBusiness ? (
+                    <input
+                        type="text"
+                        autoFocus
+                        placeholder="Enter business service manually..."
+                        value={otherBusiness}
+                        onChange={(e) => setOtherBusiness(e.target.value)}
+                        style={{ ...inputStyle, borderColor: errors.business_service ? colors.semantic.error : colors.border.primary }}
+                    />
+                ) : (
+                    <div style={{ border: errors.business_service ? `1px solid ${colors.semantic.error}` : 'none', borderRadius: 8 }}>
+                        <SearchableSelect
+                            options={getOptionsWithOther(businessOptions)}
+                            value={form.business_service}
+                            disabled={!hasNetwork}
+                            onChange={onBusinessChange}
+                            placeholder={!hasNetwork ? 'Select Network First' : 'Auto-filled from Offering (or pick one)...'}
+                            loading={loadingRelationships}
+                        />
+                    </div>
+                )}
+                {errors.business_service && <span style={errorStyle}>{errors.business_service}</span>}
             </div>
 
             {/* 4. Assignment Group (Standard Select) */}

@@ -36,7 +36,9 @@ const DEFAULT_INCIDENT_SETTINGS = Object.freeze({
         'message',
         'time_created',
         'operator',
-        'network'
+        'network',
+        'user',         // raw reporting username (good for text fields / notes)
+        'user_sys_id'   // resolved ServiceNow sys_id (for reference fields like caller_id)
     ],
 
     // Templates applied when neither the mapping nor a rule override

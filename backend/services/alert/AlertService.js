@@ -171,14 +171,35 @@ class AlertService {
         return result[0] || {};
     }
 
-    // Previous period of equal length, ending the day before start_date.
-    // Mirrors the frontend's getPrevPeriodText() so the trend label and the
-    // numbers describe the same window.
+    // Previous comparison period. Mirrors the frontend's getPrevPeriodText() so
+    // the trend label and the numbers describe the same window.
+    //
+    // Calendar-aware: when the selection covers whole calendar months — it starts
+    // on the 1st and ends on either a month's last day (inclusive picker) or the
+    // 1st of a later month (exclusive picker, e.g. 1/5–1/6 = May) — we compare to
+    // the SAME number of whole months immediately before: Oct -> Sep, May–Jun ->
+    // Mar–Apr. Any other range falls back to "same length, ending the day before".
     _getPreviousPeriod(params) {
         if (!params.start_date || !params.end_date) return null;
-        const start = DateTime.fromISO(params.start_date, { zone: 'Asia/Jerusalem' }).startOf('day');
-        const end = DateTime.fromISO(params.end_date, { zone: 'Asia/Jerusalem' }).startOf('day');
+        const zone = 'Asia/Jerusalem';
+        const start = DateTime.fromISO(params.start_date, { zone }).startOf('day');
+        const end = DateTime.fromISO(params.end_date, { zone }).startOf('day');
         if (!start.isValid || !end.isValid || end < start) return null;
+
+        const startsOnFirst = start.day === 1;
+        const endIsFirst = end.day === 1;
+        const endIsMonthLast = end.hasSame(end.endOf('month').startOf('day'), 'day');
+        if (startsOnFirst && (endIsFirst || endIsMonthLast)) {
+            const monthDiff = (end.year - start.year) * 12 + (end.month - start.month);
+            const months = monthDiff + (endIsMonthLast ? 1 : 0);
+            if (months >= 1) {
+                return {
+                    start_date: start.minus({ months }).toISODate(),
+                    end_date: start.minus({ days: 1 }).toISODate()
+                };
+            }
+        }
+
         const days = end.diff(start, 'days').days;
         const prevEnd = start.minus({ days: 1 });
         const prevStart = prevEnd.minus({ days });
@@ -374,6 +395,8 @@ class AlertService {
         const applications = [...new Set(rows.map(r => r.application).filter(Boolean))].sort();
         const operators = [...new Set(rows.map(r => r.operator).filter(Boolean))].sort();
         const objects = [...new Set(rows.map(r => r.object).filter(Boolean))].sort();
+        const nodes = [...new Set(rows.map(r => r.node_name).filter(Boolean))].sort();
+        const networks = [...new Set(rows.map(r => r.network).filter(Boolean))].sort();
 
         let panels;
         if (params.panel_title) {
@@ -384,7 +407,7 @@ class AlertService {
             panels = [...new Set(rows.map(r => r.panel_title).filter(Boolean))].sort();
         }
 
-        return { success: true, data: { panels, applications, operators, objects } };
+        return { success: true, data: { panels, applications, operators, objects, nodes, networks } };
     }
 
     async getPanelList(params) {
@@ -400,8 +423,15 @@ class AlertService {
 
     async getTimeseriesStats(params) {
         const { enabled } = this._getClusteringConfig(params);
+        const granularity = ['hour', 'day', 'week', 'month'].includes(params.granularity)
+            ? params.granularity
+            : 'day';
+        // Clustering collapses a storm to its first alert, so bucket on cluster_start.
+        const col = enabled ? 'cluster_start' : 'time_fired';
         const queryTarget = enabled ? queries.CLUSTERED_TIMESERIES : queries.TIMESERIES;
-        const records = await this._execute(queryTarget, params);
+        const records = await this._execute(queryTarget, params, {
+            replace: { BUCKET_EXPR: queries.bucketExpr(granularity, col) }
+        });
         return { success: true, data: records };
     }
 

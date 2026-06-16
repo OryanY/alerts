@@ -65,6 +65,25 @@ export const DateRangePicker = ({
     }
   };
 
+  // Month presets emit inclusive first-day → last-day ranges so a "month" is
+  // exactly that month (no boundary-day spillover), and the calendar-aware
+  // comparison lines up to the previous whole month.
+  const toISO = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const setThisMonth = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    onChange({ ...dateRange, start_date: toISO(start), end_date: toISO(now) });
+  };
+
+  const setLastMonth = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0); // last day of previous month
+    onChange({ ...dateRange, start_date: toISO(start), end_date: toISO(end) });
+  };
+
   const presetButtonStyle = {
     padding: compact ? '5px 8px' : '6px 12px',
     fontSize: compact ? 11 : 12,
@@ -168,6 +187,20 @@ export const DateRangePicker = ({
         style={presetButtonStyle}
       >
         30 ימים אחרונים
+      </button>
+
+      <button
+        onClick={setThisMonth}
+        style={presetButtonStyle}
+      >
+        החודש
+      </button>
+
+      <button
+        onClick={setLastMonth}
+        style={presetButtonStyle}
+      >
+        חודש שעבר
       </button>
 
       {/* Optional right slot */}

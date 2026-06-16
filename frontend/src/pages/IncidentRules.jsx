@@ -22,6 +22,23 @@ const IncidentRules = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem('incident_rules_view_mode') || 'compact';
+    } catch {
+      return 'compact';
+    }
+  });
+
+  const toggleViewMode = () => {
+    setViewMode((prev) => {
+      const next = prev === 'compact' ? 'expanded' : 'compact';
+      try {
+        localStorage.setItem('incident_rules_view_mode', next);
+      } catch {}
+      return next;
+    });
+  };
 
   // FILTERING LOGIC
   const filteredRules = useMemo(() => {
@@ -465,7 +482,7 @@ const IncidentRules = () => {
   return (
     <div
       style={{
-        maxWidth: '100%',
+        maxWidth: '1000px',
         margin: '0 auto',
         color: colors.text.primary,
       }}
@@ -532,6 +549,8 @@ const IncidentRules = () => {
         loading={loading}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
+        viewMode={viewMode}
+        onToggleViewMode={toggleViewMode}
       />
 
 
@@ -607,6 +626,7 @@ const IncidentRules = () => {
                       onEdit={startEdit}
                       onDelete={del}
                       renderApplicationChip={renderApplicationChip}
+                      viewMode={viewMode}
                     />
                   );
                 })}

@@ -100,7 +100,7 @@ export const MetricCard = memo(function MetricCard({
       }}>
 
         {/* Icon */}
-        <Tooltip content={tooltip}>
+        <Tooltip content={tooltip} position="bottom">
           <div style={{
             width: 48,
             height: 48,
@@ -117,7 +117,7 @@ export const MetricCard = memo(function MetricCard({
 
         {/* Trend */}
         {typeof trend === 'number' && (
-          <Tooltip content={trendTooltip}>
+          <Tooltip content={trendTooltip} position="bottom">
             <div style={{
               display: 'flex',
               alignItems: 'center',

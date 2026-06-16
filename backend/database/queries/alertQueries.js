@@ -19,11 +19,27 @@ const CLUSTER_DURATION_SEC = `DATEDIFF(SECOND, MIN(time_fired), MAX(DATEADD(SECO
 // here (e.g. to 'Asia/Jerusalem' for SQL Server on Linux) and every query follows.
 const TZ_TO_IL = `AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time'`;
 
+// Calendar bucket for the timeseries trend, keyed by granularity. `col` is the
+// timestamp column (raw time_fired, or cluster_start when clustering is on).
+// Week truncates to Monday (1900-01-01 is a Monday) without depending on the
+// session's SET DATEFIRST; month truncates to the 1st.
+const bucketExpr = (granularity, col) => {
+  const d = `CAST((${col} ${TZ_TO_IL}) AS DATE)`;
+  switch (String(granularity)) {
+    case 'hour':  return `DATEADD(HOUR, DATEDIFF(HOUR, 0, (${col} ${TZ_TO_IL})), 0)`;
+    case 'week':  return `CAST(DATEADD(DAY, -(DATEDIFF(DAY, '19000101', ${d}) % 7), ${d}) AS DATE)`;
+    case 'month': return `CAST(DATEADD(MONTH, DATEDIFF(MONTH, 0, ${d}), 0) AS DATE)`;
+    case 'day':
+    default:      return d;
+  }
+};
+
 module.exports = {
+  bucketExpr,
   // Distinct panel/app/operator names — no date range, for dropdown population.
   // When @panel_title is set, scopes applications + operators to that panel only.
   DISTINCT_FILTER_OPTIONS: `
-    SELECT DISTINCT panel_title, application, operator, ISNULL(object, 'Unknown') AS object
+    SELECT DISTINCT panel_title, application, operator, ISNULL(object, 'Unknown') AS object, node_name, network
     FROM dbo.historicalAlerts WITH (NOLOCK)
     WHERE panel_title IS NOT NULL
       AND application IS NOT NULL
@@ -148,7 +164,9 @@ module.exports = {
     GROUP BY CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_end THEN 'Day' ELSE 'Night' END
   `,
   PANEL_LIST: `
-    SELECT panel_title, COUNT(*) AS alert_count, COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_positive_count, ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration, COUNT(DISTINCT application) AS application_count
+    SELECT panel_title, COUNT(*) AS alert_count,
+      CAST(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0) AS DECIMAL(5,2)) AS pct_of_total,
+      COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_positive_count, ROUND(AVG(CAST(duration_sec AS FLOAT)), 2) AS avg_duration, COUNT(DISTINCT application) AS application_count
     FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY panel_title ORDER BY alert_count DESC
   `,
   CLUSTERED_PANEL_LIST: `
@@ -168,14 +186,15 @@ module.exports = {
             ${CLUSTER_DURATION_SEC} AS cluster_duration 
         FROM Grouped GROUP BY cluster_id, panel_title, application
     )
-    SELECT 
-        panel_title, 
-        COUNT(*) AS alert_count, 
-        COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_positive_count, 
-        ROUND(AVG(CAST(cluster_duration AS FLOAT)), 2) AS avg_duration, 
+    SELECT
+        panel_title,
+        COUNT(*) AS alert_count,
+        CAST(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0) AS DECIMAL(5,2)) AS pct_of_total,
+        COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_positive_count,
+        ROUND(AVG(CAST(cluster_duration AS FLOAT)), 2) AS avg_duration,
         COUNT(DISTINCT application) AS application_count
-    FROM Clusters 
-    GROUP BY panel_title 
+    FROM Clusters
+    GROUP BY panel_title
     ORDER BY alert_count DESC
   `,
   PANEL_STATS: `
@@ -316,11 +335,11 @@ module.exports = {
     FROM FilteredAlerts
   `,
   TIMESERIES: `
-    SELECT CAST((time_fired ${TZ_TO_IL}) AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
+    SELECT {BUCKET_EXPR} AS date_il, COUNT(*) AS alert_count, AVG(CAST(duration_sec AS FLOAT)) AS avg_duration,
       COUNT(CASE WHEN duration_sec <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
       COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_end THEN 1 END) AS day_count,
       COUNT(CASE WHEN DATEPART(HOUR, time_fired ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, time_fired ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_count
-    FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY CAST((time_fired ${TZ_TO_IL}) AS DATE) ORDER BY date_il
+    FROM dbo.historicalAlerts {WHERE_CLAUSE} GROUP BY {BUCKET_EXPR} ORDER BY date_il
   `,
   CLUSTERED_KPI_STATS: `
     WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
@@ -371,11 +390,11 @@ module.exports = {
     WITH Marked AS (SELECT time_fired, duration_sec, panel_title, application, CASE WHEN ${CLUSTER_GAP_MIN} > @cluster_threshold THEN 1 ELSE 0 END AS is_new_cluster FROM dbo.historicalAlerts {WHERE_CLAUSE}),
     Grouped AS (SELECT time_fired, duration_sec, panel_title, application, ${CLUSTER_ID_WINDOW} AS cluster_id FROM Marked),
     Clusters AS (SELECT MIN(time_fired) AS cluster_start, ${CLUSTER_DURATION_SEC} AS cluster_duration FROM Grouped GROUP BY cluster_id, panel_title, application)
-    SELECT CAST((cluster_start ${TZ_TO_IL}) AS DATE) AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
+    SELECT {BUCKET_EXPR} AS date_il, COUNT(*) AS alert_count, AVG(CAST(cluster_duration AS FLOAT)) AS avg_duration,
       COUNT(CASE WHEN cluster_duration <= @false_wakeup_threshold THEN 1 END) AS false_alerts,
       COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_start AND DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_end THEN 1 END) AS day_count,
       COUNT(CASE WHEN DATEPART(HOUR, cluster_start ${TZ_TO_IL}) < @day_start OR DATEPART(HOUR, cluster_start ${TZ_TO_IL}) >= @day_end THEN 1 END) AS night_count
-    FROM Clusters GROUP BY CAST((cluster_start ${TZ_TO_IL}) AS DATE) ORDER BY date_il
+    FROM Clusters GROUP BY {BUCKET_EXPR} ORDER BY date_il
   `,
   UNCLUSTERED_TOP_NOISY_ALERTS: `
     WITH MessageStats AS (

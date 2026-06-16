@@ -60,13 +60,36 @@ class IncidentService {
 
     // ================== INCIDENT CREATION ==================
 
+    // Build the ServiceNow incident payload from the mapping + merged rule
+    // overrides. Exposes the reporting user to templates as {{user}} (raw
+    // username) and {{user_sys_id}} (resolved sys_id, for reference fields like
+    // caller_id). user is OPTIONAL: the sys_id is resolved only when a user was
+    // supplied — otherwise an empty user would fall back to a placeholder
+    // caller, and {{user_sys_id}} stays empty so the field it feeds is dropped.
+    // Shared by createIncidentFromAlert and simulateIncidentCreation so the
+    // preview always matches what would actually be sent.
+    async _buildIncidentPayload(systemMapping, mergedOverrides, alertData, settings) {
+        const alertDataForTemplate = alertData.user
+            ? { ...alertData, user_sys_id: await this.serviceNowClient.getSysIdByUser(alertData.user) }
+            : alertData;
+
+        const incidentData = helpers.buildIncidentData(systemMapping, mergedOverrides, alertDataForTemplate, settings);
+
+        // Never send a blank value to ServiceNow — drop fields that resolved to
+        // an empty string (e.g. {{user_sys_id}} on a userless incident).
+        for (const key of Object.keys(incidentData)) {
+            if (incidentData[key] === '') delete incidentData[key];
+        }
+        return incidentData;
+    }
+
     async createIncidentFromAlert(alertData) {
         const [{ systemMapping, rulesToApply, mergedOverrides }, settings] = await Promise.all([
             this._evaluateAlert(alertData),
             this.settingsService.getSettings()
         ]);
 
-        const incidentData = helpers.buildIncidentData(systemMapping, mergedOverrides, alertData, settings);
+        const incidentData = await this._buildIncidentPayload(systemMapping, mergedOverrides, alertData, settings);
         const result = await this.serviceNowClient.createIncident(incidentData);
 
         // ServiceNow failures come back as { success:false } (the client never
@@ -116,6 +139,24 @@ class IncidentService {
         return this.serviceNowClient.fetchBusinessServices(network);
     }
 
+    /**
+     * Business-Service → Service-Offering pairs sourced from cmdb_ci_rel.
+     * Drives the mapping form's offering→business-service auto-fill.
+     */
+    async getServiceRelationships(network = null) {
+        return this.serviceNowClient.fetchServiceRelationships(network);
+    }
+
+    /** Network the mapping form should preselect (analyst can override). */
+    getDefaultNetwork() {
+        return process.env.SN_DEFAULT_NETWORK || '';
+    }
+
+    /** Fields ServiceNow makes mandatory once a Service Offering is selected. */
+    async getOfferingMandatoryFields(offeringSysId) {
+        return this.serviceNowClient.fetchOfferingMandatoryFields(offeringSysId);
+    }
+
     // ================== TIUD ALERT CREATION ==================
 
     /**
@@ -142,13 +183,15 @@ class IncidentService {
             throw new MappingNotFoundError(`No system mapping found for application: ${application}`);
         }
 
+        const userSysId = await this.serviceNowClient.getSysIdByUser(user);
+
         const alertPayload = {
             u_jump_comm: message,
             u_cluster: node_name,
             assignment_group: systemMapping.assignment_group,
             u_network: systemMapping.u_network,
             u_service_offering: systemMapping.service_offering,
-            u_opened: user,
+            u_opened: userSysId,
             u_what_we_did: how_solved,
             u_prevent: prevented,
             // Link to an existing incident: sys_id (when prevented) wins over legacy number
@@ -196,7 +239,7 @@ class IncidentService {
         ]);
 
         const incidentData = systemMapping
-            ? helpers.buildIncidentData(systemMapping, mergedOverrides, alertData, settings)
+            ? await this._buildIncidentPayload(systemMapping, mergedOverrides, alertData, settings)
             : null;
 
         const matchObjects = rankedMatches.map(m => ({ rule: m.rule, score: m.score, is_global: !!m.rule.is_global }));

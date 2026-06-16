@@ -34,10 +34,51 @@ export const Layout = () => {
   const showDateControls = routesWithDateControls.some((path) => isActivePath(path));
   const settingsActive = location.pathname.startsWith('/settings');
 
-  // Active tab: primary text + a thin accent underline. Inactive: muted, no decoration.
+  // Active tab: primary brand color with solid background and capsule styling. Inactive: secondary text.
   const navTabStyle = (active) => active
-    ? { color: colors.text.primary, fontWeight: 500, boxShadow: `inset 0 -2px 0 ${colors.brand.primary}` }
-    : { color: colors.text.secondary, fontWeight: 400 };
+    ? {
+        color: colors.brand.primary,
+        background: colors.bg.secondary,
+        boxShadow: `0 1px 3px ${colors.shadow.sm}, 0 1px 2px rgba(0, 0, 0, 0.05)`,
+        fontWeight: 600,
+        borderRadius: 99,
+        padding: '6px 16px',
+        fontSize: '13px',
+        border: 'none',
+        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      }
+    : {
+        color: colors.text.secondary,
+        background: 'transparent',
+        fontWeight: 500,
+        borderRadius: 99,
+        padding: '6px 16px',
+        fontSize: '13px',
+        border: 'none',
+        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      };
+
+  const rightNavTabStyle = (active) => active
+    ? {
+        color: colors.brand.primary,
+        fontWeight: 600,
+        borderRadius: 99,
+        padding: '6px 16px',
+        fontSize: '13px',
+        border: 'none',
+        background: colors.bg.tertiary + '80',
+        transition: 'all 0.2s ease',
+      }
+    : {
+        color: colors.text.secondary,
+        fontWeight: 500,
+        borderRadius: 99,
+        padding: '6px 16px',
+        fontSize: '13px',
+        border: 'none',
+        background: 'transparent',
+        transition: 'all 0.2s ease',
+      };
 
   const setTopBarSlots = useCallback((slots) => setTopBarSlotsState(slots || {}), []);
   const clearTopBarSlots = useCallback(() => setTopBarSlotsState({}), []);
@@ -53,17 +94,56 @@ export const Layout = () => {
       <div className="ops-shell" style={{ background: colors.bg.primary, color: colors.text.primary }}>
         <header
           className="ops-topnav"
-          style={{ background: colors.bg.secondary, borderBottom: `1px solid ${colors.border.primary}` }}
+          style={{
+            background: `${colors.bg.secondary}e6`,
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            borderBottom: `1px solid ${colors.border.primary}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            height: 56,
+            padding: '0 24px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 60,
+          }}
         >
-          <span className="ops-brand">Alerts</span>
+          {/* Left area: Brand logo */}
+          <div style={{ flex: '1 1 0%', display: 'flex', alignItems: 'center' }}>
+            <span className="ops-brand" style={{
+              fontSize: 16,
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+              color: colors.brand.primary,
+              textTransform: 'uppercase',
+              userSelect: 'none',
+              cursor: 'pointer',
+            }} onClick={() => navigate('/dashboard')}>
+              Alerts
+            </span>
+          </div>
 
-          <nav className="ops-nav">
+          {/* Center area: Centered nav tabs */}
+          <nav className="ops-nav" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+            background: colors.bg.tertiary + '80',
+            padding: 4,
+            borderRadius: 99,
+            border: `1px solid ${colors.border.primary}50`,
+          }}>
             {navigationItems.map(({ path, label }) => (
               <button
                 key={path}
                 onClick={() => navigate(path)}
                 className="ops-nav-button"
-                style={navTabStyle(isActivePath(path))}
+                style={{
+                  ...navTabStyle(isActivePath(path)),
+                  minHeight: 'auto',
+                }}
                 aria-current={isActivePath(path) ? 'page' : undefined}
               >
                 {label}
@@ -71,12 +151,19 @@ export const Layout = () => {
             ))}
           </nav>
 
-          <div className="ops-nav-right">
+          {/* Right area: Settings & Theme Toggle */}
+          <div className="ops-nav-right" style={{
+            flex: '1 1 0%',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: 12,
+          }}>
             <button
               type="button"
               onClick={() => navigate('/settings')}
               className="ops-nav-button"
-              style={navTabStyle(settingsActive)}
+              style={rightNavTabStyle(settingsActive)}
               aria-current={settingsActive ? 'page' : undefined}
             >
               Settings

@@ -29,6 +29,8 @@ router.get('/assignment-groups', controller.getAssignmentGroups);
 router.get('/networks', controller.getNetworks);
 router.get('/service-offerings', controller.getServiceOfferings);
 router.get('/business-services', controller.getBusinessServices);
+router.get('/service-relationships', controller.getServiceRelationships);
+router.get('/offering-fields', controller.getOfferingFields);
 
 router.get(
   '/incident-with-alert',
@@ -86,6 +88,11 @@ router.delete('/settings', requireSettingsKey, controller.resetIncidentSettings)
 
 // ================== SYSTEM MAPPINGS ==================
 router.get('/system-mappings', controller.getSystemMappings);
+
+// Resolve an application name to its mapping id (exact/contains/regex).
+// Used by n8n to tag alerts with mapping_id so clustering groups by system,
+// not by raw application string. Returns mapping_id: null when unmapped.
+router.get('/system-mappings/resolve', controller.resolveMapping);
 
 router.post('/system-mappings',
   validateBody(systemMappingSchema),

@@ -126,6 +126,7 @@ async function startServer() {
     incidentRoutes.incidentService.getServiceOfferings().catch(e => log.error('failed to pre-cache offerings', e.message));
     incidentRoutes.incidentService.getBusinessServices().catch(e => log.error('failed to pre-cache business services', e.message));
     incidentRoutes.incidentService.getNetworks().catch(e => log.error('failed to pre-cache networks', e.message));
+    incidentRoutes.incidentService.getServiceRelationships().catch(e => log.error('failed to pre-cache service relationships', e.message));
 
     server = app.listen(PORT, () => {
       log.info(`Server started on port ${PORT} (log level: ${logger.level})`);
