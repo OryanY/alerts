@@ -91,7 +91,26 @@ class IncidentController {
     getNetworks = async (req, res, next) => {
         try {
             const networks = await this.incidentService.getNetworks();
-            res.json({ success: true, data: networks, count: networks.length });
+            res.json({
+                success: true,
+                data: networks,
+                count: networks.length,
+                default: this.incidentService.getDefaultNetwork()
+            });
+        } catch (err) { next(err); }
+    };
+
+    getServiceRelationships = async (req, res, next) => {
+        try {
+            const relationships = await this.incidentService.getServiceRelationships(req.query.network || null);
+            res.json({ success: true, data: relationships, count: relationships.length });
+        } catch (err) { next(err); }
+    };
+
+    getOfferingFields = async (req, res, next) => {
+        try {
+            const fields = await this.incidentService.getOfferingMandatoryFields(req.query.offering || null);
+            res.json({ success: true, data: fields, count: fields.length });
         } catch (err) { next(err); }
     };
 

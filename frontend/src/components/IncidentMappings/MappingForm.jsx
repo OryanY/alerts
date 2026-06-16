@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
     Plus,
     Edit,
@@ -16,6 +16,8 @@ import MappingCustomFields from './MappingCustomFields';
 const baseMandatoryFields = [
     'service_offering',
     'business_service',
+    'service_offering_label',
+    'business_service_label',
     'u_network',
     'u_impact_technology',
     'assignment_group',
@@ -32,7 +34,20 @@ const excludeFromCustom = [
 
 const OTHER_VALUE = '___OTHER___';
 
-
+const emptyForm = () => ({
+    grafana_names: [],
+    // Business Service (parent) + Service Offering (child) store the ServiceNow
+    // sys_id; the *_label fields hold the display name. sys_id is immune to the
+    // accidental-spaces bug that used to leave the reference field empty.
+    service_offering: '',
+    service_offering_label: '',
+    business_service: '',
+    business_service_label: '',
+    u_network: '',
+    u_impact_technology: '',
+    assignment_group: '',
+    u_system_failure: false,
+});
 
 const MappingForm = ({
     PATTERN_TYPES,
@@ -46,15 +61,7 @@ const MappingForm = ({
 }) => {
     const { colors } = useTheme();
 
-    const [form, setForm] = useState({
-        grafana_names: [],
-        service_offering: '',
-        business_service: '',
-        u_network: '',
-        u_impact_technology: '',
-        assignment_group: '',
-        u_system_failure: false,
-    });
+    const [form, setForm] = useState(emptyForm);
 
     const [customFields, setCustomFields] = useState({});
     const [errors, setErrors] = useState({});
@@ -62,12 +69,20 @@ const MappingForm = ({
     // Reference Data State
     const [networks, setNetworks] = useState([]);
     const [loadingNetworks, setLoadingNetworks] = useState(false);
-    const [businessServices, setBusinessServices] = useState([]);
-    const [loadingBusiness, setLoadingBusiness] = useState(false);
-    const [serviceOfferings, setServiceOfferings] = useState([]);
-    const [loadingOfferings, setLoadingOfferings] = useState(false);
+    const [defaultNetwork, setDefaultNetwork] = useState('');
+    // cmdb_ci_rel pairs: [{ parent: {value,label}, child: {value,label} }]
+    const [relationships, setRelationships] = useState([]);
+    const [loadingRelationships, setLoadingRelationships] = useState(false);
+    const didPreselectNetwork = useRef(false);
 
-    // "Other" manual input state
+    // Fields ServiceNow makes mandatory once an offering is selected (e.g.
+    // OpenShift → deployment link). Auto-added to the form and required to save.
+    const [requiredFields, setRequiredFields] = useState([]); // [{ name, label, source }]
+    const [loadingRequiredFields, setLoadingRequiredFields] = useState(false);
+    const prevRequiredNames = useRef([]);
+
+    // "Other" manual input state (the override path — CMDB data is often
+    // incomplete, so analysts must always be able to type a value by hand).
     const [useOtherNetwork, setUseOtherNetwork] = useState(false);
     const [otherNetwork, setOtherNetwork] = useState('');
     const [useOtherBusiness, setUseOtherBusiness] = useState(false);
@@ -76,15 +91,7 @@ const MappingForm = ({
     const [otherOffering, setOtherOffering] = useState('');
 
     const resetLocal = useCallback(() => {
-        setForm({
-            grafana_names: [],
-            service_offering: '',
-            business_service: '',
-            u_network: '',
-            u_impact_technology: '',
-            assignment_group: '',
-            u_system_failure: false,
-        });
+        setForm(emptyForm());
         setCustomFields({});
         setErrors({});
         setUseOtherNetwork(false);
@@ -93,9 +100,13 @@ const MappingForm = ({
         setOtherBusiness('');
         setUseOtherOffering(false);
         setOtherOffering('');
+        setRequiredFields([]);
+        prevRequiredNames.current = [];
+        didPreselectNetwork.current = false;
     }, []);
 
-    // Fetch initial data (Assignment groups come from parent, Networks we fetch here)
+    // Fetch networks (assignment groups come from parent). Capture the
+    // instance default so new mappings can preselect it.
     useEffect(() => {
         const fetchNetworks = async () => {
             try {
@@ -104,6 +115,7 @@ const MappingForm = ({
                 const data = await safeJson(res);
                 if (data.success) {
                     setNetworks(data.data || []);
+                    setDefaultNetwork(data.default || '');
                 }
             } catch (e) {
                 console.warn('Could not fetch networks:', e.message);
@@ -114,57 +126,97 @@ const MappingForm = ({
         fetchNetworks();
     }, []);
 
-    // Cascade: Network -> Business Services
+    // Preselect the default network once, for new mappings only.
+    useEffect(() => {
+        if (editingItem || didPreselectNetwork.current) return;
+        if (!defaultNetwork || form.u_network) return;
+        didPreselectNetwork.current = true;
+        setForm((prev) => ({ ...prev, u_network: defaultNetwork }));
+    }, [defaultNetwork, editingItem, form.u_network]);
+
+    // Network -> Business Service ⇄ Service Offering relationships (cmdb_ci_rel).
     useEffect(() => {
         if (!form.u_network || useOtherNetwork) {
-            setBusinessServices([]);
+            setRelationships([]);
             return;
         }
 
-        const fetchBusinessServices = async () => {
+        const fetchRelationships = async () => {
             try {
-                setLoadingBusiness(true);
-                const res = await fetch(`${API_BASE}/incidents/business-services?network=${encodeURIComponent(form.u_network)}`, { credentials: 'include' });
+                setLoadingRelationships(true);
+                const res = await fetch(
+                    `${API_BASE}/incidents/service-relationships?network=${encodeURIComponent(form.u_network)}`,
+                    { credentials: 'include' }
+                );
                 const data = await safeJson(res);
                 if (data.success) {
-                    setBusinessServices(data.data || []);
+                    setRelationships(data.data || []);
                 }
             } catch (e) {
-                console.warn('Could not fetch business services:', e.message);
+                console.warn('Could not fetch service relationships:', e.message);
             } finally {
-                setLoadingBusiness(false);
+                setLoadingRelationships(false);
             }
         };
-        fetchBusinessServices();
+        fetchRelationships();
     }, [form.u_network, useOtherNetwork]);
 
-    // Cascade: Business Service -> Service Offerings (also filtered by the same network as business services)
+    // Service Offering -> mandatory fields ServiceNow requires for it.
+    // Auto-adds them as custom-field rows; validation blocks save until filled.
     useEffect(() => {
-        if (!form.business_service || useOtherBusiness) {
-            setServiceOfferings([]);
+        // Only meaningful for a real offering sys_id (manual entries have none).
+        const offeringSysId = !useOtherOffering ? form.service_offering : '';
+
+        if (!offeringSysId) {
+            // Drop previously auto-added rows that are still empty.
+            setCustomFields((prev) => {
+                const next = { ...prev };
+                prevRequiredNames.current.forEach((name) => {
+                    if ((next[name] ?? '') === '') delete next[name];
+                });
+                return next;
+            });
+            prevRequiredNames.current = [];
+            setRequiredFields([]);
             return;
         }
 
-        const fetchServiceOfferings = async () => {
+        let cancelled = false;
+        const fetchRequired = async () => {
             try {
-                setLoadingOfferings(true);
-                // Filter service offerings by the same network — consistent with how business services are filtered
-                const networkParam = !useOtherNetwork && form.u_network
-                    ? `&network=${encodeURIComponent(form.u_network)}`
-                    : '';
-                const res = await fetch(`${API_BASE}/incidents/service-offerings?business_service=${encodeURIComponent(form.business_service)}${networkParam}`, { credentials: 'include' });
+                setLoadingRequiredFields(true);
+                const res = await fetch(
+                    `${API_BASE}/incidents/offering-fields?offering=${encodeURIComponent(offeringSysId)}`,
+                    { credentials: 'include' }
+                );
                 const data = await safeJson(res);
-                if (data.success) {
-                    setServiceOfferings(data.data || []);
-                }
+                if (cancelled) return;
+                const fields = (data.success && Array.isArray(data.data)) ? data.data : [];
+                const newNames = fields.map((f) => f.name);
+
+                setCustomFields((prev) => {
+                    const next = { ...prev };
+                    // Remove rows auto-added for a previous offering that are no
+                    // longer required and were left empty (avoid accumulation).
+                    prevRequiredNames.current.forEach((name) => {
+                        if (!newNames.includes(name) && (next[name] ?? '') === '') delete next[name];
+                    });
+                    // Pre-add newly required fields without clobbering existing values.
+                    newNames.forEach((name) => { if (next[name] === undefined) next[name] = ''; });
+                    return next;
+                });
+
+                setRequiredFields(fields);
+                prevRequiredNames.current = newNames;
             } catch (e) {
-                console.warn('Could not fetch service offerings:', e.message);
+                if (!cancelled) console.warn('Could not fetch offering fields:', e.message);
             } finally {
-                setLoadingOfferings(false);
+                if (!cancelled) setLoadingRequiredFields(false);
             }
         };
-        fetchServiceOfferings();
-    }, [form.business_service, form.u_network, useOtherBusiness, useOtherNetwork]);
+        fetchRequired();
+        return () => { cancelled = true; };
+    }, [form.service_offering, useOtherOffering]);
 
     // Handle Edit Mode Initialization
     useEffect(() => {
@@ -183,7 +235,10 @@ const MappingForm = ({
         setForm({
             grafana_names: patterns,
             service_offering: editingItem.service_offering || '',
+            // Fall back to the stored value when an older mapping has no label.
+            service_offering_label: editingItem.service_offering_label || editingItem.service_offering || '',
             business_service: editingItem.business_service || '',
+            business_service_label: editingItem.business_service_label || editingItem.business_service || '',
             u_network: editingItem.u_network || '',
             u_impact_technology: editingItem.u_impact_technology || '',
             assignment_group: editingItem.assignment_group || '',
@@ -199,6 +254,104 @@ const MappingForm = ({
         setCustomFields(custom);
 
     }, [editingItem, resetLocal]);
+
+    // ---- Derived option lists from the relationship pairs ----
+
+    // child sys_id -> parent {value,label}, for offering→business auto-fill.
+    // name -> { label, source } for the offering-mandated fields.
+    const requiredFieldMeta = useMemo(() => {
+        const meta = {};
+        requiredFields.forEach((f) => { meta[f.name] = { label: f.label, source: f.source }; });
+        return meta;
+    }, [requiredFields]);
+
+    // Per-field errors for the custom-fields section (stored under custom_<name>).
+    const customFieldErrors = useMemo(() => {
+        const out = {};
+        Object.keys(errors).forEach((k) => { if (k.startsWith('custom_')) out[k.slice('custom_'.length)] = errors[k]; });
+        return out;
+    }, [errors]);
+
+    const offeringParentMap = useMemo(() => {
+        const map = new Map();
+        relationships.forEach((r) => {
+            if (r.child?.value) map.set(r.child.value, r.parent);
+        });
+        return map;
+    }, [relationships]);
+
+    const businessOptions = useMemo(() => {
+        const seen = new Map();
+        relationships.forEach((r) => {
+            const p = r.parent;
+            if (p?.value && !seen.has(p.value)) seen.set(p.value, { value: p.value, label: p.label });
+        });
+        let opts = Array.from(seen.values());
+        // Keep the current selection visible even if it isn't in the fetched set
+        // (edit mode, or a value the analyst typed manually earlier).
+        if (form.business_service && !useOtherBusiness && !seen.has(form.business_service)) {
+            opts = [{ value: form.business_service, label: form.business_service_label || form.business_service }, ...opts];
+        }
+        return opts;
+    }, [relationships, form.business_service, form.business_service_label, useOtherBusiness]);
+
+    const offeringOptions = useMemo(() => {
+        // When a business service is chosen, narrow offerings to its children.
+        const source = form.business_service && !useOtherBusiness
+            ? relationships.filter((r) => r.parent?.value === form.business_service)
+            : relationships;
+        const seen = new Map();
+        source.forEach((r) => {
+            const c = r.child;
+            if (c?.value && !seen.has(c.value)) seen.set(c.value, { value: c.value, label: c.label });
+        });
+        let opts = Array.from(seen.values());
+        if (form.service_offering && !useOtherOffering && !seen.has(form.service_offering)) {
+            opts = [{ value: form.service_offering, label: form.service_offering_label || form.service_offering }, ...opts];
+        }
+        return opts;
+    }, [relationships, form.business_service, form.service_offering, form.service_offering_label, useOtherBusiness, useOtherOffering]);
+
+    // ---- Selection handlers ----
+
+    const handleNetworkChange = (val) => {
+        if (val === OTHER_VALUE) { setUseOtherNetwork(true); return; }
+        setForm({
+            ...form,
+            u_network: val,
+            business_service: '', business_service_label: '',
+            service_offering: '', service_offering_label: '',
+        });
+    };
+
+    const handleBusinessChange = (val) => {
+        if (val === OTHER_VALUE) { setUseOtherBusiness(true); return; }
+        const opt = businessOptions.find((o) => o.value === val);
+        // Changing the business service clears the offering — it may belong to a different parent.
+        setForm({
+            ...form,
+            business_service: val,
+            business_service_label: opt?.label || val,
+            service_offering: '', service_offering_label: '',
+        });
+    };
+
+    const handleOfferingChange = (val) => {
+        if (val === OTHER_VALUE) { setUseOtherOffering(true); return; }
+        const opt = offeringOptions.find((o) => o.value === val);
+        const parent = offeringParentMap.get(val);
+        const next = {
+            ...form,
+            service_offering: val,
+            service_offering_label: opt?.label || val,
+        };
+        // Auto-fill the parent Business Service, unless the analyst is overriding it manually.
+        if (parent && !useOtherBusiness) {
+            next.business_service = parent.value;
+            next.business_service_label = parent.label;
+        }
+        setForm(next);
+    };
 
     const addCustomField = () => {
         const fieldName = prompt('Enter field name (e.g., u_eck_name, u_oracle_error):');
@@ -254,9 +407,17 @@ const MappingForm = ({
                        key === 'business_service' && useOtherBusiness ? otherBusiness :
                        key === 'service_offering' && useOtherOffering ? otherOffering :
                        form[key];
-            
+
             if (!val || !val.toString().trim()) {
                 newErrors[key] = `${label} is required`;
+            }
+        });
+
+        // Offering-mandated fields must be filled before saving.
+        requiredFields.forEach((f) => {
+            const v = customFields[f.name];
+            if (!v || !v.toString().trim()) {
+                newErrors[`custom_${f.name}`] = `${f.label} is required for this Service Offering`;
             }
         });
 
@@ -274,12 +435,18 @@ const MappingForm = ({
         setErrors({});
 
         try {
+            // Manual ("Other") entries store the typed name as both value and label.
+            const businessValue = useOtherBusiness ? otherBusiness.trim() : form.business_service;
+            const offeringValue = useOtherOffering ? otherOffering.trim() : form.service_offering;
+
             const dataToSave = {
                 ...form,
                 ...customFields,
-                u_network: useOtherNetwork ? otherNetwork : form.u_network,
-                business_service: useOtherBusiness ? otherBusiness : form.business_service,
-                service_offering: useOtherOffering ? otherOffering : form.service_offering,
+                u_network: useOtherNetwork ? otherNetwork.trim() : form.u_network,
+                business_service: businessValue,
+                business_service_label: useOtherBusiness ? otherBusiness.trim() : (form.business_service_label || businessValue),
+                service_offering: offeringValue,
+                service_offering_label: useOtherOffering ? otherOffering.trim() : (form.service_offering_label || offeringValue),
                 u_impact_technology: form.u_impact_technology?.trim(),
                 assignment_group: form.assignment_group?.trim(),
             };
@@ -303,22 +470,6 @@ const MappingForm = ({
         } catch (e2) {
             onError?.('Error saving mapping: ' + e2.message);
         }
-    };
-
-    const getOptionsWithOther = (options) => [
-        ...options,
-        { value: OTHER_VALUE, label: '+ Other (Manual Entry)' }
-    ];
-
-    const inputStyle = {
-        width: '100%',
-        padding: '10px 12px',
-        borderRadius: 8,
-        border: `1px solid ${colors.border.primary}`,
-        background: colors.bg.primary,
-        color: colors.text.primary,
-        fontSize: 14,
-        outline: 'none',
     };
 
     return (
@@ -387,10 +538,12 @@ const MappingForm = ({
                         setForm={setForm}
                         networks={networks}
                         loadingNetworks={loadingNetworks}
-                        businessServices={businessServices}
-                        loadingBusiness={loadingBusiness}
-                        serviceOfferings={serviceOfferings}
-                        loadingOfferings={loadingOfferings}
+                        businessOptions={businessOptions}
+                        offeringOptions={offeringOptions}
+                        loadingRelationships={loadingRelationships}
+                        onNetworkChange={handleNetworkChange}
+                        onBusinessChange={handleBusinessChange}
+                        onOfferingChange={handleOfferingChange}
                         useOtherNetwork={useOtherNetwork}
                         setUseOtherNetwork={setUseOtherNetwork}
                         otherNetwork={otherNetwork}
@@ -408,9 +561,12 @@ const MappingForm = ({
                         errors={errors}
                     />
 
-                    {/* Custom Fields */}
+                    {/* Custom Fields (incl. offering-mandated required fields) */}
                     <MappingCustomFields
                         customFields={customFields}
+                        requiredFields={requiredFieldMeta}
+                        loadingRequired={loadingRequiredFields}
+                        errors={customFieldErrors}
                         onAddCustomField={addCustomField}
                         onRemoveCustomField={removeCustomField}
                         onUpdateCustomField={updateCustomField}

@@ -374,6 +374,8 @@ class AlertService {
         const applications = [...new Set(rows.map(r => r.application).filter(Boolean))].sort();
         const operators = [...new Set(rows.map(r => r.operator).filter(Boolean))].sort();
         const objects = [...new Set(rows.map(r => r.object).filter(Boolean))].sort();
+        const nodes = [...new Set(rows.map(r => r.node_name).filter(Boolean))].sort();
+        const networks = [...new Set(rows.map(r => r.network).filter(Boolean))].sort();
 
         let panels;
         if (params.panel_title) {
@@ -384,7 +386,7 @@ class AlertService {
             panels = [...new Set(rows.map(r => r.panel_title).filter(Boolean))].sort();
         }
 
-        return { success: true, data: { panels, applications, operators, objects } };
+        return { success: true, data: { panels, applications, operators, objects, nodes, networks } };
     }
 
     async getPanelList(params) {

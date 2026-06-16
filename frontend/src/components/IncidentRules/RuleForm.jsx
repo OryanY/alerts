@@ -229,7 +229,7 @@ const RuleForm = ({
                                                         typeof name === 'object' ? name.value : name
                                                     )
                                                     .join(', ')}{' '}
-                                                ← {m.service_offering}
+                                                ← {m.service_offering_label || m.service_offering}
                                             </option>
                                         ))}
                                     </select>

@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Download, RefreshCw, X, AlertCircle, LayoutGrid } from 'lucide-react';
+import { Search, Download, RefreshCw, X, AlertCircle, LayoutGrid, SlidersHorizontal } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { useTopBar } from '../contexts/TopBarContext';
@@ -28,7 +28,7 @@ const buildServerFilters = (filters, config) => {
   // panels is the expensive path and isn't meaningful for a global browse.
   if (filters.panel_title && !isAllPanels) serverFilters.panel_title = filters.panel_title;
   if (isAllPanels) serverFilters.clustering_enabled = false;
-  ['application', 'operator', 'object', 'has_incident', 'shift'].forEach((field) => {
+  ['application', 'operator', 'object', 'has_incident', 'shift', 'node_name', 'network'].forEach((field) => {
     if (filters[field] !== undefined && filters[field] !== '') {
       serverFilters[field] = filters[field];
     }
@@ -62,6 +62,7 @@ const buildServerFilters = (filters, config) => {
 };
 
 const ExplorerPage = () => {
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const { config, dateRange, getApiParams } = useClientConfig();
   const { colors, styles: S } = useTheme();
   const { setTopBarSlots, clearTopBarSlots } = useTopBar();
@@ -181,6 +182,8 @@ const ExplorerPage = () => {
     const apps = data.applications || [];
     const operators = data.operators || [];
     const objects = data.objects || [];
+    const nodes = data.nodes || [];
+    const networks = data.networks || [];
 
     return {
       panels: [{ value: ALL_PANELS, label: 'All panels' }, ...panels.map((p) => ({ value: p, label: p }))],
@@ -195,6 +198,14 @@ const ExplorerPage = () => {
       objects: [
         { value: '', label: 'All Objects' },
         ...objects.map((o) => ({ value: o, label: o })),
+      ],
+      nodes: [
+        { value: '', label: 'All Nodes' },
+        ...nodes.map((n) => ({ value: n, label: n })),
+      ],
+      networks: [
+        { value: '', label: 'All Networks' },
+        ...networks.map((n) => ({ value: n, label: n })),
       ],
       durations: [
         { value: '', label: 'All Durations' },
@@ -217,6 +228,21 @@ const ExplorerPage = () => {
     return getDefaultVisibleColumns();
   });
 
+  const [columnOrder, setColumnOrder] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem('alertExplorer.columnOrder');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return ALL_COLUMNS.map((c) => c.key);
+  });
+
   const saveTimeoutRef = useRef(null);
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -233,10 +259,44 @@ const ExplorerPage = () => {
     };
   }, [visibleColumns]);
 
-  const visibleOrderedColumns = useMemo(
-    () => ALL_COLUMNS.filter((column) => visibleColumns[column.key]),
-    [visibleColumns]
-  );
+  const saveOrderTimeoutRef = useRef(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (saveOrderTimeoutRef.current) clearTimeout(saveOrderTimeoutRef.current);
+    saveOrderTimeoutRef.current = setTimeout(() => {
+      try {
+        window.localStorage.setItem('alertExplorer.columnOrder', JSON.stringify(columnOrder));
+      } catch {
+        // ignore
+      }
+    }, 100);
+    return () => {
+      if (saveOrderTimeoutRef.current) clearTimeout(saveOrderTimeoutRef.current);
+    };
+  }, [columnOrder]);
+
+  const handleReorderColumn = useCallback((key, direction) => {
+    setColumnOrder((prev) => {
+      const index = prev.indexOf(key);
+      if (index === -1) return prev;
+      const newOrder = [...prev];
+      if (direction === 'up' && index > 0) {
+        [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
+      } else if (direction === 'down' && index < prev.length - 1) {
+        [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+      }
+      return newOrder;
+    });
+  }, []);
+
+  const visibleOrderedColumns = useMemo(() => {
+    const mapped = columnOrder
+      .map((key) => ALL_COLUMNS.find((c) => c.key === key))
+      .filter(Boolean);
+    const missing = ALL_COLUMNS.filter((c) => !columnOrder.includes(c.key));
+    const fullOrder = [...mapped, ...missing];
+    return fullOrder.filter((column) => visibleColumns[column.key]);
+  }, [columnOrder, visibleColumns]);
 
   const activeFilterCount = useMemo(
     () => Object.entries(filters).filter(([key, value]) =>
@@ -246,6 +306,20 @@ const ExplorerPage = () => {
       key !== 'sort_by' &&
       key !== 'sort_order' &&
       key !== 'page'
+    ).length,
+    [filters]
+  );
+
+  const activeAdvancedFilterCount = useMemo(
+    () => Object.entries(filters).filter(([key, value]) =>
+      value &&
+      value !== '' &&
+      value !== 'all' &&
+      key !== 'sort_by' &&
+      key !== 'sort_order' &&
+      key !== 'page' &&
+      key !== 'search' &&
+      key !== 'panel_title'
     ).length,
     [filters]
   );
@@ -276,6 +350,9 @@ const ExplorerPage = () => {
       max_duration: '',
       has_incident: '',
       shift: '',
+      node_name: '',
+      network: '',
+      object: '',
     });
   };
 
@@ -326,7 +403,12 @@ const ExplorerPage = () => {
     ),
     actions: (
       <>
-        <ColumnVisibilityPanel visibleColumns={visibleColumns} onToggle={handleToggleColumn} />
+        <ColumnVisibilityPanel
+          visibleColumns={visibleColumns}
+          onToggle={handleToggleColumn}
+          columnOrder={columnOrder}
+          onReorder={handleReorderColumn}
+        />
         <button onClick={() => refetchAlerts()} disabled={isAlertsFetching || !hasPanelSelected} style={S.button.secondary(isAlertsFetching || !hasPanelSelected)}>
           <RefreshCw size={15} style={{ animation: isAlertsFetching ? 'spin 1s linear infinite' : 'none' }} />
           Refresh
@@ -344,6 +426,8 @@ const ExplorerPage = () => {
     isRefreshing,
     visibleColumns,
     handleToggleColumn,
+    columnOrder,
+    handleReorderColumn,
     refetchAlerts,
     isAlertsFetching,
     S.button,
@@ -380,142 +464,257 @@ const ExplorerPage = () => {
   return (
     <div style={S.page}>
       <div style={S.container}>
-        <section style={{ ...S.card({ padding: 12 }), marginBottom: 12 }}>
+        <section style={{ ...S.card({ padding: 16, borderRadius: 10 }), marginBottom: 12 }}>
+          {/* Primary Filter Bar */}
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: 10,
-            alignItems: 'end',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
           }}>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Search Messages
-              <div style={{ position: 'relative' }}>
-                <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: colors.text.tertiary }} />
-                <input
-                  type="text"
-                  placeholder="Message text"
-                  value={filters.search || ''}
-                  onChange={(e) => setFilters({ search: e.target.value })}
-                  style={{ ...S.input, paddingLeft: 32 }}
-                />
-              </div>
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Panel
-              <div style={{ position: 'relative' }}>
-                <SearchableSelect
-                  value={filters.panel_title || ''}
-                  onChange={(val) => setFilters({ panel_title: val })}
-                  options={dropdownOptions.panels}
-                  placeholder={panelIsLoading ? 'Loading panels...' : 'Select a panel'}
-                  isLoading={panelIsLoading}
-                />
-              </div>
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Application
-              <div style={{ position: 'relative' }}>
-                <SearchableSelect
-                  value={filters.application || ''}
-                  onChange={(val) => setFilters({ application: val })}
-                  options={dropdownOptions.applications}
-                  placeholder="All Applications"
-                />
-              </div>
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Incident
-              <div style={{ position: 'relative' }}>
-                <SearchableSelect
-                  value={filters.has_incident || ''}
-                  onChange={(val) => setFilters({ has_incident: val })}
-                  options={[
-                    { value: '', label: 'All Alerts' },
-                    { value: 'true', label: 'Linked' },
-                    { value: 'false', label: 'No Incident' },
-                  ]}
-                  placeholder="All Alerts"
-                />
-              </div>
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Operator
-              <div style={{ position: 'relative' }}>
-                <SearchableSelect
-                  value={filters.operator || ''}
-                  onChange={(val) => setFilters({ operator: val })}
-                  options={dropdownOptions.operators}
-                  placeholder="All Operators"
-                />
-              </div>
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Object
-              <div style={{ position: 'relative' }}>
-                <SearchableSelect
-                  value={filters.object || ''}
-                  onChange={(val) => setFilters({ object: val })}
-                  options={dropdownOptions.objects}
-                  placeholder="All Objects"
-                />
-              </div>
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Duration
-              <div style={{ position: 'relative' }}>
-                <SearchableSelect
-                  value={filters.duration_category || ''}
-                  onChange={(val) => setFilters({ duration_category: val })}
-                  options={dropdownOptions.durations}
-                  placeholder="All Durations"
-                />
-              </div>
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Shift
-              <div style={{ position: 'relative' }}>
-                <SearchableSelect
-                  value={filters.shift || ''}
-                  onChange={(val) => setFilters({ shift: val })}
-                  options={[
-                    { value: '', label: 'All Shifts' },
-                    { value: 'day', label: 'Day' },
-                    { value: 'night', label: 'Night' },
-                  ]}
-                  placeholder="All Shifts"
-                />
-              </div>
-            </label>
-            <div style={{ display: 'grid', gap: 6, fontSize: 12, color: colors.text.secondary, fontWeight: 700 }}>
-              Duration (seconds)
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
-                <LazyInput
-                  type="number"
-                  placeholder="Min"
-                  value={filters.min_duration || ''}
-                  min={0}
-                  onChange={(e) => setFilters({ min_duration: e.target.value })}
-                  style={S.input}
-                />
-                <LazyInput
-                  type="number"
-                  placeholder="Max"
-                  value={filters.max_duration || ''}
-                  min={0}
-                  onChange={(e) => setFilters({ max_duration: e.target.value })}
-                  style={S.input}
-                />
-                <button
-                  onClick={clearAllFilters}
-                  disabled={!activeFilterCount}
-                  title="Clear filters"
-                  style={{ ...S.button.secondary(!activeFilterCount), padding: '0 10px', height: 36 }}
-                >
-                  <X size={15} />
-                </button>
+            {/* Search messages input */}
+            <div style={{ flex: '1 1 300px', position: 'relative' }}>
+              <Search size={15} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: colors.text.tertiary }} />
+              <input
+                type="text"
+                placeholder="Search alert messages..."
+                value={filters.search || ''}
+                onChange={(e) => setFilters({ search: e.target.value })}
+                style={{
+                  ...S.input,
+                  minHeight: 44,
+                  borderRadius: 8,
+                  border: `1px solid ${colors.border.primary}`,
+                  background: colors.bg.primary,
+                  paddingLeft: 38,
+                  fontSize: 14,
+                }}
+              />
+            </div>
+
+            {/* Primary Panel dropdown */}
+            <div style={{ flex: '0 1 240px', minWidth: 200 }}>
+              <SearchableSelect
+                value={filters.panel_title || ''}
+                onChange={(val) => setFilters({ panel_title: val })}
+                options={dropdownOptions.panels}
+                placeholder={panelIsLoading ? 'Loading panels...' : 'Select a panel'}
+                isLoading={panelIsLoading}
+              />
+            </div>
+
+            {/* Advanced Filters Trigger Button */}
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                ...S.button.secondary(),
+                height: 44,
+                borderRadius: 8,
+                padding: '0 16px',
+                borderColor: showAdvanced ? colors.brand.primary : colors.border.primary,
+                background: showAdvanced ? colors.brand.primary + '0f' : colors.bg.secondary,
+                color: showAdvanced ? colors.brand.primary : colors.text.primary,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <SlidersHorizontal size={14} />
+              <span>More Filters</span>
+              {activeAdvancedFilterCount > 0 && (
+                <span style={{
+                  background: colors.brand.primary,
+                  color: colors.text.inverse,
+                  borderRadius: 10,
+                  padding: '1px 6px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {activeAdvancedFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Clear All Filters Button */}
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearAllFilters}
+                style={{
+                  ...S.button.secondary(),
+                  height: 44,
+                  borderRadius: 8,
+                  padding: '0 14px',
+                  color: colors.semantic.error,
+                  borderColor: colors.border.primary,
+                  background: colors.bg.secondary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <X size={14} />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+
+          {/* Expandable Advanced Filters Grid */}
+          {showAdvanced && (
+            <div style={{
+              marginTop: 16,
+              paddingTop: 16,
+              borderTop: `1px solid ${colors.border.primary}`,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+              gap: 16,
+              alignItems: 'end',
+              animation: 'fadeIn 0.2s ease-out',
+            }}>
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Application
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.application || ''}
+                    onChange={(val) => setFilters({ application: val })}
+                    options={dropdownOptions.applications}
+                    placeholder="All Applications"
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Node
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.node_name || ''}
+                    onChange={(val) => setFilters({ node_name: val })}
+                    options={dropdownOptions.nodes}
+                    placeholder="All Nodes"
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Network
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.network || ''}
+                    onChange={(val) => setFilters({ network: val })}
+                    options={dropdownOptions.networks}
+                    placeholder="All Networks"
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Object
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.object || ''}
+                    onChange={(val) => setFilters({ object: val })}
+                    options={dropdownOptions.objects}
+                    placeholder="All Objects"
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Operator
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.operator || ''}
+                    onChange={(val) => setFilters({ operator: val })}
+                    options={dropdownOptions.operators}
+                    placeholder="All Operators"
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Duration
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.duration_category || ''}
+                    onChange={(val) => setFilters({ duration_category: val })}
+                    options={dropdownOptions.durations}
+                    placeholder="All Durations"
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Shift
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.shift || ''}
+                    onChange={(val) => setFilters({ shift: val })}
+                    options={[
+                      { value: '', label: 'All Shifts' },
+                      { value: 'day', label: 'Day' },
+                      { value: 'night', label: 'Night' },
+                    ]}
+                    placeholder="All Shifts"
+                  />
+                </div>
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Incident
+                <div style={{ position: 'relative' }}>
+                  <SearchableSelect
+                    value={filters.has_incident || ''}
+                    onChange={(val) => setFilters({ has_incident: val })}
+                    options={[
+                      { value: '', label: 'All Alerts' },
+                      { value: 'true', label: 'Linked' },
+                      { value: 'false', label: 'No Incident' },
+                    ]}
+                    placeholder="All Alerts"
+                  />
+                </div>
+              </label>
+
+              <div style={{ display: 'grid', gap: 6, fontSize: 11, color: colors.text.secondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Duration (seconds)
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <LazyInput
+                    type="number"
+                    placeholder="Min"
+                    value={filters.min_duration || ''}
+                    min={0}
+                    onChange={(e) => setFilters({ min_duration: e.target.value })}
+                    style={{
+                      ...S.input,
+                      minHeight: 44,
+                      borderRadius: 8,
+                      border: `1px solid ${colors.border.primary}`,
+                      background: colors.bg.primary,
+                      fontSize: 14,
+                    }}
+                  />
+                  <LazyInput
+                    type="number"
+                    placeholder="Max"
+                    value={filters.max_duration || ''}
+                    min={0}
+                    onChange={(e) => setFilters({ max_duration: e.target.value })}
+                    style={{
+                      ...S.input,
+                      minHeight: 44,
+                      borderRadius: 8,
+                      border: `1px solid ${colors.border.primary}`,
+                      background: colors.bg.primary,
+                      fontSize: 14,
+                    }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </section>
 
         {alertsQuery.error && alertsQuery.data && (

@@ -161,7 +161,7 @@ const IncidentDefaultsTab = () => {
     if (!settings) return <div style={S.error}>{error || 'Failed to load incident defaults'}</div>;
 
     return (
-        <div>
+        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
             {/* Header / actions */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
                 <div>

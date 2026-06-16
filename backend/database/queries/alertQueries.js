@@ -23,7 +23,7 @@ module.exports = {
   // Distinct panel/app/operator names — no date range, for dropdown population.
   // When @panel_title is set, scopes applications + operators to that panel only.
   DISTINCT_FILTER_OPTIONS: `
-    SELECT DISTINCT panel_title, application, operator, ISNULL(object, 'Unknown') AS object
+    SELECT DISTINCT panel_title, application, operator, ISNULL(object, 'Unknown') AS object, node_name, network
     FROM dbo.historicalAlerts WITH (NOLOCK)
     WHERE panel_title IS NOT NULL
       AND application IS NOT NULL

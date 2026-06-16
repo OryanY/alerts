@@ -17,6 +17,8 @@ export const useExplorerFilters = () => {
     has_incident: searchParams.get('has_inc') || '',
     object: searchParams.get('object') || '',
     shift: searchParams.get('shift') || '',
+    node_name: searchParams.get('node') || '',
+    network: searchParams.get('network') || '',
     sort_by: searchParams.get('sort') || 'time_fired',
     sort_order: searchParams.get('order') || 'desc',
     page: parseInt(searchParams.get('page') || '1', 10)
@@ -28,25 +30,26 @@ export const useExplorerFilters = () => {
 
       // Handle filter updates
       Object.entries(newFilters).forEach(([key, value]) => {
+        const getUrlKey = (k) => {
+          switch (k) {
+            case 'panel_title': return 'panel';
+            case 'application': return 'app';
+            case 'min_duration': return 'min_dur';
+            case 'max_duration': return 'max_dur';
+            case 'has_incident': return 'has_inc';
+            case 'duration_category': return 'duration';
+            case 'sort_by': return 'sort';
+            case 'sort_order': return 'order';
+            case 'node_name': return 'node';
+            default: return k;
+          }
+        };
+        const urlKey = getUrlKey(key);
         if (value === '' || value === null || value === undefined) {
-          next.delete(key === 'panel_title' ? 'panel' :
-            key === 'application' ? 'app' :
-              key === 'min_duration' ? 'min_dur' :
-                key === 'max_duration' ? 'max_dur' :
-                  key === 'has_incident' ? 'has_inc' :
-                    key === 'duration_category' ? 'duration' :
-                      key === 'sort_by' ? 'sort' :
-                        key === 'sort_order' ? 'order' : key);
+          next.delete(urlKey);
         } else {
           const urlValue = key === 'sort_order' ? String(value).toLowerCase() : String(value);
-          next.set(key === 'panel_title' ? 'panel' :
-            key === 'application' ? 'app' :
-              key === 'min_duration' ? 'min_dur' :
-                key === 'max_duration' ? 'max_dur' :
-                  key === 'has_incident' ? 'has_inc' :
-                    key === 'duration_category' ? 'duration' :
-                      key === 'sort_by' ? 'sort' :
-                        key === 'sort_order' ? 'order' : key, urlValue);
+          next.set(urlKey, urlValue);
         }
       });
 

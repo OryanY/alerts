@@ -58,6 +58,9 @@ const systemMappingSchema = Joi.object({
   }),
   service_offering: Joi.string().required().trim(),
   business_service: Joi.string().required().trim(),
+  // Display names paired with the sys_id stored above (UI-only, not sent to ServiceNow).
+  service_offering_label: Joi.string().allow('').optional().trim(),
+  business_service_label: Joi.string().allow('').optional().trim(),
   u_network: Joi.string().required().trim(),
   assignment_group: Joi.string().required().trim(),
   u_system_failure: Joi.boolean().default(false)

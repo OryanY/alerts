@@ -1,8 +1,8 @@
-import { Settings, Plus, RefreshCw, X, Search } from 'lucide-react';
+import { Settings, Plus, RefreshCw, X, Search, LayoutList } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { withAlpha } from '../../utils/formatters';
 
-const IncidentMappingsHeader = ({ showForm, onCreateClick, onRefresh, searchTerm, onSearchChange }) => {
+const IncidentMappingsHeader = ({ showForm, onCreateClick, onRefresh, searchTerm, onSearchChange, viewMode, onToggleViewMode }) => {
     const { colors } = useTheme();
 
     return (
@@ -65,6 +65,29 @@ const IncidentMappingsHeader = ({ showForm, onCreateClick, onRefresh, searchTerm
             </div>
 
             <div style={{ display: 'flex', gap: 12 }}>
+                {!showForm && (
+                    <button
+                        onClick={onToggleViewMode}
+                        style={{
+                            background: colors.bg.secondary,
+                            color: colors.text.secondary,
+                            border: `2px solid ${colors.border.secondary}`,
+                            borderRadius: 12,
+                            padding: '12px 20px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            fontSize: 14,
+                            fontWeight: 500,
+                            transition: 'all 0.2s ease',
+                        }}
+                        title={viewMode === 'compact' ? "Switch to Expanded View" : "Switch to Compact View"}
+                    >
+                        <LayoutList size={16} />
+                        {viewMode === 'compact' ? 'Compact' : 'Expanded'}
+                    </button>
+                )}
                 <button
                     onClick={onCreateClick}
                         style={{

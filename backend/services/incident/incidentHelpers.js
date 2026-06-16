@@ -60,7 +60,13 @@ function replaceTemplateVariables(template, alertData, templateVariables = DEFAU
 }
 
 // Mapping/rule document keys that are metadata, never ServiceNow fields.
-const NON_INCIDENT_FIELDS = new Set(['_id', 'grafana_names', 'created_at', 'updated_at']);
+// *_label holds the human-readable display name shown in the UI; the matching
+// non-label field holds the sys_id that ServiceNow's reference field resolves.
+// Only the sys_id is sent upstream — the label must never leak into the payload.
+const NON_INCIDENT_FIELDS = new Set([
+    '_id', 'grafana_names', 'created_at', 'updated_at',
+    'business_service_label', 'service_offering_label'
+]);
 
 /**
  * Build the ServiceNow incident payload.

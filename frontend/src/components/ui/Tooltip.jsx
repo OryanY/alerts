@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
 
-const Tooltip = ({ content, children, width = 200 }) => {
+const Tooltip = ({ content, children, width = 200, position = 'top' }) => {
     const { colors } = useTheme();
     const [isVisible, setIsVisible] = useState(false);
+
+    const isTop = position === 'top';
 
     return (
         <div
@@ -15,10 +17,9 @@ const Tooltip = ({ content, children, width = 200 }) => {
             {isVisible && (
                 <div style={{
                     position: 'absolute',
-                    bottom: '100%',
+                    ...(isTop ? { bottom: '100%', marginBottom: 8 } : { top: '100%', marginTop: 8 }),
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    marginBottom: 8,
                     padding: '8px 12px',
                     background: colors.bg.primary,
                     border: `1px solid ${colors.border.primary}`,
@@ -37,22 +38,25 @@ const Tooltip = ({ content, children, width = 200 }) => {
                     {/* Arrow */}
                     <div style={{
                         position: 'absolute',
-                        top: '100%',
+                        ...(isTop
+                            ? { top: '100%', borderColor: `${colors.border.primary} transparent transparent transparent` }
+                            : { bottom: '100%', borderColor: `transparent transparent ${colors.border.primary} transparent` }
+                        ),
                         left: '50%',
                         marginLeft: -5,
                         borderWidth: 5,
-                        borderStyle: 'solid',
-                        borderColor: `${colors.border.primary} transparent transparent transparent`
+                        borderStyle: 'solid'
                     }} />
                     <div style={{
                         position: 'absolute',
-                        top: '100%',
+                        ...(isTop
+                            ? { top: '100%', borderColor: `${colors.bg.primary} transparent transparent transparent`, marginTop: -1 }
+                            : { bottom: '100%', borderColor: `transparent transparent ${colors.bg.primary} transparent`, marginBottom: -1 }
+                        ),
                         left: '50%',
                         marginLeft: -4,
                         borderWidth: 4,
-                        borderStyle: 'solid',
-                        borderColor: `${colors.bg.primary} transparent transparent transparent`,
-                        marginTop: -1
+                        borderStyle: 'solid'
                     }} />
                 </div>
             )}

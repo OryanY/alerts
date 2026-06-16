@@ -29,6 +29,8 @@ router.get('/assignment-groups', controller.getAssignmentGroups);
 router.get('/networks', controller.getNetworks);
 router.get('/service-offerings', controller.getServiceOfferings);
 router.get('/business-services', controller.getBusinessServices);
+router.get('/service-relationships', controller.getServiceRelationships);
+router.get('/offering-fields', controller.getOfferingFields);
 
 router.get(
   '/incident-with-alert',

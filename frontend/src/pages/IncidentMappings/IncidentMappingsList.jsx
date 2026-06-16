@@ -13,6 +13,7 @@ const IncidentMappingsList = ({
   assignmentGroups,
   onEdit,
   onDelete,
+  viewMode,
 }) => {
   if (totalItems === 0 && mappings.length === 0) {
     // Empty state
@@ -96,6 +97,7 @@ const IncidentMappingsList = ({
             assignmentGroups={assignmentGroups}
             onEdit={onEdit}
             onDelete={onDelete}
+            viewMode={viewMode}
           />
         ))}
       </div>

@@ -116,6 +116,24 @@ class IncidentService {
         return this.serviceNowClient.fetchBusinessServices(network);
     }
 
+    /**
+     * Business-Service → Service-Offering pairs sourced from cmdb_ci_rel.
+     * Drives the mapping form's offering→business-service auto-fill.
+     */
+    async getServiceRelationships(network = null) {
+        return this.serviceNowClient.fetchServiceRelationships(network);
+    }
+
+    /** Network the mapping form should preselect (analyst can override). */
+    getDefaultNetwork() {
+        return process.env.SN_DEFAULT_NETWORK || '';
+    }
+
+    /** Fields ServiceNow makes mandatory once a Service Offering is selected. */
+    async getOfferingMandatoryFields(offeringSysId) {
+        return this.serviceNowClient.fetchOfferingMandatoryFields(offeringSysId);
+    }
+
     // ================== TIUD ALERT CREATION ==================
 
     /**
@@ -142,13 +160,15 @@ class IncidentService {
             throw new MappingNotFoundError(`No system mapping found for application: ${application}`);
         }
 
+        const userSysId = await this.serviceNowClient.getSysIdByUser(user);
+
         const alertPayload = {
             u_jump_comm: message,
             u_cluster: node_name,
             assignment_group: systemMapping.assignment_group,
             u_network: systemMapping.u_network,
             u_service_offering: systemMapping.service_offering,
-            u_opened: user,
+            u_opened: userSysId,
             u_what_we_did: how_solved,
             u_prevent: prevented,
             // Link to an existing incident: sys_id (when prevented) wins over legacy number

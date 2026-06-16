@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Columns, ChevronDown, Eye, EyeOff } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Columns, ChevronDown, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const ALL_COLUMNS = [
@@ -27,7 +27,7 @@ export const getDefaultVisibleColumns = () => {
 
 export const getAllColumns = () => ALL_COLUMNS;
 
-export const ColumnVisibilityPanel = ({ visibleColumns, onToggle }) => {
+export const ColumnVisibilityPanel = ({ visibleColumns, onToggle, columnOrder = [], onReorder }) => {
   const { colors } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef(null);
@@ -43,6 +43,14 @@ export const ColumnVisibilityPanel = ({ visibleColumns, onToggle }) => {
   }, []);
 
   const visibleCount = Object.values(visibleColumns).filter(Boolean).length;
+
+  const orderedColumns = useMemo(() => {
+    const mapped = columnOrder
+      .map((key) => ALL_COLUMNS.find((c) => c.key === key))
+      .filter(Boolean);
+    const missing = ALL_COLUMNS.filter((c) => !columnOrder.includes(c.key));
+    return [...mapped, ...missing];
+  }, [columnOrder]);
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -91,7 +99,7 @@ export const ColumnVisibilityPanel = ({ visibleColumns, onToggle }) => {
             background: colors.bg.elevated,
             border: `1px solid ${colors.border.primary}`,
             borderRadius: 8,
-            minWidth: 250,
+            minWidth: 260,
             maxHeight: 400,
             overflowY: 'auto',
             zIndex: 1000,
@@ -111,52 +119,146 @@ export const ColumnVisibilityPanel = ({ visibleColumns, onToggle }) => {
           >
             Select Columns to Display
           </div>
-          {ALL_COLUMNS.map((col) => (
-            <label
-              key={col.key}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 12px',
-                cursor: 'pointer',
-                borderRadius: 6,
-                transition: 'background 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = colors.bg.tertiary;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={visibleColumns[col.key]}
-                onChange={() => onToggle(col.key)}
+          {orderedColumns.map((col, index) => {
+            const isFirst = index === 0;
+            const isLast = index === orderedColumns.length - 1;
+            return (
+              <div
+                key={col.key}
                 style={{
-                  width: 18,
-                  height: 18,
-                  cursor: 'pointer',
-                  accentColor: colors.brand.primary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  transition: 'background 0.15s ease',
                 }}
-              />
-              <span
-                style={{
-                  fontSize: 14,
-                  color: colors.text.primary,
-                  flex: 1,
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.bg.tertiary;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
                 }}
               >
-                {col.label}
-              </span>
-              {visibleColumns[col.key] ? (
-                <Eye size={14} style={{ color: colors.brand.primary }} />
-              ) : (
-                <EyeOff size={14} style={{ color: colors.text.tertiary }} />
-              )}
-            </label>
-          ))}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flex: 1,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns[col.key]}
+                    onChange={() => onToggle(col.key)}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      cursor: 'pointer',
+                      accentColor: colors.brand.primary,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: colors.text.primary,
+                      fontWeight: 500,
+                    }}
+                  >
+                    {col.label}
+                  </span>
+                </label>
+
+                {/* Reordering Controls */}
+                {onReorder && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <button
+                      disabled={isFirst}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        onReorder(col.key, 'up');
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 4,
+                        cursor: isFirst ? 'not-allowed' : 'pointer',
+                        color: isFirst ? colors.text.tertiary : colors.text.secondary,
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isFirst) {
+                          e.currentTarget.style.background = colors.bg.secondary;
+                          e.currentTarget.style.color = colors.brand.primary;
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isFirst) {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = colors.text.secondary;
+                        }
+                      }}
+                      title="Move Up"
+                    >
+                      <ArrowUp size={13} />
+                    </button>
+                    <button
+                      disabled={isLast}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        onReorder(col.key, 'down');
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 4,
+                        cursor: isLast ? 'not-allowed' : 'pointer',
+                        color: isLast ? colors.text.tertiary : colors.text.secondary,
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isLast) {
+                          e.currentTarget.style.background = colors.bg.secondary;
+                          e.currentTarget.style.color = colors.brand.primary;
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isLast) {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = colors.text.secondary;
+                        }
+                      }}
+                      title="Move Down"
+                    >
+                      <ArrowDown size={13} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Visibility Indicator */}
+                <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 4 }}>
+                  {visibleColumns[col.key] ? (
+                    <Eye size={13} style={{ color: colors.brand.primary }} />
+                  ) : (
+                    <EyeOff size={13} style={{ color: colors.text.tertiary }} />
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

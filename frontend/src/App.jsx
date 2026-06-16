@@ -7,7 +7,6 @@ import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { ClientConfigProvider } from './contexts/ClientConfigContext';
 import IncidentManagement from './pages/IncidentManagementPage';
-import IncidentHistoryPage from './pages/IncidentHistoryPage';
 import PanelResearchPage from './pages/PanelResearchPage';
 import HowToUsePage from './pages/HowToUsePage';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -49,7 +48,6 @@ function App() {
 
 
                 <Route path="incident" element={<IncidentManagement />} />
-                <Route path="history" element={<IncidentHistoryPage />} />
                 <Route path="research" element={<PanelResearchPage />} />
                 <Route path="how-to-use" element={<HowToUsePage />} />
                 <Route path="incident-stats" element={<IncidentStatsPage />} />
