@@ -8,6 +8,7 @@ import { FileText, AlertTriangle, Zap, TrendingUp, Layers } from 'lucide-react';
 import { useApiData } from '../hooks/useApiData';
 import { useNavigate } from 'react-router-dom';
 import { useClientConfig } from '../contexts/ClientConfigContext';
+import { ALL_PANELS } from '../utils/constants';
 import { ChartCard } from '../components/ui/ChartCard';
 import { MetricCard } from '../components/ui/MetricCard';
 import { useTheme } from '../contexts/ThemeContext';
@@ -162,11 +163,16 @@ const IncidentStatsPage = () => {
         const search = new URLSearchParams();
         if (dateRange.start_date) search.set('start_date', dateRange.start_date);
         if (dateRange.end_date) search.set('end_date', dateRange.end_date);
-        
+
+        // Explorer shows nothing until a panel is picked. A team drilldown supplies
+        // its panel; app/KPI drilldowns don't, so default to "all panels" — otherwise
+        // the other filters (app, has_inc) never take effect on an empty page.
+        if (!filterParams.panel) search.set('panel', ALL_PANELS);
+
         Object.entries(filterParams).forEach(([k, v]) => {
             if (v !== undefined && v !== '') search.set(k, v);
         });
-        
+
         navigate(`/explorer?${search.toString()}`);
     };
 

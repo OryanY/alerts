@@ -30,7 +30,6 @@ router.get('/networks', controller.getNetworks);
 router.get('/service-offerings', controller.getServiceOfferings);
 router.get('/business-services', controller.getBusinessServices);
 router.get('/service-relationships', controller.getServiceRelationships);
-router.get('/offering-fields', controller.getOfferingFields);
 
 router.get(
   '/incident-with-alert',
@@ -85,6 +84,12 @@ router.put('/settings',
   controller.updateIncidentSettings
 );
 router.delete('/settings', requireSettingsKey, controller.resetIncidentSettings);
+
+// ================== "NEEDS MAPPING" QUEUE ==================
+// Applications that fired an alert with no matching mapping. Self-maintaining
+// (deduped + capped); entries clear automatically when a covering mapping is made.
+router.get('/mapping-queue', controller.getMappingQueue);
+router.delete('/mapping-queue/:id', controller.dismissMappingQueueEntry);
 
 // ================== SYSTEM MAPPINGS ==================
 router.get('/system-mappings', controller.getSystemMappings);

@@ -55,6 +55,7 @@ const MappingForm = ({
     assignmentGroups,
     loadingGroups,
     editingItem,
+    prefillApplication,
     onSaved,
     onCancel,
     onError,
@@ -75,12 +76,6 @@ const MappingForm = ({
     const [loadingRelationships, setLoadingRelationships] = useState(false);
     const didPreselectNetwork = useRef(false);
 
-    // Fields ServiceNow makes mandatory once an offering is selected (e.g.
-    // OpenShift → deployment link). Auto-added to the form and required to save.
-    const [requiredFields, setRequiredFields] = useState([]); // [{ name, label, source }]
-    const [loadingRequiredFields, setLoadingRequiredFields] = useState(false);
-    const prevRequiredNames = useRef([]);
-
     // "Other" manual input state (the override path — CMDB data is often
     // incomplete, so analysts must always be able to type a value by hand).
     const [useOtherNetwork, setUseOtherNetwork] = useState(false);
@@ -100,8 +95,6 @@ const MappingForm = ({
         setOtherBusiness('');
         setUseOtherOffering(false);
         setOtherOffering('');
-        setRequiredFields([]);
-        prevRequiredNames.current = [];
         didPreselectNetwork.current = false;
     }, []);
 
@@ -161,67 +154,15 @@ const MappingForm = ({
         fetchRelationships();
     }, [form.u_network, useOtherNetwork]);
 
-    // Service Offering -> mandatory fields ServiceNow requires for it.
-    // Auto-adds them as custom-field rows; validation blocks save until filled.
-    useEffect(() => {
-        // Only meaningful for a real offering sys_id (manual entries have none).
-        const offeringSysId = !useOtherOffering ? form.service_offering : '';
-
-        if (!offeringSysId) {
-            // Drop previously auto-added rows that are still empty.
-            setCustomFields((prev) => {
-                const next = { ...prev };
-                prevRequiredNames.current.forEach((name) => {
-                    if ((next[name] ?? '') === '') delete next[name];
-                });
-                return next;
-            });
-            prevRequiredNames.current = [];
-            setRequiredFields([]);
-            return;
-        }
-
-        let cancelled = false;
-        const fetchRequired = async () => {
-            try {
-                setLoadingRequiredFields(true);
-                const res = await fetch(
-                    `${API_BASE}/incidents/offering-fields?offering=${encodeURIComponent(offeringSysId)}`,
-                    { credentials: 'include' }
-                );
-                const data = await safeJson(res);
-                if (cancelled) return;
-                const fields = (data.success && Array.isArray(data.data)) ? data.data : [];
-                const newNames = fields.map((f) => f.name);
-
-                setCustomFields((prev) => {
-                    const next = { ...prev };
-                    // Remove rows auto-added for a previous offering that are no
-                    // longer required and were left empty (avoid accumulation).
-                    prevRequiredNames.current.forEach((name) => {
-                        if (!newNames.includes(name) && (next[name] ?? '') === '') delete next[name];
-                    });
-                    // Pre-add newly required fields without clobbering existing values.
-                    newNames.forEach((name) => { if (next[name] === undefined) next[name] = ''; });
-                    return next;
-                });
-
-                setRequiredFields(fields);
-                prevRequiredNames.current = newNames;
-            } catch (e) {
-                if (!cancelled) console.warn('Could not fetch offering fields:', e.message);
-            } finally {
-                if (!cancelled) setLoadingRequiredFields(false);
-            }
-        };
-        fetchRequired();
-        return () => { cancelled = true; };
-    }, [form.service_offering, useOtherOffering]);
-
     // Handle Edit Mode Initialization
     useEffect(() => {
         if (!editingItem) {
             resetLocal();
+            // New mapping opened from the "needs mapping" queue: seed the first
+            // Grafana pattern with the unmapped application (exact match).
+            if (prefillApplication) {
+                setForm((prev) => ({ ...prev, grafana_names: [{ value: prefillApplication, type: 'exact' }] }));
+            }
             return;
         }
 
@@ -253,18 +194,11 @@ const MappingForm = ({
         });
         setCustomFields(custom);
 
-    }, [editingItem, resetLocal]);
+    }, [editingItem, resetLocal, prefillApplication]);
 
     // ---- Derived option lists from the relationship pairs ----
 
     // child sys_id -> parent {value,label}, for offering→business auto-fill.
-    // name -> { label, source } for the offering-mandated fields.
-    const requiredFieldMeta = useMemo(() => {
-        const meta = {};
-        requiredFields.forEach((f) => { meta[f.name] = { label: f.label, source: f.source }; });
-        return meta;
-    }, [requiredFields]);
-
     // Per-field errors for the custom-fields section (stored under custom_<name>).
     const customFieldErrors = useMemo(() => {
         const out = {};
@@ -413,14 +347,6 @@ const MappingForm = ({
             }
         });
 
-        // Offering-mandated fields must be filled before saving.
-        requiredFields.forEach((f) => {
-            const v = customFields[f.name];
-            if (!v || !v.toString().trim()) {
-                newErrors[`custom_${f.name}`] = `${f.label} is required for this Service Offering`;
-            }
-        });
-
         return newErrors;
     };
 
@@ -561,11 +487,9 @@ const MappingForm = ({
                         errors={errors}
                     />
 
-                    {/* Custom Fields (incl. offering-mandated required fields) */}
+                    {/* Custom Fields */}
                     <MappingCustomFields
                         customFields={customFields}
-                        requiredFields={requiredFieldMeta}
-                        loadingRequired={loadingRequiredFields}
                         errors={customFieldErrors}
                         onAddCustomField={addCustomField}
                         onRemoveCustomField={removeCustomField}

@@ -3,6 +3,7 @@ import { AlertTriangle, X } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
 import MappingForm from '../../components/IncidentMappings/MappingForm';
+import MappingQueuePanel from '../../components/IncidentMappings/MappingQueuePanel';
 import IncidentMappingsList from './IncidentMappingsList';
 import IncidentMappingsHeader from '../../components/IncidentMappings/IncidentMappingsHeader';
 import { safeJson } from '../../utils/api';
@@ -42,6 +43,10 @@ const IncidentMappings = () => {
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  // Application to pre-seed a new mapping with (set when creating from the queue).
+  const [prefillApplication, setPrefillApplication] = useState(null);
+  // Bumped on save/delete to make the "needs mapping" queue re-fetch.
+  const [queueRefresh, setQueueRefresh] = useState(0);
   const [assignmentGroups, setAssignmentGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [viewMode, setViewMode] = useState(() => {
@@ -106,11 +111,13 @@ const IncidentMappings = () => {
 
   const handleCreateClick = () => {
     setEditingItem(null);
+    setPrefillApplication(null);
     setShowForm((prev) => !prev);
   };
 
   const handleEdit = (m) => {
     setEditingItem(m);
+    setPrefillApplication(null);
     setShowForm(true);
     setTimeout(() => {
       formRef.current?.scrollIntoView({
@@ -120,8 +127,17 @@ const IncidentMappings = () => {
     }, 100);
   };
 
+  // "Map" clicked on a queue entry: open a fresh form seeded with that application.
+  const handleCreateFromQueue = (application) => {
+    setEditingItem(null);
+    setPrefillApplication(application);
+    setShowForm(true);
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this mapping?')) return;
     if (!window.confirm('Are you sure you want to delete this mapping?')) return;
     try {
       const res = await fetch(`${API_BASE}/incidents/system-mappings/${id}`, {
@@ -131,6 +147,7 @@ const IncidentMappings = () => {
       const data = await safeJson(res);
       if (data.success) {
         await fetchMappings();
+        setQueueRefresh((n) => n + 1);
         setError(null);
       } else {
         const errorMsg = data.error?.message || 'Failed to delete mapping';
@@ -144,13 +161,17 @@ const IncidentMappings = () => {
 
   const handleSaved = async () => {
     await fetchMappings();
+    // A new/updated mapping may now cover queued apps — server clears them, refetch.
+    setQueueRefresh((n) => n + 1);
     setEditingItem(null);
+    setPrefillApplication(null);
     setShowForm(false);
     setError(null);
   };
 
   const handleCancelForm = () => {
     setEditingItem(null);
+    setPrefillApplication(null);
     setShowForm(false);
   };
 
@@ -305,6 +326,14 @@ const IncidentMappings = () => {
         onToggleViewMode={toggleViewMode}
       />
 
+      {/* NEEDS-MAPPING QUEUE (hidden while the form is open) */}
+      {!showForm && (
+        <MappingQueuePanel
+          refreshSignal={queueRefresh}
+          onCreateMapping={handleCreateFromQueue}
+        />
+      )}
+
       {/* FORM */}
       {showForm && (
         <div ref={formRef}>
@@ -314,6 +343,7 @@ const IncidentMappings = () => {
             assignmentGroups={assignmentGroups}
             loadingGroups={loadingGroups}
             editingItem={editingItem}
+            prefillApplication={prefillApplication}
             onSaved={handleSaved}
             onCancel={handleCancelForm}
             onError={setError}

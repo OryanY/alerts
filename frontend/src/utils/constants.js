@@ -1,6 +1,9 @@
 // utils/constants.js — App-wide constants and configuration defaults
 export const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:8080/api";
 export const JERUSALEM_TZ = 'Asia/Jerusalem';
+// Sentinel the Explorer uses for "all panels" (it's panel-first and shows nothing
+// until a panel is chosen). Shared so cross-page drilldowns can target it safely.
+export const ALL_PANELS = '__all__';
 export const DEFAULT_CLIENT_CFG = {
   dayStart: 8,
   dayEnd: 22,

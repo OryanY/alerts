@@ -37,20 +37,7 @@ class AlertService {
         // default to the most recent window) and caps any single request to ~1
         // year, so /api/stats can't be used to hammer SQL Server with huge scans.
         {
-            const zone = 'Asia/Jerusalem';
-            const maxDays = CONFIG.limits?.maxDateRangeDays || 365;
-            const endDt = params.end_date
-                ? DateTime.fromISO(params.end_date, { zone }).endOf('day')
-                : DateTime.now().setZone(zone).endOf('day');
-            const end = endDt.isValid ? endDt : DateTime.now().setZone(zone).endOf('day');
-
-            let start = params.start_date
-                ? DateTime.fromISO(params.start_date, { zone }).startOf('day')
-                : end.minus({ days: maxDays }).startOf('day');
-            if (!start.isValid || end.diff(start, 'days').days > maxDays) {
-                start = end.minus({ days: maxDays }).startOf('day');
-            }
-
+            const { start, end } = this._resolveDateRange(params);
             request.input('start_date', sql.DateTime, start.toUTC().toJSDate());
             request.input('end_date', sql.DateTime, end.toUTC().toJSDate());
             conditions.push('time_fired >= @start_date');
@@ -109,6 +96,60 @@ class AlertService {
         }
 
         return conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    }
+
+    // Resolve the effective [start, end] window (Israel-local Luxon DateTimes),
+    // applying the same defaults + maxDateRangeDays cap the WHERE clause uses.
+    // Shared so gap-filling spans exactly the window that was queried.
+    _resolveDateRange(params) {
+        const zone = 'Asia/Jerusalem';
+        const maxDays = CONFIG.limits?.maxDateRangeDays || 365;
+        const endDt = params.end_date
+            ? DateTime.fromISO(params.end_date, { zone }).endOf('day')
+            : DateTime.now().setZone(zone).endOf('day');
+        const end = endDt.isValid ? endDt : DateTime.now().setZone(zone).endOf('day');
+
+        let start = params.start_date
+            ? DateTime.fromISO(params.start_date, { zone }).startOf('day')
+            : end.minus({ days: maxDays }).startOf('day');
+        if (!start.isValid || end.diff(start, 'days').days > maxDays) {
+            start = end.minus({ days: maxDays }).startOf('day');
+        }
+        return { start, end };
+    }
+
+    // Fill missing time buckets with an explicit zero row so days/weeks/months
+    // with NO alerts render as 0 instead of being silently dropped (an alert
+    // source going quiet must be visible, not invisible). SQL GROUP BY only emits
+    // buckets that have rows; this walks the full resolved window and inserts the
+    // gaps. Count fields go to 0; averages should be passed as null in `zero` so
+    // the line breaks rather than faking a dip to zero.
+    _fillTimeSeries(rows, { start, end, granularity = 'day', dateKey = 'date_il', zero = {} }) {
+        const unit = { hour: 'hour', day: 'day', week: 'week', month: 'month' }[granularity] || 'day';
+        const keyOf = (dt) => (unit === 'hour' ? dt.toFormat("yyyy-MM-dd'T'HH") : dt.toISODate());
+
+        const byKey = new Map();
+        for (const r of rows) {
+            const dt = DateTime.fromJSDate(new Date(r[dateKey]), { zone: 'utc' });
+            if (dt.isValid) byKey.set(keyOf(dt), r);
+        }
+
+        const out = [];
+        let cur = start.startOf(unit);
+        const last = end.startOf(unit);
+        let guard = 0;
+        while (cur <= last && guard < 100000) {
+            const key = keyOf(cur);
+            if (byKey.has(key)) {
+                out.push(byKey.get(key));
+            } else {
+                const iso = unit === 'hour' ? `${key}:00:00.000Z` : `${key}T00:00:00.000Z`;
+                out.push({ ...zero, [dateKey]: iso });
+            }
+            cur = cur.plus({ [unit]: 1 });
+            guard += 1;
+        }
+        return out;
     }
 
     _bindThresholds(request, params) {
@@ -432,7 +473,12 @@ class AlertService {
         const records = await this._execute(queryTarget, params, {
             replace: { BUCKET_EXPR: queries.bucketExpr(granularity, col) }
         });
-        return { success: true, data: records };
+        const { start, end } = this._resolveDateRange(params);
+        const filled = this._fillTimeSeries(records, {
+            start, end, granularity,
+            zero: { alert_count: 0, avg_duration: null, false_alerts: 0, day_count: 0, night_count: 0 },
+        });
+        return { success: true, data: filled };
     }
 
     async getIncidentStats(params) {
@@ -460,13 +506,19 @@ class AlertService {
 
             const [coverageRows, byTeam, byApp, dailyTrend] = result.recordsets;
 
+            const { start, end } = this._resolveDateRange(params);
+            const filledTrend = this._fillTimeSeries(dailyTrend || [], {
+                start, end, granularity: 'day',
+                zero: { total_alerts: 0, alerts_covered: 0, unique_incidents: 0 },
+            });
+
             return {
                 success: true,
                 data: {
                     coverage: coverageRows[0] || {},
                     by_team: byTeam || [],
                     by_application: byApp || [],
-                    daily_trend: dailyTrend || [],
+                    daily_trend: filledTrend,
                 }
             };
         } catch (error) {
@@ -544,7 +596,7 @@ class AlertService {
             this._bindThresholds(req, params);
 
             if (enabled) {
-                req.input('cluster_threshold', sql.Int, params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : (this.constants.DEFAULT_THRESHOLD || 15));
+                req.input('cluster_threshold', sql.Int, params.clustering_threshold ? parseInt(params.clustering_threshold, 10) : (CONFIG.clustering.defaultThreshold || 15));
             }
 
             const finalQuery = batchQuery.replace(/{WHERE_CLAUSE}/g, whereClause);
@@ -593,11 +645,17 @@ class AlertService {
                 };
             });
 
+            const { start, end } = this._resolveDateRange(params);
+            const filledTrend = this._fillTimeSeries(trendResult || [], {
+                start, end, granularity: 'day',
+                zero: { alert_count: 0, avg_duration: null, false_alerts: 0, day_count: 0, night_count: 0 },
+            });
+
             return {
                 success: true,
                 data: {
                     summary,
-                    daily_trend: trendResult || [],
+                    daily_trend: filledTrend,
                     duration_distribution: formattedDuration,
                     hourly_heatmap: formattedHeatmap,
                     top_noisy_alerts: noisyResult || []
@@ -626,28 +684,28 @@ class AlertService {
     async getTopApplications(params) {
         const { enabled } = this._getClusteringConfig(params);
         const queryTarget = enabled ? queries.CLUSTERED_TOP_APPLICATIONS : queries.TOP_APPLICATIONS;
-        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 15 });
         return { success: true, data: records };
     }
 
     async getTopNodesByApp(params) {
         const { enabled } = this._getClusteringConfig(params);
         const queryTarget = enabled ? queries.CLUSTERED_TOP_NODES_BY_APP : queries.TOP_NODES_BY_APP;
-        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 15 });
         return { success: true, data: records };
     }
 
     async getTopObjectsByApp(params) {
         const { enabled } = this._getClusteringConfig(params);
         const queryTarget = enabled ? queries.CLUSTERED_TOP_OBJECTS_BY_APP : queries.TOP_OBJECTS_BY_APP;
-        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 15 });
         return { success: true, data: records };
     }
 
     async getConsecutiveDaysNodes(params) {
         const { enabled } = this._getClusteringConfig(params);
         const queryTarget = enabled ? queries.CLUSTERED_CONSECUTIVE_DAYS_NODES : queries.CONSECUTIVE_DAYS_NODES;
-        const records = await this._execute(queryTarget, params, { limit: params.limit || 10 });
+        const records = await this._execute(queryTarget, params, { limit: params.limit || 15 });
         return { success: true, data: records };
     }
 

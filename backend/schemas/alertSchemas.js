@@ -96,6 +96,10 @@ const panelResearchSchema = Joi.object({
 // Schema for statistics endpoints
 const statsSchema = Joi.object({
   ...baseSchema,
+  // "Top N" stats endpoints (top-applications/nodes/objects, consecutive-days)
+  // are the only consumers of `limit` here. Override baseSchema's 10000 default
+  // with a small one so a caller that omits it gets a real top list, not 10k rows.
+  limit: Joi.number().integer().min(1).max(100).default(15),
   panel_title: Joi.string().trim().max(100).optional()
 
 }).custom((value, helpers) => {

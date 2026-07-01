@@ -42,6 +42,8 @@ class IncidentService {
             this.ruleService.getIncidentRules(application)
         ]);
         if (!systemMapping && requireMapping) {
+            // Capture the miss as a "needs mapping" todo, then fail as before.
+            this.mappingService.recordMappingMiss(application).catch(e => log.warn('failed to record mapping miss', e.message));
             throw new MappingNotFoundError(`No system mapping found for application: ${application}`);
         }
 
@@ -152,11 +154,6 @@ class IncidentService {
         return process.env.SN_DEFAULT_NETWORK || '';
     }
 
-    /** Fields ServiceNow makes mandatory once a Service Offering is selected. */
-    async getOfferingMandatoryFields(offeringSysId) {
-        return this.serviceNowClient.fetchOfferingMandatoryFields(offeringSysId);
-    }
-
     // ================== TIUD ALERT CREATION ==================
 
     /**
@@ -180,6 +177,7 @@ class IncidentService {
 
         const systemMapping = await this.mappingService.getMappingByApplication(application);
         if (!systemMapping) {
+            this.mappingService.recordMappingMiss(application).catch(e => log.warn('failed to record mapping miss', e.message));
             throw new MappingNotFoundError(`No system mapping found for application: ${application}`);
         }
 

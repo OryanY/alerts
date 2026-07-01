@@ -107,13 +107,6 @@ class IncidentController {
         } catch (err) { next(err); }
     };
 
-    getOfferingFields = async (req, res, next) => {
-        try {
-            const fields = await this.incidentService.getOfferingMandatoryFields(req.query.offering || null);
-            res.json({ success: true, data: fields, count: fields.length });
-        } catch (err) { next(err); }
-    };
-
     getServiceOfferings = async (req, res, next) => {
         try {
             const offerings = await this.incidentService.getServiceOfferings(req.query.network || null);
@@ -305,6 +298,23 @@ class IncidentController {
                 matched: !!mapping
             });
         } catch (err) { next(err); }
+    };
+
+    // ---- "Needs mapping" queue (applications that alerted with no mapping) ----
+    getMappingQueue = async (req, res, next) => {
+        try {
+            const queue = await this.mappingService.getMappingQueue();
+            res.json({ success: true, data: queue, count: queue.length });
+        } catch (err) { next(err); }
+    };
+
+    dismissMappingQueueEntry = async (req, res, next) => {
+        try {
+            const result = await this.mappingService.dismissMappingQueueEntry(req.params.id);
+            res.json({ success: true, message: result.message, deletedCount: result.deletedCount });
+        } catch (err) {
+            this._respondJsonError(res, next, err, 'Queue entry not found');
+        }
     };
 
     createSystemMapping = async (req, res, next) => {

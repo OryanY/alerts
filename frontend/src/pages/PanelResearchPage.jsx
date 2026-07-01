@@ -24,8 +24,7 @@ import TopApplicationsChart from '../components/PanelResearch/TopApplicationsCha
 import ConsecutiveDaysTable from '../components/PanelResearch/ConsecutiveDaysTable';
 import TopNoisyNodesTable from '../components/PanelResearch/TopNoisyNodesTable';
 import TopObjectsTable from '../components/PanelResearch/TopObjectsTable';
-// Replaced RecentAlertsTable with shared AlertTable
-import { AlertTable } from '../components/ui/AlertTable';
+import ResearchAlertTimeline from '../components/PanelResearch/ResearchAlertTimeline';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { Table } from 'lucide-react';
 
@@ -39,63 +38,11 @@ const PanelResearchPage = () => {
   const S = useMemo(() => createThemedStyles(colors), [colors]);
 
   // Destructure colorByDuration correctly
-  const { colorByDuration } = useDurationBands(config);
+  const { colorByDuration, bands } = useDurationBands(config);
 
   const [selectedPanel, setSelectedPanel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
-
-  // Sorting state for AlertTable
-  const [sortConfig, setSortConfig] = useState({
-    sort_by: 'time_fired',
-    sort_order: 'desc'
-  });
-
-  const handleSort = (key) => {
-    setSortConfig(current => ({
-      sort_by: key,
-      sort_order: current.sort_by === key && current.sort_order === 'desc' ? 'asc' : 'desc'
-    }));
-  };
-
-  const renderShiftBadge = (shiftValue) => {
-    if (!shiftValue) {
-      return (
-        <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>
-          —
-        </span>
-      );
-    }
-
-    const normalized = String(shiftValue).toLowerCase();
-    let bg = colors.bg.tertiary;
-    let fg = colors.text.secondary;
-
-    if (normalized.includes('day')) {
-      bg = (colors.semantic?.success || colors.brand.primary) + '20';
-      fg = colors.semantic?.success || colors.brand.primary;
-    } else if (normalized.includes('night')) {
-      bg = (colors.semantic?.warning || colors.brand.secondary) + '20';
-      fg = colors.semantic?.warning || colors.brand.secondary;
-    }
-
-    return (
-      <span
-        style={{
-          padding: '4px 10px',
-          borderRadius: 999,
-          fontSize: 12,
-          fontWeight: 600,
-          background: bg,
-          color: fg,
-          textTransform: 'uppercase',
-          letterSpacing: '0.03em',
-        }}
-      >
-        {shiftValue}
-      </span>
-    );
-  };
 
   // Fetch panel list. useApiData automatically injects date range and global params.
   const {
@@ -116,17 +63,18 @@ const PanelResearchPage = () => {
     error: analysisError,
   } = useApiData('/stats/panel-analysis', panelApiParams, { skip: !selectedPanel });
 
-  // Fetch alerts for selected panel
+  // Fetch alerts for selected panel. Fixed newest-first ordering — the stream
+  // groups by day, so chronological order is what the grouping relies on.
   const alertsParams = useMemo(() => {
     if (!selectedPanel) return null;
     return {
       panel_title: selectedPanel,
       limit: 100,
-      sort_by: sortConfig.sort_by,
-      sort_order: sortConfig.sort_order.toUpperCase(), // Backend expects UPPERCASE
+      sort_by: 'time_fired',
+      sort_order: 'DESC',
       ...(selectedNode ? { node_name: selectedNode } : {}),
     };
-  }, [selectedPanel, selectedNode, sortConfig]);
+  }, [selectedPanel, selectedNode]);
 
   const {
     data: recentAlerts,
@@ -134,18 +82,6 @@ const PanelResearchPage = () => {
     error: alertsError
   } = useApiData('/alerts', alertsParams, { skip: !selectedPanel });
 
-
-
-  // Columns for the AlertTable
-  const visibleColumns = [
-    { key: 'time_fired', label: 'Time Fired', sortable: true, width: 150 },
-    { key: 'node_name', label: 'Node', sortable: true, width: 140 },
-    { key: 'object', label: 'Object', sortable: true, width: 140 },
-    { key: 'message', label: 'Message', sortable: true, width: 300 },
-    { key: 'duration_sec', label: 'Duration', sortable: true, width: 100 },
-    { key: 'shift', label: 'Shift', sortable: false, width: 100 },
-    { key: 'network', label: 'Network', sortable: true, width: 100 }
-  ];
 
 
   // --- NEW STATISTICS ---
@@ -619,7 +555,7 @@ const PanelResearchPage = () => {
                   >
                     <Table size={16} style={{ color: colors.brand.primary }} />
 
-                    <span>היסטוריית התראות</span>
+                    <span>ציר זמן התראות</span>
 
                     <span
                       style={{
@@ -655,22 +591,12 @@ const PanelResearchPage = () => {
               ) : alertsError ? (
                 <ErrorCallout message="Failed to load recent alerts" details={alertsError} />
               ) : recentAlerts?.length > 0 ? (
-                <div style={{
-                  border: `1px solid ${colors.border.primary}`,
-                  borderRadius: 8,
-                  background: colors.bg.secondary,
-                  overflowX: 'auto'
-                }}>
-                  <AlertTable
-                    alerts={recentAlerts}
-                    visibleColumns={visibleColumns}
-                    sortConfig={sortConfig}
-                    onSort={handleSort}
-                    colorByDuration={colorByDuration}
-                    colors={colors}
-                    renderShiftBadge={renderShiftBadge}
-                  />
-                </div>
+                <ResearchAlertTimeline
+                  alerts={recentAlerts}
+                  colorByDuration={colorByDuration}
+                  bands={bands}
+                  colors={colors}
+                />
               ) : (
                 <div style={{ padding: 40, textAlign: 'center', color: colors.text.secondary }}>
                   No alerts found for this panel

@@ -7,6 +7,7 @@ import { useTopBar } from '../contexts/TopBarContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { fetchApi, buildApiUrl } from '../utils/api';
+import { ALL_PANELS } from '../utils/constants';
 import { LazyInput } from '../components/ui/LazyInput';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
@@ -17,7 +18,6 @@ import { AlertTable } from '../components/ui/AlertTable';
 const DEBOUNCE_MS = 350;
 const PAGE_SIZE = 50;
 const ALL_COLUMNS = getAllColumns();
-const ALL_PANELS = '__all__';
 
 const buildServerFilters = (filters, config) => {
   const normalizedSortOrder = (filters.sort_order || 'desc').toString().toUpperCase() === 'ASC' ? 'ASC' : 'DESC';

@@ -96,7 +96,8 @@ const mongoConfig = {
     systemMappings: 'system_mappings_new',
     incidentRules: 'incident_rules_new',
     assignmentGroups: 'assignment_groups',
-    incidentSettings: 'incident_settings'
+    incidentSettings: 'incident_settings',
+    mappingQueue: 'mapping_queue'
   }
 };
 
