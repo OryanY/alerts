@@ -307,7 +307,9 @@ class AlertService {
 
             let shift = 'Unknown';
             if (r.time_fired) {
-                const hrMatch = String(r.time_fired).match(/T(\d{2}):/);
+                // Accept both "…THH:" and "… HH:" separators (datetimeoffset can
+                // render with a space) so shift isn't silently 'Unknown'.
+                const hrMatch = String(r.time_fired).match(/[T ](\d{2}):/);
                 const hr = hrMatch ? parseInt(hrMatch[1], 10) : null;
                 if (hr !== null) shift = (hr >= ds && hr < de) ? 'Day' : 'Night';
             }

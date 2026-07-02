@@ -19,13 +19,20 @@ const ResearchAlertTimeline = ({ alerts = [], colorByDuration, bands = [], color
     const spread = (frac) => PAD + Math.max(0, Math.min(1, frac)) * (100 - 2 * PAD);
     const bySize = (x, y) => (x.a.cluster_count || 1) - (y.a.cluster_count || 1);
 
-    // Tolerant parse: backend sends "YYYY-MM-DDTHH:mm:ss.SSS", but some engines
-    // choke on a space separator or a trailing zone — normalize before Date.
+    // Tolerant parse. SQL datetimeoffset can arrive as
+    //   "2026-03-10 09:14:02.1234567 +03:00"
+    // which new Date() rejects (space separator, space before the offset, and
+    // 7-digit fractional seconds). Normalize to ISO before parsing.
     const parseTime = (v) => {
       if (!v) return NaN;
-      const s = String(v).trim();
-      let ms = new Date(s).getTime();
-      if (Number.isNaN(ms)) ms = new Date(s.replace(' ', 'T')).getTime();
+      let ms = new Date(String(v).trim()).getTime();
+      if (Number.isNaN(ms)) {
+        const s = String(v).trim()
+          .replace(' ', 'T')                       // date/time separator
+          .replace(/\s+(?=[+-]\d{2}:?\d{2}$)/, '') // drop space before +HH:MM offset
+          .replace(/(\.\d{3})\d+/, '$1');          // clamp fractional secs to ms
+        ms = new Date(s).getTime();
+      }
       return ms;
     };
 
