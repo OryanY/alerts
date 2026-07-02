@@ -8,6 +8,7 @@ import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
 import { withAlpha } from '../../utils/formatters';
 import { safeJson, authHeaders } from '../../utils/api';
+import { regexError, findDuplicate } from '../../utils/formValidation';
 import MappingFormPatternBuilder from './MappingFormPatternBuilder';
 import TemplateHints from './TemplateHints';
 import MappingServiceNowFields from './MappingServiceNowFields';
@@ -59,6 +60,7 @@ const MappingForm = ({
     onSaved,
     onCancel,
     onError,
+    existingMappings = [],
 }) => {
     const { colors } = useTheme();
 
@@ -322,9 +324,25 @@ const MappingForm = ({
         form.grafana_names.forEach((pattern, idx) => {
             if (!pattern.value || !pattern.value.trim()) {
                 newErrors[`grafana_names_${idx}`] = `Pattern ${idx + 1}: Value is required`;
+                return;
             }
             if (pattern.type === 'regex') {
-                try { new RegExp(pattern.value); } catch (e) { newErrors[`grafana_names_${idx}`] = `Pattern ${idx + 1}: Invalid regex`; }
+                const err = regexError(pattern.value);
+                if (err) newErrors[`grafana_names_${idx}`] = `Pattern ${idx + 1}: ${err}`;
+            }
+            // Same value+type already claimed by a *different* mapping — the first
+            // match wins server-side, so this pattern would silently never apply.
+            const claimedBy = findDuplicate(
+                existingMappings,
+                (m) => (m.grafana_names || []).some((p) => {
+                    const existing = typeof p === 'string' ? { value: p, type: 'exact' } : p;
+                    return existing.type === pattern.type
+                        && existing.value?.trim().toLowerCase() === pattern.value.trim().toLowerCase();
+                }),
+                editingItem?._id
+            );
+            if (claimedBy) {
+                newErrors[`grafana_names_${idx}`] = `Pattern ${idx + 1}: Already used by another mapping (${claimedBy.service_offering_label || claimedBy.service_offering || claimedBy._id})`;
             }
         });
 

@@ -3,6 +3,8 @@ import { Save, RotateCcw, Plus, Trash2, RefreshCw, KeyRound } from 'lucide-react
 import { useTheme } from '../../contexts/ThemeContext';
 import { fetchApi, authHeaders } from '../../utils/api';
 import { useAuthGate } from '../../hooks/useAuthGate';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../ui/ConfirmDialog';
 
 // Editor for the incident field configuration stored in Mongo
 // (content templates + mandatory-field fillers).
@@ -18,6 +20,7 @@ const entriesOf = (obj) => Object.entries(obj || {});
 const IncidentDefaultsTab = () => {
     const { colors, styles: S } = useTheme();
     const { needsLogin } = useAuthGate();
+    const { confirm, dialogProps: confirmDialogProps } = useConfirm();
 
     const [settings, setSettings] = useState(null);
     const [saved, setSaved] = useState(null); // last loaded server state, for dirty check
@@ -84,9 +87,18 @@ const IncidentDefaultsTab = () => {
         }
     };
 
-    const handleReset = async () => {
+    const handleReset = () => {
         if (needsLogin) { setError('איפוס הגדרות דורש התחברות — היכנס בהגדרות.'); return; }
-        if (!window.confirm('Reset ALL incident defaults to the built-in values? This removes every customization.')) return;
+        confirm({
+            title: 'Reset all incident defaults?',
+            body: 'This removes every customization in Content Templates and Default Field Values, reverting to the built-in values. This can\'t be undone.',
+            confirmLabel: 'Reset',
+            tone: 'danger',
+            onConfirm: doReset,
+        });
+    };
+
+    const doReset = async () => {
         setSaving(true);
         setError(null);
         try {
@@ -257,6 +269,8 @@ const IncidentDefaultsTab = () => {
                     <Plus size={14} /> Add default field
                 </button>
             </div>
+
+            <ConfirmDialog {...confirmDialogProps} />
         </div>
     );
 };

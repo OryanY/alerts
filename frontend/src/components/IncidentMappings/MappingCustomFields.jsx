@@ -49,15 +49,18 @@ const MappingCustomFields = ({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                     {entries.map(([key, value]) => {
                         const err = errors[key];
+                        const inputId = `custom-field-${key}`;
+                        const errorId = `custom-field-${key}-error`;
                         return (
                             <div key={key} style={{ background: colors.bg.secondary, padding: 12, borderRadius: 8, border: `1px solid ${err ? colors.semantic.error : colors.border.primary}`, position: 'relative' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                    <label style={{ fontSize: 11, fontWeight: 600, color: colors.text.secondary, fontFamily: 'monospace' }}>
+                                    <label htmlFor={inputId} style={{ fontSize: 11, fontWeight: 600, color: colors.text.secondary, fontFamily: 'monospace' }}>
                                         {key}
                                     </label>
                                     <button
                                         type="button"
                                         onClick={() => onRemoveCustomField(key)}
+                                        aria-label={`Remove custom field ${key}`}
                                         style={{ background: 'none', border: 'none', color: colors.text.tertiary, cursor: 'pointer', padding: 0 }}
                                         title="Remove field"
                                     >
@@ -65,13 +68,16 @@ const MappingCustomFields = ({
                                     </button>
                                 </div>
                                 <input
+                                    id={inputId}
                                     type="text"
                                     value={value}
                                     onChange={(e) => onUpdateCustomField(key, e.target.value)}
                                     placeholder="Value"
+                                    aria-invalid={!!err}
+                                    aria-describedby={err ? errorId : undefined}
                                     style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: `1px solid ${err ? colors.semantic.error : colors.border.secondary}`, fontSize: 13, background: colors.bg.primary, color: colors.text.primary }}
                                 />
-                                {err && <span style={{ color: colors.semantic.error, fontSize: 11, marginTop: 4, display: 'block' }}>{err}</span>}
+                                {err && <span id={errorId} style={{ color: colors.semantic.error, fontSize: 11, marginTop: 4, display: 'block' }}>{err}</span>}
                             </div>
                         );
                     })}

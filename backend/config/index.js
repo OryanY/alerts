@@ -14,15 +14,16 @@ const CONFIG = Object.freeze({
     falseWakeupThreshold: parseInt(process.env.DURATION_FALSE_WAKEUP, 10) || 120,
   },
   // Single allow-any-origin CORS config (UI and API are separate pods, so the
-  // browser needs CORS; there's no auth for an origin allowlist to protect).
-  // origin:true reflects the caller's origin — required because credentials
-  // can't be combined with '*'. X-Settings-Key is a custom header, so it must be
-  // whitelisted or the browser's preflight rejects PUT/DELETE /settings.
+  // browser needs CORS). origin:true reflects the caller's origin — required
+  // because credentials can't be combined with '*', and the auth gate now
+  // relies on a credentialed (cookie) session. X-Settings-Key/X-CSRF-Token are
+  // custom headers, so they must be whitelisted or the browser's preflight
+  // rejects PUT/DELETE requests that send them.
   cors: {
     origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key', 'X-Username']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key', 'X-Username', 'X-CSRF-Token']
   },
   shifts: {
     dayStart: parseInt(process.env.SHIFT_DAY_START, 10) || 8,

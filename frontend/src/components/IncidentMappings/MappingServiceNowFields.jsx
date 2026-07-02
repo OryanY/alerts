@@ -59,6 +59,9 @@ const MappingServiceNowFields = ({
         display: 'block'
     };
 
+    const focusRing = (e) => { e.currentTarget.style.boxShadow = `0 0 0 3px ${colors.brand.primary}33`; };
+    const blurRing = (e) => { e.currentTarget.style.boxShadow = 'none'; };
+
     return (
         <div
             style={{
@@ -91,6 +94,10 @@ const MappingServiceNowFields = ({
                         value={otherNetwork}
                         onChange={(e) => setOtherNetwork(e.target.value)}
                         style={{ ...inputStyle, borderColor: errors.u_network ? colors.semantic.error : colors.border.primary }}
+                        onFocus={focusRing}
+                        onBlur={blurRing}
+                        aria-invalid={!!errors.u_network}
+                        aria-describedby={errors.u_network ? 'error-u_network' : undefined}
                     />
                 ) : (
                     <div style={{ border: errors.u_network ? `1px solid ${colors.semantic.error}` : 'none', borderRadius: 8 }}>
@@ -103,7 +110,7 @@ const MappingServiceNowFields = ({
                         />
                     </div>
                 )}
-                {errors.u_network && <span style={errorStyle}>{errors.u_network}</span>}
+                {errors.u_network && <span id="error-u_network" style={errorStyle}>{errors.u_network}</span>}
             </div>
 
             {/* 2. Service Offering (child) — drives the Business Service auto-fill */}
@@ -130,6 +137,10 @@ const MappingServiceNowFields = ({
                         value={otherOffering}
                         onChange={(e) => setOtherOffering(e.target.value)}
                         style={{ ...inputStyle, borderColor: errors.service_offering ? colors.semantic.error : colors.border.primary }}
+                        onFocus={focusRing}
+                        onBlur={blurRing}
+                        aria-invalid={!!errors.service_offering}
+                        aria-describedby={errors.service_offering ? 'error-service_offering' : undefined}
                     />
                 ) : (
                     <div style={{ border: errors.service_offering ? `1px solid ${colors.semantic.error}` : 'none', borderRadius: 8 }}>
@@ -143,7 +154,7 @@ const MappingServiceNowFields = ({
                         />
                     </div>
                 )}
-                {errors.service_offering && <span style={errorStyle}>{errors.service_offering}</span>}
+                {errors.service_offering && <span id="error-service_offering" style={errorStyle}>{errors.service_offering}</span>}
             </div>
 
             {/* 3. Business Service (parent) — auto-filled from the offering, still editable */}
@@ -170,6 +181,10 @@ const MappingServiceNowFields = ({
                         value={otherBusiness}
                         onChange={(e) => setOtherBusiness(e.target.value)}
                         style={{ ...inputStyle, borderColor: errors.business_service ? colors.semantic.error : colors.border.primary }}
+                        onFocus={focusRing}
+                        onBlur={blurRing}
+                        aria-invalid={!!errors.business_service}
+                        aria-describedby={errors.business_service ? 'error-business_service' : undefined}
                     />
                 ) : (
                     <div style={{ border: errors.business_service ? `1px solid ${colors.semantic.error}` : 'none', borderRadius: 8 }}>
@@ -183,7 +198,7 @@ const MappingServiceNowFields = ({
                         />
                     </div>
                 )}
-                {errors.business_service && <span style={errorStyle}>{errors.business_service}</span>}
+                {errors.business_service && <span id="error-business_service" style={errorStyle}>{errors.business_service}</span>}
             </div>
 
             {/* 4. Assignment Group (Standard Select) */}
@@ -214,8 +229,12 @@ const MappingServiceNowFields = ({
                     onChange={(e) => setForm({ ...form, u_impact_technology: e.target.value })}
                     style={{ ...inputStyle, borderColor: errors.u_impact_technology ? colors.semantic.error : colors.border.primary }}
                     placeholder="e.g. {{ network }} Monitoring"
+                    onFocus={focusRing}
+                    onBlur={blurRing}
+                    aria-invalid={!!errors.u_impact_technology}
+                    aria-describedby={errors.u_impact_technology ? 'error-u_impact_technology' : undefined}
                 />
-                {errors.u_impact_technology && <span style={errorStyle}>{errors.u_impact_technology}</span>}
+                {errors.u_impact_technology && <span id="error-u_impact_technology" style={errorStyle}>{errors.u_impact_technology}</span>}
             </div>
 
             {/* 6. System Failure */}

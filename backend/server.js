@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
+const cookieParser = require('cookie-parser');
 const { ensureCacheIndex } = require('./utils/cache.js');
 
 // Import configuration and database connections
@@ -42,13 +43,15 @@ app.use(helmet({
 // CORS — one allow-any-origin config for every route. The UI and API run as
 // separate pods (different origins), so the browser needs these headers to read
 // API responses; CORS is browser-only and never gates Postman/curl/server
-// clients, and there's no cookie/session auth for an allowlist to protect.
+// clients. origin:true + credentials:true is required for the auth-session
+// cookie (see middleware/adAuth.js) to be readable cross-origin.
 app.use(cors(CONFIG.cors));
 
 // Compression and parsing
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 
 // Query logger: filters internally by env and route (see middleware/queryLogger.js)

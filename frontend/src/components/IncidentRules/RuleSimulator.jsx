@@ -2,12 +2,12 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
-import { Play, AlertTriangle, CheckCircle, Info, ChevronRight, ChevronDown } from 'lucide-react';
+import { Play, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import LabeledInput from '../ui/LabeledInput';
 import { safeJson } from '../../utils/api';
 
 const RuleSimulator = ({ onClose }) => {
-    const { colors, gradients } = useTheme();
+    const { colors } = useTheme();
 
     const [formData, setFormData] = useState({
         application: '',

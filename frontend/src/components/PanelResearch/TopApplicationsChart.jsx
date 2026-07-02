@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     PieChart,
     Pie,
@@ -13,12 +13,11 @@ import { getChartProps } from '../../utils/chartConfig';
 
 const TopApplicationsChart = ({ data, loading }) => {
     const { colors } = useTheme();
-    const chartProps = getChartProps(colors);
+    const chartProps = useMemo(() => getChartProps(colors), [colors]);
 
-    // Filter and slice data once
-    const chartData = (data || [])
+    const chartData = useMemo(() => (data || [])
         .filter(d => d.application && d.application !== 'N/A' && d.application !== 'Unknown')
-        .slice(0, 10);
+        .slice(0, 10), [data]);
 
     return (
         <ChartCard
@@ -44,7 +43,7 @@ const TopApplicationsChart = ({ data, loading }) => {
                                 colors.chart.tertiary,
                                 colors.chart.quaternary,
                                 colors.chart.quinary,
-                                colors.brand.purpleDark || '#6D28D9',
+                                colors.brand.purpleDark,
                                 colors.semantic.infoText,
                                 colors.semantic.successText,
                                 colors.semantic.warningText,
@@ -60,4 +59,4 @@ const TopApplicationsChart = ({ data, loading }) => {
     );
 };
 
-export default TopApplicationsChart;
+export default React.memo(TopApplicationsChart);

@@ -1,80 +1,53 @@
-// hooks/useApiData.js - Reusable data fetching hook with abort control.
+// hooks/useApiData.js - Reusable data fetching hook, backed by React Query so
+// identical endpoint+params requests are cached/deduped across components
+// instead of each caller firing its own independent fetch.
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useQuery, keepPreviousData as keepPreviousDataFn } from '@tanstack/react-query';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { fetchApi } from '../utils/api';
 
 export const useApiData = (endpoint, params = {}, options = {}) => {
   const { skip = false, keepPreviousData = true } = options;
   const { dateRange, getApiParams } = useClientConfig();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(!skip);
-  const [error, setError] = useState(null);
-  const abortControllerRef = useRef(null);
 
-  const paramsStr = params ? JSON.stringify(params) : '';
-  const dateRangeStr = JSON.stringify(dateRange || {});
-  const globalParamsStr = JSON.stringify(typeof getApiParams === 'function' ? getApiParams() : {});
+  const enabled = !skip && !!params;
+  const globalParams = typeof getApiParams === 'function' ? getApiParams() : {};
 
-  const fetchData = useCallback(async () => {
-    if (skip || !params) return;
+  const query = useQuery({
+    // React Query hashes queryKey by content (stable, sorted-key JSON), so
+    // passing these objects directly is enough — no need to hand-roll a
+    // stringify + useMemo just to keep the key "stable" across renders.
+    queryKey: [endpoint, dateRange, globalParams, params],
+    queryFn: ({ signal }) => fetchApi(endpoint, { ...dateRange, ...globalParams, ...params }, { signal })
+      .then((json) => json.data ?? json),
+    enabled,
+    // The original hook never retried failed requests; match that instead of
+    // the app-wide QueryClient default (retry: 1) so a broken endpoint fails
+    // fast and surfaces its error immediately.
+    retry: false,
+    placeholderData: keepPreviousData ? keepPreviousDataFn : undefined,
+  });
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+  // React Query doesn't clear a query's error when a new fetch starts on the
+  // same key — it persists until the new attempt settles. Suppress it while
+  // a fetch is actively in flight so consumers (ChartCard/MetricCard check
+  // `error` before `loading`) don't show a stale failure banner over an
+  // in-flight, possibly-successful refetch — matching the old hook's
+  // guarantee that loading and error were never both true.
+  const error = (query.error && !query.isFetching)
+    ? {
+      message: query.error.message || 'Unknown error',
+      endpoint,
+      params: { ...dateRange, ...globalParams, ...params },
+      timestamp: new Date().toISOString(),
+      isNetworkError: query.error.message?.includes('Failed to fetch') || query.error.message?.includes('NetworkError'),
     }
+    : null;
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const json = await fetchApi(endpoint, {
-        ...dateRange,
-        ...getApiParams(),
-        ...params,
-      }, {
-        signal: controller.signal,
-      });
-
-      if (!controller.signal.aborted) {
-        setData(json.data ?? json);
-      }
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-
-      setError({
-        message: e.message || 'Unknown error',
-        endpoint,
-        params,
-        timestamp: new Date().toISOString(),
-        isNetworkError: e.message?.includes('Failed to fetch') || e.message?.includes('NetworkError'),
-      });
-
-      if (!keepPreviousData) setData(null);
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
-    }
-  // Deep-compare strings intentionally keep callers from refetching on every render
-  // when they pass equivalent object literals.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint, skip, paramsStr, dateRangeStr, globalParamsStr, keepPreviousData]);
-
-  useEffect(() => {
-    if (!skip && params) {
-      fetchData();
-    }
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchData, skip, paramsStr, dateRangeStr, globalParamsStr]);
-
-  return { data, loading, error, refetch: fetchData };
+  return {
+    data: query.data ?? null,
+    loading: enabled && query.isFetching,
+    error,
+    refetch: query.refetch,
+  };
 };

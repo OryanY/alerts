@@ -1,15 +1,17 @@
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
+import { useTheme } from '../contexts/ThemeContext';
 
 export const useDurationBands = (cfg = DEFAULT_CLIENT_CFG) => {
+  const { colors } = useTheme();
   const safeCfg = (cfg && typeof cfg === 'object') ? cfg : DEFAULT_CLIENT_CFG;
   const bands = (Array.isArray(safeCfg.bands) && safeCfg.bands.length)
     ? safeCfg.bands
     : DEFAULT_CLIENT_CFG.bands;
 
   const colorByDuration = (s) => {
-    if (!Number.isFinite(s)) return '#6B7280';
+    if (!Number.isFinite(s)) return colors.text.tertiary;
     for (const b of bands) if (s >= b.min && s <= b.max) return b.color;
-    return '#6B7280';
+    return colors.text.tertiary;
   };
 
   const Legend = () => (
@@ -31,7 +33,7 @@ export const useDurationBands = (cfg = DEFAULT_CLIENT_CFG) => {
       b => b.label.trim().toLowerCase() === entry.category.toLowerCase()
     );
 
-    return band ? band.color : '#9CA3AF'; // fallback gray
+    return band ? band.color : colors.text.tertiary;
   };
 
   return { bands, getDurationColorFromBands,colorByDuration, Legend };

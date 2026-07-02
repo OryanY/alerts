@@ -4,6 +4,16 @@ import { Home, ArrowLeft, Search } from 'lucide-react';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
+import { navigationItems } from '../components/layout/Layout';
+
+const PAGE_DESCRIPTIONS = {
+  '/dashboard': '📊 Main dashboard with charts and KPIs',
+  '/explorer': '🔍 Search and filter alerts',
+  '/research': '🧪 Deep-dive research per panel',
+  '/incident': '🎫 Incident rules and system mappings',
+  '/incident-stats': '📈 Incident BI (clustered/raw stats)',
+  '/how-to-use': '📖 How to use this dashboard',
+};
 
 const NotFoundPage = () => {
   const navigate = useNavigate();
@@ -16,16 +26,16 @@ const NotFoundPage = () => {
         <div style={{
           fontSize: 72,
           fontWeight: 700,
-          color: '#E5E7EB',
+          color: colors.text.tertiary,
           marginBottom: 16
         }}>
-          404s
+          404
         </div>
 
         <h1 style={{
           fontSize: 32,
           fontWeight: 700,
-          color: '#1F2937',
+          color: colors.text.primary,
           margin: '0 0 8px 0'
         }}>
           Page Not Found
@@ -33,7 +43,7 @@ const NotFoundPage = () => {
 
         <p style={{
           fontSize: 16,
-          color: '#6B7280',
+          color: colors.text.secondary,
           margin: 0,
           lineHeight: 1.5
         }}>
@@ -56,8 +66,8 @@ const NotFoundPage = () => {
             padding: '12px 24px',
             border: 'none',
             borderRadius: 8,
-            background: '#3B82F6',
-            color: 'white',
+            background: colors.brand.primary,
+            color: colors.text.inverse,
             fontSize: 16,
             fontWeight: 600,
             cursor: 'pointer'
@@ -74,10 +84,10 @@ const NotFoundPage = () => {
             alignItems: 'center',
             gap: 8,
             padding: '8px 16px',
-            border: '1px solid #D1D5DB',
+            border: `1px solid ${colors.border.secondary}`,
             borderRadius: 6,
-            background: 'white',
-            color: '#6B7280',
+            background: colors.bg.secondary,
+            color: colors.text.secondary,
             fontSize: 14,
             cursor: 'pointer'
           }}
@@ -90,9 +100,9 @@ const NotFoundPage = () => {
       <div style={{
         marginTop: 32,
         padding: 16,
-        background: '#F9FAFB',
+        background: colors.bg.tertiary,
         borderRadius: 8,
-        border: '1px solid #E5E7EB'
+        border: `1px solid ${colors.border.primary}`
       }}>
         <div style={{
           display: 'flex',
@@ -101,8 +111,8 @@ const NotFoundPage = () => {
           gap: 8,
           marginBottom: 12
         }}>
-          <Search size={20} style={{ color: '#6B7280' }} />
-          <span style={{ fontSize: 16, fontWeight: 600, color: '#374151' }}>
+          <Search size={20} style={{ color: colors.text.secondary }} />
+          <span style={{ fontSize: 16, fontWeight: 600, color: colors.text.primary }}>
             Available Pages
           </span>
         </div>
@@ -112,50 +122,23 @@ const NotFoundPage = () => {
           gap: 8,
           fontSize: 14
         }}>
-          <button
-            onClick={() => navigate('/dashboard')}
-            style={{
-              padding: '8px 12px',
-              border: 'none',
-              borderRadius: 6,
-              background: 'transparent',
-              color: '#3B82F6',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            📊 /dashboard - Main dashboard with charts and KPIs
-          </button>
-
-          <button
-            onClick={() => navigate('/explorer')}
-            style={{
-              padding: '8px 12px',
-              border: 'none',
-              borderRadius: 6,
-              background: 'transparent',
-              color: '#3B82F6',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            🔍 /explorer - Search and filter alerts
-          </button>
-
-          <button
-            onClick={() => navigate('/settings')}
-            style={{
-              padding: '8px 12px',
-              border: 'none',
-              borderRadius: 6,
-              background: 'transparent',
-              color: '#3B82F6',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            ⚙️ /settings - Configure dashboard settings
-          </button>
+          {navigationItems.map(({ path, label }) => (
+            <button
+              key={path}
+              onClick={() => navigate(path)}
+              style={{
+                padding: '8px 12px',
+                border: 'none',
+                borderRadius: 6,
+                background: 'transparent',
+                color: colors.brand.primary,
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              {PAGE_DESCRIPTIONS[path] || `${path} - ${label}`}
+            </button>
+          ))}
         </div>
       </div>
     </div>

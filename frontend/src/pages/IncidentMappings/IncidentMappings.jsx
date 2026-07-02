@@ -7,8 +7,11 @@ import MappingQueuePanel from '../../components/IncidentMappings/MappingQueuePan
 import IncidentMappingsList from './IncidentMappingsList';
 import IncidentMappingsHeader from '../../components/IncidentMappings/IncidentMappingsHeader';
 import LoginRequiredNote from '../../components/ui/LoginRequiredNote';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useAuthGate } from '../../hooks/useAuthGate';
+import { useConfirm } from '../../hooks/useConfirm';
 import { safeJson, authHeaders } from '../../utils/api';
+import { scrollIntoViewSoon } from '../../utils/scrollIntoViewSoon';
 
 // Pattern types are semantic only (no colors here)
 export const PATTERN_TYPES = {
@@ -40,6 +43,7 @@ export const PATTERN_TYPES = {
 const IncidentMappings = () => {
   const { colors, gradients, PATTERN_COLORS } = useTheme();
   const { needsLogin } = useAuthGate();
+  const { confirm, dialogProps: confirmDialogProps } = useConfirm();
   const formRef = useRef(null);
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -122,12 +126,7 @@ const IncidentMappings = () => {
     setEditingItem(m);
     setPrefillApplication(null);
     setShowForm(true);
-    setTimeout(() => {
-      formRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    }, 100);
+    scrollIntoViewSoon(() => formRef.current);
   };
 
   // "Map" clicked on a queue entry: open a fresh form seeded with that application.
@@ -135,14 +134,10 @@ const IncidentMappings = () => {
     setEditingItem(null);
     setPrefillApplication(application);
     setShowForm(true);
-    setTimeout(() => {
-      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
+    scrollIntoViewSoon(() => formRef.current);
   };
 
-  const handleDelete = async (id) => {
-    if (needsLogin) { setError('מחיקת מיפוי דורשת התחברות — היכנס בהגדרות.'); return; }
-    if (!window.confirm('Are you sure you want to delete this mapping?')) return;
+  const doDelete = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/incidents/system-mappings/${id}`, {
         method: 'DELETE',
@@ -156,12 +151,24 @@ const IncidentMappings = () => {
         setError(null);
       } else {
         const errorMsg = data.error?.message || 'Failed to delete mapping';
-        console.log(errorMsg);
         setError(errorMsg);
       }
     } catch (e) {
       setError('Error deleting mapping: ' + e.message);
     }
+  };
+
+  const handleDelete = (id) => {
+    if (needsLogin) { setError('מחיקת מיפוי דורשת התחברות — היכנס בהגדרות.'); return; }
+    const mapping = mappings.find((m) => String(m._id) === String(id));
+    const label = mapping?.service_offering_label || mapping?.service_offering || 'This mapping';
+    confirm({
+      title: 'Delete system mapping?',
+      body: `"${label}" will be permanently deleted. Alerts that resolved through it will fall back to the default/unmapped queue. This can't be undone.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+      onConfirm: () => doDelete(id),
+    });
   };
 
   const handleSaved = async () => {
@@ -354,6 +361,7 @@ const IncidentMappings = () => {
             onSaved={handleSaved}
             onCancel={handleCancelForm}
             onError={setError}
+            existingMappings={mappings}
           />
         </div>
       )}
@@ -375,6 +383,8 @@ const IncidentMappings = () => {
           viewMode={viewMode}
         />
       )}
+
+      <ConfirmDialog {...confirmDialogProps} />
     </div>
   );
 };

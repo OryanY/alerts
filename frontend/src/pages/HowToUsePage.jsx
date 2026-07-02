@@ -321,7 +321,7 @@ const HowToUsePage = () => {
     //  Main render
     // -------------------------------------------------------------------------
     return (
-        <div style={{ ...S.page, minHeight: '100vh' }}>
+        <div style={S.page}>
             <style>{`
                 @keyframes slideUp {
                     from { opacity: 0; transform: translateY(20px); }

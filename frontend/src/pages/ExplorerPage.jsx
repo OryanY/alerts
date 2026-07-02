@@ -7,7 +7,7 @@ import { useTopBar } from '../contexts/TopBarContext';
 import { useExplorerFilters } from '../hooks/useUrlState';
 import { useDurationBands } from '../hooks/useDurationBands';
 import { fetchApi, buildApiUrl } from '../utils/api';
-import { ALL_PANELS } from '../utils/constants';
+import { ALL_PANELS, DEFAULT_CLIENT_CFG } from '../utils/constants';
 import { LazyInput } from '../components/ui/LazyInput';
 import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
@@ -42,13 +42,14 @@ const buildServerFilters = (filters, config) => {
     serverFilters.max_duration = filters.max_duration;
   }
   if (filters.duration_category) {
+    const defaultBands = DEFAULT_CLIENT_CFG.bands;
     if (filters.duration_category === 'short') {
-      serverFilters.max_duration = config.bands?.[0]?.max || 59;
+      serverFilters.max_duration = config.bands?.[0]?.max ?? defaultBands[0].max;
     } else if (filters.duration_category === 'medium') {
-      serverFilters.min_duration = config.bands?.[1]?.min || 60;
-      serverFilters.max_duration = config.bands?.[1]?.max || 299;
+      serverFilters.min_duration = config.bands?.[1]?.min ?? defaultBands[1].min;
+      serverFilters.max_duration = config.bands?.[1]?.max ?? defaultBands[1].max;
     } else if (filters.duration_category === 'long') {
-      serverFilters.min_duration = config.bands?.[2]?.min || 300;
+      serverFilters.min_duration = config.bands?.[2]?.min ?? defaultBands[2].min;
     }
   }
   if (filters.search) {
@@ -209,9 +210,9 @@ const ExplorerPage = () => {
       ],
       durations: [
         { value: '', label: 'All Durations' },
-        { value: 'short', label: `Short <=${config.bands?.[0]?.max || 59}s` },
-        { value: 'medium', label: `Medium ${config.bands?.[1]?.min || 60}-${config.bands?.[1]?.max || 299}s` },
-        { value: 'long', label: `Long >=${config.bands?.[2]?.min || 300}s` },
+        { value: 'short', label: `Short <=${config.bands?.[0]?.max ?? DEFAULT_CLIENT_CFG.bands[0].max}s` },
+        { value: 'medium', label: `Medium ${config.bands?.[1]?.min ?? DEFAULT_CLIENT_CFG.bands[1].min}-${config.bands?.[1]?.max ?? DEFAULT_CLIENT_CFG.bands[1].max}s` },
+        { value: 'long', label: `Long >=${config.bands?.[2]?.min ?? DEFAULT_CLIENT_CFG.bands[2].min}s` },
       ],
     };
   }, [filterOptionsQuery.data, config.bands]);

@@ -1,17 +1,22 @@
 // utils/api.js - Single source of truth for API/fetch helpers
 import { API_BASE } from './constants';
 
-// ---- Login session (LDAP-verified token for destructive actions) ----
-// POST /api/auth/login returns { token, username, expires_at }; we keep it in
-// localStorage and send it as a Bearer header on deletes/toggles.
+// ---- Login session (LDAP-verified) ----
+// POST /api/auth/login sets an httpOnly session cookie (never readable by page
+// JS) and a separate, non-httpOnly csrf cookie, and returns { username,
+// expires_at }. We keep that (non-sensitive) metadata in localStorage purely
+// so the UI can show "logged in as X until HH:MM" without asking the server;
+// the actual authorization is enforced server-side by the cookie every request
+// already sends via credentials:'include'.
 const AUTH_STORAGE_KEY = 'ad_auth';
+const CSRF_COOKIE = 'csrf_token';
 
 export const getAuth = () => {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
     const auth = JSON.parse(raw);
-    if (!auth?.token || !auth?.expires_at || auth.expires_at < Date.now()) {
+    if (!auth?.expires_at || auth.expires_at < Date.now()) {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       return null;
     }
@@ -25,6 +30,16 @@ export const setAuth = (auth) => {
 
 export const clearAuth = () => {
   try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch { /* storage unavailable */ }
+};
+
+// Tells the server to clear the httpOnly/csrf cookies, then drops the local
+// display metadata. Best-effort: if the network call fails, the cookies will
+// simply expire on their own (AUTH_TOKEN_TTL_HOURS).
+export const logout = async () => {
+  try {
+    await fetch(buildApiUrl('/auth/logout'), { method: 'POST', credentials: 'include' });
+  } catch { /* cookies expire on their own */ }
+  clearAuth();
 };
 
 export const getUsername = () => getAuth()?.username || '';
@@ -42,12 +57,27 @@ export const fetchAuthEnabled = () => {
   return _authStatusPromise;
 };
 
-// Spread into headers of destructive calls. Empty when not logged in so the
-// backend answers 401 with a clear "login in Settings" message.
-export const authHeaders = () => {
-  const auth = getAuth();
-  return auth ? { Authorization: `Bearer ${auth.token}` } : {};
+const readCookie = (name) => {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : '';
 };
+
+// Spread into headers of destructive calls. The csrf cookie is only set once
+// logged in, so this is empty when not logged in — the backend then answers
+// 401 with a clear "login in Settings" message rather than a CSRF error.
+export const authHeaders = () => {
+  const csrf = readCookie(CSRF_COOKIE);
+  return csrf ? { 'X-CSRF-Token': csrf } : {};
+};
+
+// The auth_token cookie is httpOnly (unreadable by JS), so we can't check it
+// directly — but the browser only keeps the csrf cookie around when it also
+// accepted auth_token (both are set together, same request, same attributes).
+// Its presence is therefore the only client-side signal that the session
+// cookie actually landed, e.g. wasn't silently dropped by a SameSite/Secure
+// mismatch between the server's cookie config and the deployment's origin
+// topology.
+export const hasSessionCookie = () => !!readCookie(CSRF_COOKIE);
 
 export const buildApiUrl = (endpoint, params = {}) => {
   const queryString = new URLSearchParams(

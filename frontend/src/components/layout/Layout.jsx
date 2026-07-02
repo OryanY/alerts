@@ -1,12 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useClientConfig } from '../../contexts/ClientConfigContext';
 import { TopBarContext } from '../../contexts/TopBarContext';
 import { ThemeToggle } from './ThemeToggle';
 import { DateRangePicker } from '../ui/DateRangePicker';
+import { LoadingSpinner } from '../ui/LoadingSpinner';
 
-const navigationItems = [
+// Exported so other pages (e.g. NotFoundPage) can list real routes instead of
+// keeping their own copy that silently goes stale when a route is added here.
+export const navigationItems = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/explorer', label: 'Explorer' },
   { path: '/research', label: 'Research' },
@@ -201,7 +204,12 @@ export const Layout = () => {
         )}
 
         <main className="ops-main">
-          <Outlet />
+          {/* Scoped to just the routed content, not the whole shell, so the
+              nav/topbar chrome above stays mounted and visible while a
+              lazy-loaded route's JS chunk downloads on a direct page load. */}
+          <Suspense fallback={<LoadingSpinner />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </TopBarContext.Provider>

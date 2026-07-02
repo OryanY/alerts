@@ -98,14 +98,19 @@ async function ldapBind(username, password) {
 }
 
 // ---- Token sign/verify (HMAC-SHA256, no extra deps) ----
+// The token now lives only in an httpOnly cookie (see routes/authRoutes.js),
+// so it's never readable by page JS. `csrf` is a random value baked into the
+// same signed payload and mirrored in a separate, non-httpOnly cookie; gated
+// routes require the request header to match it (double-submit pattern),
+// which an attacker can't forge without also being able to read cookies.
 function signToken(username) {
-  const payload = { u: username, exp: Date.now() + TOKEN_TTL_MS };
+  const payload = { u: username, exp: Date.now() + TOKEN_TTL_MS, csrf: crypto.randomBytes(16).toString('hex') };
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto.createHmac('sha256', TOKEN_SECRET).update(body).digest('base64url');
-  return { token: `${body}.${sig}`, expiresAt: payload.exp };
+  return { token: `${body}.${sig}`, expiresAt: payload.exp, csrf: payload.csrf };
 }
 
-/** Returns { u, exp } or null for anything invalid/expired/tampered. */
+/** Returns { u, exp, csrf } or null for anything invalid/expired/tampered. */
 function verifyToken(token) {
   try {
     const [body, sig] = String(token || '').split('.');
@@ -160,9 +165,9 @@ async function login(rawUsername, password) {
   }
 
   throttleCache.delete(username);
-  const { token, expiresAt } = signToken(username);
+  const { token, expiresAt, csrf } = signToken(username);
   log.info(`login ok: ${username}`);
-  return { token, username, expires_at: expiresAt, group: ADAPI_ADMIN_GROUP };
+  return { token, csrf, username, expires_at: expiresAt, group: ADAPI_ADMIN_GROUP, ttl_ms: TOKEN_TTL_MS };
 }
 
 module.exports = {

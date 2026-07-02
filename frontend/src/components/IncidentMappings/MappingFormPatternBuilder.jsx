@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, X, Search, Zap, Check, Target } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { withAlpha } from '../../utils/formatters';
+import { regexError } from '../../utils/formValidation';
 
 const MappingFormPatternBuilder = ({
     grafanaNames,
@@ -24,10 +25,9 @@ const MappingFormPatternBuilder = ({
 
         // Validate regex BEFORE normalization
         if (newPattern.type === 'regex') {
-            try {
-                new RegExp(trimmed);
-            } catch (e) {
-                alert(`Invalid regex pattern: ${e.message}`);
+            const err = regexError(trimmed);
+            if (err) {
+                alert(err);
                 return;
             }
         }

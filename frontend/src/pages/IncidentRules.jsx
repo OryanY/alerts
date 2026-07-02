@@ -8,13 +8,18 @@ import IncidentRulesHeader from '../components/IncidentRules/IncidentRulesHeader
 import EmptyState from '../components/IncidentRules/EmptyState';
 import RuleCard from '../components/IncidentRules/RuleCard';
 import RuleForm from '../components/IncidentRules/RuleForm';
+import RuleSimulator from '../components/IncidentRules/RuleSimulator';
 import LoginRequiredNote from '../components/ui/LoginRequiredNote';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { useAuthGate } from '../hooks/useAuthGate';
+import { useConfirm } from '../hooks/useConfirm';
 import { safeJson, authHeaders } from '../utils/api';
+import { scrollIntoViewSoon } from '../utils/scrollIntoViewSoon';
 
 const IncidentRules = () => {
   const { colors, gradients, PATTERN_COLORS } = useTheme();
   const { needsLogin } = useAuthGate();
+  const { confirm, dialogProps: confirmDialogProps } = useConfirm();
 
   const [rules, setRules] = useState([]);
   const [mappings, setMappings] = useState([]);
@@ -22,6 +27,7 @@ const IncidentRules = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showSimulator, setShowSimulator] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,6 +48,11 @@ const IncidentRules = () => {
       return next;
     });
   };
+
+  // Passed to every RuleCard for its "possible overlap" check — hoisted out
+  // of the render loop so N cards share one filter pass instead of each
+  // re-deriving it from `rules` on every render.
+  const globalRulesList = useMemo(() => rules.filter((r) => r.is_global), [rules]);
 
   // FILTERING LOGIC
   const filteredRules = useMemo(() => {
@@ -277,9 +288,7 @@ const IncidentRules = () => {
     }
   };
 
-  const del = async (id) => {
-    if (needsLogin) { setError('מחיקת חוק דורשת התחברות — היכנס בהגדרות.'); return; }
-    if (!window.confirm('Are you sure you want to delete this rule?')) return;
+  const doDelete = async (id) => {
     try {
       const res = await fetch(`${API_BASE}/incidents/incident-rules/${id}`, {
         method: 'DELETE',
@@ -299,8 +308,19 @@ const IncidentRules = () => {
     }
   };
 
-  const toggle = async (id, enabled) => {
-    if (needsLogin) { setError('כיבוי/הפעלת חוק דורשת התחברות — היכנס בהגדרות.'); return; }
+  const del = (id) => {
+    if (needsLogin) { setError('מחיקת חוק דורשת התחברות — היכנס בהגדרות.'); return; }
+    const rule = rules.find((r) => String(r._id) === String(id));
+    confirm({
+      title: 'Delete rule?',
+      body: `"${rule?.rule_name || 'This rule'}" will be permanently deleted. This can't be undone.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+      onConfirm: () => doDelete(id),
+    });
+  };
+
+  const doToggle = async (id, enabled) => {
     try {
       const res = await fetch(`${API_BASE}/incidents/incident-rules/${id}/toggle`, {
         method: 'PATCH',
@@ -321,6 +341,21 @@ const IncidentRules = () => {
     }
   };
 
+  const toggle = (id, enabled) => {
+    if (needsLogin) { setError('כיבוי/הפעלת חוק דורשת התחברות — היכנס בהגדרות.'); return; }
+    // Enabling is low-risk; only confirm when *disabling*, since that silently
+    // changes which ServiceNow tickets get created for matching alerts.
+    if (enabled) { doToggle(id, enabled); return; }
+    const rule = rules.find((r) => String(r._id) === String(id));
+    confirm({
+      title: 'Disable rule?',
+      body: `"${rule?.rule_name || 'This rule'}" will stop applying to new alerts immediately. Matching alerts will fall through to the next rule or the default mapping.`,
+      confirmLabel: 'Disable',
+      tone: 'warning',
+      onConfirm: () => doToggle(id, enabled),
+    });
+  };
+
   /* ----------------------------------------------------------------
    * EDIT EXISTING RULE
    * ---------------------------------------------------------------- */
@@ -329,47 +364,28 @@ const IncidentRules = () => {
     let conditionId = 1;
     const addedConditions = new Set();
 
+    // Legacy conditions are stored per-field as `${field}_contains` (array),
+    // `${field}_exact` / `${field}_regex` (single value) — same shape for
+    // every field, so walk it as one loop instead of three near-identical
+    // blocks per operator.
+    const OPERATOR_SUFFIXES = [
+      { suffix: 'contains', operator: 'contains' },
+      { suffix: 'exact', operator: 'equals' },
+      { suffix: 'regex', operator: 'regex' },
+    ];
+
     Object.keys(CONDITION_FIELDS).forEach((field) => {
-      if (rule.conditions?.[`${field}_contains`]?.length) {
-        rule.conditions[`${field}_contains`].forEach((value) => {
-          const key = `${field}-contains-${value}`;
-          if (!addedConditions.has(key)) {
-            newConditions.push({
-              id: conditionId++,
-              field,
-              operator: 'contains',
-              value,
-            });
-            addedConditions.add(key);
-          }
+      OPERATOR_SUFFIXES.forEach(({ suffix, operator }) => {
+        const raw = rule.conditions?.[`${field}_${suffix}`];
+        if (!raw) return;
+        const values = Array.isArray(raw) ? raw : [raw];
+        values.forEach((value) => {
+          const key = `${field}-${operator}-${value}`;
+          if (addedConditions.has(key)) return;
+          newConditions.push({ id: conditionId++, field, operator, value });
+          addedConditions.add(key);
         });
-      }
-
-      if (rule.conditions?.[`${field}_exact`]) {
-        const key = `${field}-equals-${rule.conditions[`${field}_exact`]}`;
-        if (!addedConditions.has(key)) {
-          newConditions.push({
-            id: conditionId++,
-            field,
-            operator: 'equals',
-            value: rule.conditions[`${field}_exact`],
-          });
-          addedConditions.add(key);
-        }
-      }
-
-      if (rule.conditions?.[`${field}_regex`]) {
-        const key = `${field}-regex-${rule.conditions[`${field}_regex`]}`;
-        if (!addedConditions.has(key)) {
-          newConditions.push({
-            id: conditionId++,
-            field,
-            operator: 'regex',
-            value: rule.conditions[`${field}_regex`],
-          });
-          addedConditions.add(key);
-        }
-      }
+      });
     });
 
     if (rule.conditions?.network) {
@@ -404,11 +420,7 @@ const IncidentRules = () => {
     setEditingItem(rule);
     setShowForm(true);
 
-    setTimeout(() => {
-      document
-        .getElementById('rule-form')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
+    scrollIntoViewSoon(() => document.getElementById('rule-form'));
   };
 
   /* ----------------------------------------------------------------
@@ -559,10 +571,13 @@ const IncidentRules = () => {
         onSearchChange={setSearchTerm}
         viewMode={viewMode}
         onToggleViewMode={toggleViewMode}
+        showSimulator={showSimulator}
+        onToggleSimulator={() => setShowSimulator((prev) => !prev)}
       />
 
-
-
+      {showSimulator && (
+        <RuleSimulator onClose={() => setShowSimulator(false)} />
+      )}
 
 
       {/* FORM */}
@@ -580,6 +595,7 @@ const IncidentRules = () => {
           assignmentGroups={assignmentGroups}
           selectedMapping={selectedMapping}
           customFieldsInMapping={customFieldsInMapping}
+          existingRules={rules}
         />
       )}
 
@@ -628,11 +644,12 @@ const IncidentRules = () => {
                     <RuleCard
                       key={String(rule._id)}
                       rule={rule}
-                      globalRules={rules.filter(r => r.is_global)} // Pass all global rules
+                      globalRules={globalRulesList}
                       assignmentGroups={assignmentGroups} // Pass for processing friendly names
                       onToggle={toggle}
                       onEdit={startEdit}
                       onDelete={del}
+                      onOpenSimulator={() => setShowSimulator(true)}
                       renderApplicationChip={renderApplicationChip}
                       viewMode={viewMode}
                     />
@@ -643,6 +660,8 @@ const IncidentRules = () => {
           )}
         </div>
       )}
+
+      <ConfirmDialog {...confirmDialogProps} />
     </div>
   );
 };

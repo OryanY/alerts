@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import {
     ToggleLeft,
     ToggleRight,
@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { EXCLUDED_MAPPING_FIELDS } from './constants';
+import { calculateRuleSpecificity } from '../../utils/ruleSpecificity';
+import { useExpandableCard } from '../../hooks/useExpandableCard';
 
 const RuleCard = ({
     rule,
@@ -16,6 +18,7 @@ const RuleCard = ({
     onToggle,
     onEdit,
     onDelete,
+    onOpenSimulator,
     renderApplicationChip,
     viewMode,
 }) => {
@@ -28,18 +31,29 @@ const RuleCard = ({
         )
         : [];
 
-    const [isExpanded, setIsExpanded] = useState(false);
+    const { isExpanded, isCompact, shouldShowDetails, handleCardClick } = useExpandableCard(viewMode);
 
-    const handleCardClick = (e) => {
-        if (viewMode === 'expanded') return;
-        if (e.target.closest('button') || e.target.closest('a')) {
-            return;
-        }
-        setIsExpanded(!isExpanded);
-    };
-
-    const isCompact = viewMode === 'compact';
-    const shouldShowDetails = !isCompact || isExpanded;
+    // Possible overlaps with global rules, based on identical condition
+    // values. Memoized so re-renders that don't change `rule`/`globalRules`
+    // (e.g. an unrelated card toggling, a search term changing) don't redo
+    // this scan-and-score work.
+    const overlapInfo = useMemo(() => {
+        if (rule.is_global) return null;
+        const overlaps = (globalRules || []).filter(gRule => {
+            if (gRule._id === rule._id) return false;
+            const sCond = rule.conditions || {};
+            const gCond = gRule.conditions || {};
+            return Object.keys(gCond).some(key => {
+                if (!sCond[key]) return false;
+                return JSON.stringify(sCond[key]) === JSON.stringify(gCond[key]);
+            });
+        });
+        if (overlaps.length === 0) return null;
+        return {
+            overlaps: overlaps.map((c) => ({ rule_name: c.rule_name, score: calculateRuleSpecificity(c) })),
+            myScore: calculateRuleSpecificity(rule),
+        };
+    }, [rule, globalRules]);
 
     return (
         <div
@@ -277,44 +291,48 @@ const RuleCard = ({
                         borderBottomRightRadius: 12,
                     }}
                 >
-                    {/* Conflicts and Applications details */}
+                    {/* Possible overlaps with global rules */}
                     <div style={{ marginBottom: 16 }}>
-                        {!rule.is_global && (
-                            (() => {
-                                const conflicts = (globalRules || []).filter(gRule => {
-                                    if (gRule._id === rule._id) return false;
-                                    const sCond = rule.conditions || {};
-                                    const gCond = gRule.conditions || {};
-                                    return Object.keys(gCond).some(key => {
-                                        if (!sCond[key]) return false;
-                                        return JSON.stringify(sCond[key]) === JSON.stringify(gCond[key]);
-                                    });
-                                });
-
-                                if (conflicts.length > 0) {
-                                    return (
-                                        <div style={{
-                                            marginBottom: 12,
-                                            padding: '8px 12px',
-                                            background: `${colors.semantic.warning}15`,
+                        {overlapInfo && (
+                            <div style={{
+                                marginBottom: 12,
+                                padding: '8px 12px',
+                                background: `${colors.semantic.warning}15`,
+                                border: `1px solid ${colors.semantic.warning}`,
+                                borderRadius: 8,
+                                fontSize: 12,
+                                color: colors.semantic.warningText,
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: onOpenSimulator ? 6 : 0 }}>
+                                    <AlertTriangle size={16} />
+                                    <span>
+                                        <strong>Possible overlap with global rule{overlapInfo.overlaps.length > 1 ? 's' : ''}:</strong>{' '}
+                                        {overlapInfo.overlaps.map(c => `${c.rule_name} (score ${c.score})`).join(', ')}
+                                        {' '}vs. this rule's score {overlapInfo.myScore}.
+                                    </span>
+                                </div>
+                                <div style={{ fontSize: 11, opacity: 0.85, marginBottom: onOpenSimulator ? 6 : 0 }}>
+                                    Based on identical condition values only — not a guarantee these rules
+                                    actually match the same alert. Use the simulator to check a real alert payload.
+                                </div>
+                                {onOpenSimulator && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onOpenSimulator(); }}
+                                        style={{
+                                            background: 'none',
                                             border: `1px solid ${colors.semantic.warning}`,
-                                            borderRadius: 8,
-                                            fontSize: 12,
+                                            borderRadius: 6,
+                                            padding: '3px 8px',
+                                            fontSize: 11,
+                                            fontWeight: 600,
                                             color: colors.semantic.warningText,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 8
-                                        }}>
-                                            <AlertTriangle size={16} />
-                                            <span>
-                                                <strong>Overrides Global Rule{conflicts.length > 1 ? 's' : ''}:</strong>{' '}
-                                                {conflicts.map(c => c.rule_name).join(', ')}
-                                            </span>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })()
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        Open Simulator
+                                    </button>
+                                )}
+                            </div>
                         )}
 
                         <p style={{ margin: '0 0 8px 0', fontSize: 13, color: colors.text.secondary }}>
@@ -498,4 +516,4 @@ const RuleCard = ({
     );
 };
 
-export default RuleCard;
+export default React.memo(RuleCard);

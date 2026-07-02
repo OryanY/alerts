@@ -1,17 +1,11 @@
 import React from 'react';
 import { Zap } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { createThemedStyles } from '../../utils/themedStyles';
 import { ChartCard } from '../ui/ChartCard';
 import { formatDuration } from '../../utils/formatters';
 
-import { useClientConfig } from '../../contexts/ClientConfigContext';
-
 const TopNoisyAlertsList = ({ alerts, loading }) => {
     const { colors } = useTheme();
-    const { config } = useClientConfig();
-    // eslint-disable-next-line
-    const S = createThemedStyles(colors);
 
     return (
         <ChartCard
@@ -91,4 +85,4 @@ const TopNoisyAlertsList = ({ alerts, loading }) => {
     );
 };
 
-export default TopNoisyAlertsList;
+export default React.memo(TopNoisyAlertsList);

@@ -43,6 +43,7 @@ const PanelResearchPage = () => {
   const [selectedPanel, setSelectedPanel] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedObject, setSelectedObject] = useState(null);
 
   // Fetch panel list. useApiData automatically injects date range and global params.
   const {
@@ -73,8 +74,9 @@ const PanelResearchPage = () => {
       sort_by: 'time_fired',
       sort_order: 'DESC',
       ...(selectedNode ? { node_name: selectedNode } : {}),
+      ...(selectedObject ? { object: selectedObject } : {}),
     };
-  }, [selectedPanel, selectedNode]);
+  }, [selectedPanel, selectedNode, selectedObject]);
 
   const {
     data: recentAlerts,
@@ -261,6 +263,7 @@ const PanelResearchPage = () => {
                     onClick={() => {
                       setSelectedPanel(p.panel_title);
                       setSelectedNode(null);
+                      setSelectedObject(null);
                     }}
                     style={{
                       padding: 16,
@@ -525,8 +528,8 @@ const PanelResearchPage = () => {
                 <TopObjectsTable
                   objects={topObjects}
                   loading={topObjectsLoading}
-                  selectedObject={null}
-                  onSelectObject={() => { }}
+                  selectedObject={selectedObject}
+                  onSelectObject={setSelectedObject}
                 />
               </div>
 
@@ -567,7 +570,7 @@ const PanelResearchPage = () => {
                       (100 אחרונות)
                     </span>
 
-                    {selectedNode && (
+                    {(selectedNode || selectedObject) && (
                       <span
                         dir="ltr"
                         style={{
@@ -579,7 +582,7 @@ const PanelResearchPage = () => {
                           borderRadius: 4
                         }}
                       >
-                        Filtered by: {selectedNode}
+                        Filtered by: {[selectedNode, selectedObject].filter(Boolean).join(' + ')}
                       </span>
                     )}
                   </h3>

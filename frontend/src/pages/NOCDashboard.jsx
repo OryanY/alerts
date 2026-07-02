@@ -37,6 +37,7 @@ import SearchableSelect from '../components/common/SearchableSelect';
 import { createChartConfig } from '../utils/chartConfig';
 import { formatDuration } from '../utils/formatters';
 import { asArray, getPrevPeriodText } from '../utils/dateUtils';
+import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 
 // Render a trend bucket's covered span as "X - Y" for the tooltip.
 // date_il is the bucket START (day = that day, week = its Monday, month = the 1st).
@@ -114,7 +115,7 @@ const NocDashboard = () => {
   const nightTrue = shiftRows.find((s) => s.shift === 'Night')?.true_alerts || 0;
 
   // Calculate threshold in minutes for display
-  const thresholdMinutes = Math.round((config.falseWakeupThreshold || 120) / 60);
+  const thresholdMinutes = Math.round((config.falseWakeupThreshold ?? DEFAULT_CLIENT_CFG.falseWakeupThreshold) / 60);
 
   const prevPeriodText = useMemo(() => getPrevPeriodText(dateRange), [dateRange]);
 
@@ -166,6 +167,7 @@ const NocDashboard = () => {
             icon={AlertTriangle}
             logoColor="orange"
             loading={exec.loading}
+            error={exec.error}
             trend={exec.data?.total_trend_pct}
             trendTooltip={`אינדיקציה למגמת עליה או ירידה בכמות ההתראות בהשוואה ל ${prevPeriodText}.`}
             invertTrend={true}
@@ -179,6 +181,7 @@ const NocDashboard = () => {
             icon={TrendingUp}
             logoColor="blue"
             loading={exec.loading}
+            error={exec.error}
             viz={<RadialGauge value={exec.data?.signal_ratio || 0} color={colors.semantic.success} />}
           />
           <MetricCard
@@ -189,6 +192,7 @@ const NocDashboard = () => {
             icon={Moon}
             logoColor="purple"
             loading={exec.loading}
+            error={exec.error}
             viz={<CompareBars items={[
               { label: 'יום', value: dayTrue, color: colors.chart.primary },
               { label: 'לילה', value: nightTrue, color: colors.brand.purple },
@@ -202,6 +206,7 @@ const NocDashboard = () => {
             icon={Shield}
             logoColor="red"
             loading={exec.loading}
+            error={exec.error}
             trend={exec.data?.noise_trend_pct}
             trendTooltip={`אינדיקציה לשינוי באחוז התראות השווא בהשוואה ל ${prevPeriodText}.`}
             invertTrend={true}
@@ -215,6 +220,7 @@ const NocDashboard = () => {
             icon={Clock}
             logoColor="green"
             loading={exec.loading}
+            error={exec.error}
             viz={<CompareBars items={[
               { label: 'ממוצע', value: exec.data?.avg_duration || 0, color: colors.chart.primary },
               { label: 'חציון', value: exec.data?.median_duration || 0, color: colors.chart.secondary },
@@ -304,7 +310,7 @@ const NocDashboard = () => {
             shiftData={shiftRows}
             loading={shifts.loading}
             error={shifts.error}
-            falseWakeupThreshold={config.falseWakeupThreshold || 120}
+            falseWakeupThreshold={config.falseWakeupThreshold ?? DEFAULT_CLIENT_CFG.falseWakeupThreshold}
           />
         </div>
 

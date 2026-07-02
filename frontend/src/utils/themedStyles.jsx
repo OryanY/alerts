@@ -66,8 +66,11 @@ export const createThemedStyles = (raw) => {
   const colors = normalizeTheme(raw);
 
   return {
+    // No minHeight here: every page using this renders inside Layout's own
+    // .ops-shell, which already guarantees a full-viewport-minimum height —
+    // redeclaring it on a nested page stacks on top of the header/subbar
+    // height and adds visible dead scroll space below short content.
     page: {
-      minHeight: '100vh',
       background: colors.bg.primary,
       color: colors.text.primary,
     },

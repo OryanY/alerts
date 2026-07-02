@@ -1,9 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     ComposedChart,
     BarChart,
     Area,
-    Line,
     Bar,
     XAxis,
     YAxis,
@@ -20,8 +19,8 @@ import { getChartProps } from '../../utils/chartConfig';
 
 const ResearchTrendCharts = ({ daily_trend, duration_distribution, loading }) => {
     const { colors } = useTheme();
-    const S = createThemedStyles(colors);
-    const chartProps = getChartProps(colors);
+    const S = useMemo(() => createThemedStyles(colors), [colors]);
+    const chartProps = useMemo(() => getChartProps(colors), [colors]);
 
     return (
         <div style={S.grid('1fr 1fr')}>
@@ -126,4 +125,4 @@ const ResearchTrendCharts = ({ daily_trend, duration_distribution, loading }) =>
     );
 };
 
-export default ResearchTrendCharts;
+export default React.memo(ResearchTrendCharts);

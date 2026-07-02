@@ -9,18 +9,18 @@ export const ChartCard = ({ title, icon: Icon, loading, error, children, height 
   const S = createThemedStyles(colors);
   if (error) {
     return (
-      <div style={S.card({ border: '1px solid #FCA5A5' })}>
+      <div style={S.card({ border: `1px solid ${colors.semantic.error}` })}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          color: '#991B1B',
+          color: colors.semantic.errorText,
           marginBottom: 8
         }}>
           <AlertTriangle size={16} />
           <span style={{ fontWeight: 600 }}>Error loading data</span>
         </div>
-        <p style={{ color: '#B91C1C', fontSize: 13 }}>
+        <p style={{ color: colors.semantic.errorText, fontSize: 13 }}>
           {error.message}
         </p>
       </div>

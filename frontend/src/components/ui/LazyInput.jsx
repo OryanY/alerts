@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export const LazyInput = ({
     value,
@@ -9,6 +10,7 @@ export const LazyInput = ({
     style,
     ...props
 }) => {
+    const { colors } = useTheme();
     const [localValue, setLocalValue] = useState(value ?? '');
     const [error, setError] = useState(null);
 
@@ -84,9 +86,10 @@ export const LazyInput = ({
                 onKeyDown={handleKeyDown}
                 style={{
                     ...style,
-                    borderColor: error ? '#EF4444' : style?.borderColor,
+                    borderColor: error ? colors.semantic.error : style?.borderColor,
                     flex: undefined, // Remove flex from input itself
                 }}
+                aria-invalid={!!error}
             />
             {error && (
                 <div
@@ -96,7 +99,7 @@ export const LazyInput = ({
                         left: 0,
                         marginTop: 4,
                         fontSize: 12,
-                        color: '#EF4444',
+                        color: colors.semantic.error,
                         whiteSpace: 'nowrap',
                     }}
                 >

@@ -1,18 +1,23 @@
+import { lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/layout/Layout';
+// Dashboard is the default landing route (see the index redirect below) — keep
+// it eagerly bundled so the most common entry point never shows a loading
+// flash. Every other route is code-split: its JS only downloads when visited.
 import DashboardPage from './pages/NOCDashboard';
-import ExplorerPage from './pages/ExplorerPage';
-import SettingsPage from './pages/SettingsPage';
-import NotFoundPage from './pages/NotFoundPage';
 import { ClientConfigProvider } from './contexts/ClientConfigContext';
-import IncidentManagement from './pages/IncidentManagementPage';
-import PanelResearchPage from './pages/PanelResearchPage';
-import HowToUsePage from './pages/HowToUsePage';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
-import IncidentStatsPage from './pages/IncidentStatsPage';
-import Health from './pages/Health';
+
+const ExplorerPage = lazy(() => import('./pages/ExplorerPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const IncidentManagement = lazy(() => import('./pages/IncidentManagementPage'));
+const PanelResearchPage = lazy(() => import('./pages/PanelResearchPage'));
+const HowToUsePage = lazy(() => import('./pages/HowToUsePage'));
+const IncidentStatsPage = lazy(() => import('./pages/IncidentStatsPage'));
+const Health = lazy(() => import('./pages/Health'));
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -3,9 +3,7 @@ import { useMemo, useState, Fragment } from 'react';
 import { getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { formatDuration } from '../../utils/formatters';
-
-// ServiceNow instance URL (without trailing slash)
-const SERVICE_NOW_BASE_URL = 'http://servicenow.d8200.mil';
+import { SERVICENOW_BASE_URL } from '../../utils/constants';
 
 export const AlertTable = ({
   alerts,
@@ -15,7 +13,7 @@ export const AlertTable = ({
   colorByDuration,
   colors,
   renderShiftBadge,
-  serviceNowBaseUrl = SERVICE_NOW_BASE_URL
+  serviceNowBaseUrl = SERVICENOW_BASE_URL
 }) => {
   const [expandedRows, setExpandedRows] = useState(new Set());
   const tableColumns = useMemo(
@@ -54,13 +52,25 @@ export const AlertTable = ({
     const renderClusteringUI = () => {
       if (!isFirstColumn) return null;
       const isCluster = alert.is_cluster;
-      const isExpanded = expandedRows.has(alert.history_id || alert.incident_number);
+      const rowId = alert.history_id || alert.incident_number;
+      const isExpanded = expandedRows.has(rowId);
       if (!isCluster) return null;
       return (
         <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? 'Collapse clustered alerts' : `Expand ${alert.cluster_count || ''} clustered alerts`}
           onClick={(e) => {
             e.stopPropagation();
-            toggleRow(alert.history_id || alert.incident_number);
+            toggleRow(rowId);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleRow(rowId);
+            }
           }}
           style={{
             display: 'inline-flex',
@@ -87,7 +97,7 @@ export const AlertTable = ({
       case 'incident_number': {
         const formatted = alert.incident_number;
         const sysId = alert.incident_sys_id;
-        const isLinked = !!sysId;
+        const isLinked = !!sysId && !!serviceNowBaseUrl;
 
         return (
           <td
@@ -117,6 +127,8 @@ export const AlertTable = ({
                 >
                   {formatted || sysId}
                 </a>
+              ) : sysId ? (
+                <span title="REACT_APP_SERVICENOW_URL is not configured">{formatted || sysId}</span>
               ) : (
                 <span style={{ fontStyle: 'italic', color: colors.text.tertiary }}>—</span>
               )}
@@ -364,7 +376,17 @@ export const AlertTable = ({
               return (
                 <th
                   key={key}
+                  scope="col"
+                  tabIndex={sortable ? 0 : undefined}
+                  role={sortable ? 'button' : undefined}
+                  aria-sort={isSorted ? (sortConfig.sort_order === 'asc' ? 'ascending' : 'descending') : sortable ? 'none' : undefined}
                   onClick={() => sortable && onSort(key)}
+                  onKeyDown={(e) => {
+                    if (sortable && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      onSort(key);
+                    }
+                  }}
                   style={{
                     padding: '14px 16px',
                     textAlign: 'left',
@@ -442,11 +464,11 @@ export const AlertTable = ({
                         <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                           <thead>
                             <tr>
-                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Time</th>
-                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Node</th>
-                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Object</th>
-                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Duration</th>
-                              <th style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Message</th>
+                              <th scope="col" style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Time</th>
+                              <th scope="col" style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Node</th>
+                              <th scope="col" style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Object</th>
+                              <th scope="col" style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Duration</th>
+                              <th scope="col" style={{ textAlign: 'left', padding: '8px 0', color: colors.text.tertiary, fontSize: 11 }}>Message</th>
                             </tr>
                           </thead>
                           <tbody>

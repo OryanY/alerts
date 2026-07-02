@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useExpandableCard } from '../../hooks/useExpandableCard';
 
 const baseMandatoryFields = [
     'service_offering',
@@ -34,18 +35,7 @@ const MappingCard = ({
         (k) => !excludeFromCustom.includes(k)
     );
 
-    const [isExpanded, setIsExpanded] = useState(false);
-
-    const handleCardClick = (e) => {
-        if (viewMode === 'expanded') return;
-        if (e.target.closest('button') || e.target.closest('a')) {
-            return;
-        }
-        setIsExpanded(!isExpanded);
-    };
-
-    const isCompact = viewMode === 'compact';
-    const shouldShowDetails = !isCompact || isExpanded;
+    const { isExpanded, isCompact, shouldShowDetails, handleCardClick } = useExpandableCard(viewMode);
 
     return (
         <div

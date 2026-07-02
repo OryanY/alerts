@@ -233,6 +233,7 @@ const ConditionBuilder = ({ form, setForm }) => {
                                 >
                                     {/* FIELD */}
                                     <select
+                                        aria-label={`Condition ${index + 1} field`}
                                         style={{
                                             width: '100%',
                                             padding: '8px 12px',
@@ -260,6 +261,7 @@ const ConditionBuilder = ({ form, setForm }) => {
 
                                     {/* OPERATOR */}
                                     <select
+                                        aria-label={`Condition ${index + 1} operator`}
                                         style={{
                                             width: '100%',
                                             padding: '8px 12px',
@@ -287,6 +289,7 @@ const ConditionBuilder = ({ form, setForm }) => {
 
                                     {/* VALUE */}
                                     <input
+                                        aria-label={`Condition ${index + 1} value`}
                                         style={{
                                             width: '100%',
                                             padding: '8px 12px',
@@ -310,6 +313,8 @@ const ConditionBuilder = ({ form, setForm }) => {
 
                                     <button
                                         type="button"
+                                        aria-label={`Remove condition ${index + 1}`}
+                                        title="Remove condition"
                                         onClick={() => removeCondition(condition.id)}
                                         style={{
                                             background: colors.semantic.error,

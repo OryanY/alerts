@@ -11,6 +11,7 @@ import { useClientConfig } from '../contexts/ClientConfigContext';
 import { ALL_PANELS } from '../utils/constants';
 import { ChartCard } from '../components/ui/ChartCard';
 import { MetricCard } from '../components/ui/MetricCard';
+import { ErrorCallout } from '../components/ui/ErrorCallout';
 import { Sparkline, RadialGauge, CompareBars } from '../components/ui/kpiViz';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
@@ -46,7 +47,7 @@ const StatTable = ({ rows, nameKey, colors, onRowClick }) => (
                         { h: 'ממוצע', t: 'ממוצע התראות לכל תקלה שנפתחה' },
                         { h: 'כיסוי', t: 'אחוז כיסוי - כמה מההתראות קושרו לתקלה' }
                     ].map((col, i) => (
-                        <th key={col.h} title={col.t} style={{
+                        <th key={col.h} scope="col" title={col.t} style={{
                             padding: '8px 6px', textAlign: i === 0 ? 'right' : 'center',
                             fontWeight: 600, color: colors.text.secondary, whiteSpace: 'nowrap'
                         }}>{col.h}</th>
@@ -57,9 +58,13 @@ const StatTable = ({ rows, nameKey, colors, onRowClick }) => (
                 {rows.map((row, i) => {
                     const name = row[nameKey] || '—';
                     const extraAlerts = Math.max(0, (row.alerts_covered || 0) - (row.unique_incidents || 0));
+                    const rowClick = () => onRowClick && onRowClick(name);
 
                     return (
-                        <tr key={i} style={{
+                        <tr key={i}
+                        role={onRowClick ? 'button' : undefined}
+                        tabIndex={onRowClick ? 0 : undefined}
+                        style={{
                             borderBottom: `1px solid ${colors.border.primary}`,
                             background: i < 3 ? `${colors.brand.primary}08` : 'transparent',
                             cursor: onRowClick ? 'pointer' : 'default',
@@ -67,7 +72,8 @@ const StatTable = ({ rows, nameKey, colors, onRowClick }) => (
                         }}
                         onMouseEnter={(e) => { if(onRowClick) e.currentTarget.style.background = colors.bg.secondary; }}
                         onMouseLeave={(e) => { if(onRowClick) e.currentTarget.style.background = i < 3 ? `${colors.brand.primary}08` : 'transparent'; }}
-                        onClick={() => onRowClick && onRowClick(name)}
+                        onClick={rowClick}
+                        onKeyDown={(e) => { if (onRowClick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); rowClick(); } }}
                         >
                             <td style={{
                                 padding: '8px 10px', fontWeight: 500, color: colors.text.primary,
@@ -158,7 +164,7 @@ const IncidentStatsPage = () => {
 
     const apiParams = getApiParams();
     const isClustered = apiParams.clustering_enabled;
-    const { data, loading } = useApiData('/stats/incident-stats', apiParams);
+    const { data, loading, error } = useApiData('/stats/incident-stats', apiParams);
 
     const handleDrilldown = (filterParams = {}) => {
         const search = new URLSearchParams();
@@ -219,12 +225,32 @@ const IncidentStatsPage = () => {
 
     return (
         <div dir="rtl">
+            {error && (
+                <ErrorCallout
+                    message={`${error.message} — הנתונים המוצגים עשויים להיות שגויים או ריקים.`}
+                    details={error}
+                />
+            )}
+
+            {isClustered && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: colors.semantic.infoBg, color: colors.semantic.infoText,
+                    border: `1px solid ${colors.semantic.info}`, borderRadius: 8,
+                    padding: '8px 14px', marginBottom: 16, fontSize: 13,
+                }}>
+                    <Layers size={15} />
+                    <strong>תצוגה מקובצת (Clustered):</strong>
+                    <span>כל רצף התראות באותו פאנל תוך 15 דקות נספר כ"התראה" אחת בכל המדדים למטה — לא כל שורה גולמית.</span>
+                </div>
+            )}
+
             {/* KPIs */}
             <div style={{ ...S.grid('repeat(auto-fit, minmax(160px, 1fr))'), marginBottom: 24 }}>
                 <MetricCard
                     title='סה"כ התראות'
                     value={(coverage.total_alerts ?? 0).toLocaleString()}
-                    icon={AlertTriangle} logoColor="orange" loading={loading}
+                    icon={AlertTriangle} logoColor="orange" loading={loading} error={error}
                     tooltip={isClustered ? "סך הכל רצפי התראות שהתקבלו. מנגנון הקיבוץ פעיל: מספר התראות שהגיעו ברצף של פחות מ-15 דקות נספרות כאירוע התראות אחד מתמשך." : "סך כל ההתראות הבודדות שהתקבלו במערכת בתקופת הזמן."}
                     onClick={() => handleDrilldown({})}
                     viz={<Sparkline data={totalSeries} color={colors.chart.primary} />}
@@ -232,7 +258,7 @@ const IncidentStatsPage = () => {
                 <MetricCard
                     title="תקלות שנפתחו"
                     value={(coverage.unique_incidents ?? 0).toLocaleString()}
-                    icon={FileText} logoColor="blue" loading={loading}
+                    icon={FileText} logoColor="blue" loading={loading} error={error}
                     tooltip="מספר התקלות הייחודיות (Tickets) שנפתחו ב-ServiceNow כתוצאה מהתראות אלו."
                     viz={<Sparkline data={incidentsSeries} color={colors.brand.purple} />}
                 />
@@ -240,7 +266,7 @@ const IncidentStatsPage = () => {
                     title="קושרו לתקלה"
                     value={(coverage.alerts_covered ?? 0).toLocaleString()}
                     subtitle={`${coverage.coverage_pct ?? 0}% מההתראות`}
-                    icon={TrendingUp} logoColor="green" loading={loading}
+                    icon={TrendingUp} logoColor="green" loading={loading} error={error}
                     tooltip={isClustered ? "מספר רצפי ההתראות שקושרו בהצלחה לפחות לתקלה אחת. (הספירה מונה אירועים מתמשכים ולא כל התראה בנפרד)." : "מספר ההתראות הבודדות שקובצו וקושרו בהצלחה לתקלה קיימת."}
                     onClick={() => handleDrilldown({ has_inc: 'true' })}
                     viz={<RadialGauge value={coverage.coverage_pct || 0} color={colors.semantic.success} />}
@@ -249,7 +275,7 @@ const IncidentStatsPage = () => {
                     title="התראות ללא תקלה"
                     value={(coverage.alerts_no_incident ?? 0).toLocaleString()}
                     subtitle={`${noIncidentPct}% מההתראות`}
-                    icon={Zap} logoColor="red" loading={loading}
+                    icon={Zap} logoColor="red" loading={loading} error={error}
                     tooltip={isClustered ? "רצפי התראות שלמים שהסתיימו מבלי שנפתחה עבורם אף תקלה במערכת." : "התראות בודדות שלא נפתחה עבורן תקלה."}
                     onClick={() => handleDrilldown({ has_inc: 'false' })}
                     viz={<CompareBars items={[
@@ -260,7 +286,7 @@ const IncidentStatsPage = () => {
                 <MetricCard
                     title="ממוצע התראות לתקלה"
                     value={coverage.avg_alerts_per_incident ?? '—'}
-                    icon={Layers} logoColor="purple" loading={loading}
+                    icon={Layers} logoColor="purple" loading={loading} error={error}
                     tooltip={isClustered ? "מדד צפיפות - ממוצע רצפי ההתראות הקיימים בתוך כל תקלה שנפתחה." : "מדד טיפוסי - כמה התראות בודדות ממוצעות קיימות בתוך כל תקלה."}
                     viz={<Sparkline data={avgPerIncidentSeries} color={colors.chart.tertiary} />}
                 />

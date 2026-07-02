@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     ComposedChart,
     Bar,
@@ -13,7 +13,6 @@ import {
 import { Clock } from 'lucide-react';
 import { useClientConfig } from '../../contexts/ClientConfigContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { createThemedStyles } from '../../utils/themedStyles';
 import { ChartCard } from '../ui/ChartCard';
 import { getChartProps } from '../../utils/chartConfig';
 import { formatDuration } from '../../utils/formatters';
@@ -21,15 +20,27 @@ import { formatDuration } from '../../utils/formatters';
 const ResearchHourlyHeatmap = ({ hourly_heatmap, loading }) => {
     const { colors } = useTheme();
     const { config } = useClientConfig();
-    // eslint-disable-next-line
-    const S = createThemedStyles(colors);
-    const chartProps = getChartProps(colors);
+    const chartProps = useMemo(() => getChartProps(colors), [colors]);
+
+    const dayNightLegend = (
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', fontSize: 11, color: colors.text.secondary }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: colors.chart.primary }} />
+                יום ({config.dayStart ?? 8}:00–{config.dayEnd ?? 22}:00)
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: colors.brand.purple }} />
+                לילה ({config.nightStart ?? 22}:00–{config.nightEnd ?? 8}:00)
+            </span>
+        </div>
+    );
 
     return (
         <ChartCard
             title="תבנית התראות שעתית"
             icon={Clock}
             loading={loading}
+            legend={dayNightLegend}
         >
             <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={hourly_heatmap || []}>
@@ -104,4 +115,4 @@ const ResearchHourlyHeatmap = ({ hourly_heatmap, loading }) => {
     );
 };
 
-export default ResearchHourlyHeatmap;
+export default React.memo(ResearchHourlyHeatmap);

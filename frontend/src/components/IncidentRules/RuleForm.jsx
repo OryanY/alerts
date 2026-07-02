@@ -2,6 +2,7 @@ import { Edit, Plus, Eye } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import ConditionBuilder from './ConditionBuilder';
 import IncidentOverrides from './IncidentOverrides';
+import { regexError, findDuplicate } from '../../utils/formValidation';
 
 const RuleForm = ({
     form,
@@ -15,7 +16,8 @@ const RuleForm = ({
     mappings,
     assignmentGroups,
     selectedMapping,
-    customFieldsInMapping
+    customFieldsInMapping,
+    existingRules = [],
 }) => {
     const { colors, gradients } = useTheme();
 
@@ -25,12 +27,30 @@ const RuleForm = ({
         if (!form.rule_name?.trim()) errors.push('Rule Name is required');
         if (!form.conditions || form.conditions.length === 0) errors.push('At least one condition is required');
 
-        // Validate conditions content
+        // Validate conditions content, and regex syntax specifically (mirrors the
+        // backend's own new RegExp(...) call — an invalid pattern here would
+        // otherwise only surface as "this rule silently never matches").
         form.conditions.forEach((c, idx) => {
             if (!c.value || !String(c.value).trim()) {
                 errors.push(`Condition ${idx + 1}: Value is missing`);
+                return;
+            }
+            if (c.operator === 'regex') {
+                const err = regexError(c.value);
+                if (err) errors.push(`Condition ${idx + 1}: ${err}`);
             }
         });
+
+        // Duplicate rule name (case-insensitive), excluding the rule being edited.
+        const normalizedName = form.rule_name?.trim().toLowerCase();
+        if (normalizedName) {
+            const duplicate = findDuplicate(
+                existingRules,
+                (r) => r.rule_name?.trim().toLowerCase() === normalizedName,
+                editingItem?._id
+            );
+            if (duplicate) errors.push(`A rule named "${form.rule_name.trim()}" already exists`);
+        }
 
         return errors;
     };

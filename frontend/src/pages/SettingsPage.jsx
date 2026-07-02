@@ -6,11 +6,14 @@ import { useClientConfig } from '../contexts/ClientConfigContext';
 import LabeledInput from '../components/ui/LabeledInput';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
-import { fetchApi, getAuth, setAuth, clearAuth } from '../utils/api';
+import { fetchApi, getAuth, setAuth, clearAuth, hasSessionCookie, logout as logoutSession } from '../utils/api';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { useConfirm } from '../hooks/useConfirm';
 
 const SettingsPage = () => {
   const { colors } = useTheme();
   const S = useMemo(() => createThemedStyles(colors), [colors]);
+  const { confirm, dialogProps: confirmDialogProps } = useConfirm();
 
   const toMinutes = (seconds) => {
     if (!seconds) return 0;
@@ -39,6 +42,16 @@ const SettingsPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: loginUsername, password: loginPassword }),
       });
+      // The server responded 200, but the session cookie is what actually
+      // gates destructive actions — confirm the browser kept it (it can be
+      // silently dropped by a SameSite/Secure cookie config mismatched to
+      // this deployment's origin topology) before showing "logged in".
+      if (!hasSessionCookie()) {
+        clearAuth();
+        setAuthState(null);
+        setLoginError('Login succeeded but the session cookie wasn\'t saved by your browser. Check the server\'s AUTH_COOKIE_SAMESITE/AUTH_COOKIE_SECURE configuration for this deployment.');
+        return;
+      }
       setAuth(json.data);
       setAuthState(json.data);
       setLoginPassword('');
@@ -49,8 +62,8 @@ const SettingsPage = () => {
     }
   };
 
-  const handleLogout = () => {
-    clearAuth();
+  const handleLogout = async () => {
+    await logoutSession();
     setAuthState(null);
     setLoginPassword('');
   };
@@ -100,7 +113,15 @@ const SettingsPage = () => {
     updateConfig(localConfig);
   };
 
-  const handleReset = () => {
+  const handleReset = () => confirm({
+    title: 'Reset all thresholds?',
+    body: 'This clears every custom shift/duration/clustering setting on this browser back to the built-in defaults.',
+    confirmLabel: 'Reset',
+    tone: 'danger',
+    onConfirm: doReset,
+  });
+
+  const doReset = () => {
     setLocalConfig(DEFAULT_CLIENT_CFG);
     setValidationError(null);
     resetConfig();
@@ -530,6 +551,8 @@ const SettingsPage = () => {
 
 
       </div>
+
+      <ConfirmDialog {...confirmDialogProps} />
     </div>
   );
 };

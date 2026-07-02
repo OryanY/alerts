@@ -1,4 +1,4 @@
-import { Target, Plus, X, RefreshCw, Search, LayoutList } from 'lucide-react';
+import { Target, Plus, X, RefreshCw, Search, LayoutList, Play } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const IncidentRulesHeader = ({
@@ -9,7 +9,9 @@ const IncidentRulesHeader = ({
     searchTerm,
     onSearchChange,
     viewMode,
-    onToggleViewMode
+    onToggleViewMode,
+    showSimulator,
+    onToggleSimulator,
 }) => {
     const { colors, gradients } = useTheme();
 
@@ -66,12 +68,37 @@ const IncidentRulesHeader = ({
                                 fontSize: 14,
                                 outline: 'none'
                             }}
+                            onFocus={(e) => { e.currentTarget.style.boxShadow = `0 0 0 3px ${colors.brand.primary}33`; }}
+                            onBlur={(e) => { e.currentTarget.style.boxShadow = 'none'; }}
                         />
                     </div>
                 )}
             </div>
 
             <div style={{ display: 'flex', gap: 12 }}>
+                {!showForm && (
+                    <button
+                        onClick={onToggleSimulator}
+                        style={{
+                            background: showSimulator ? colors.brand.primary : colors.bg.secondary,
+                            color: showSimulator ? colors.text.inverse : colors.text.secondary,
+                            border: `2px solid ${showSimulator ? colors.brand.primary : colors.border.secondary}`,
+                            borderRadius: 12,
+                            padding: '12px 20px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            fontSize: 14,
+                            fontWeight: 500,
+                            transition: 'all 0.2s ease',
+                        }}
+                        title="Test which rule would win for a given alert, without creating a ticket"
+                    >
+                        <Play size={16} />
+                        Simulate
+                    </button>
+                )}
                 {!showForm && (
                     <button
                         onClick={onToggleViewMode}

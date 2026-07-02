@@ -59,6 +59,8 @@ const IncidentMappingsHeader = ({ showForm, onCreateClick, onRefresh, searchTerm
                                 fontSize: 14,
                                 outline: 'none'
                             }}
+                            onFocus={(e) => { e.currentTarget.style.boxShadow = `0 0 0 3px ${colors.brand.primary}33`; }}
+                            onBlur={(e) => { e.currentTarget.style.boxShadow = 'none'; }}
                         />
                     </div>
                 )}

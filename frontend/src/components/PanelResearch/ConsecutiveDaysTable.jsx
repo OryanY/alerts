@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { createThemedStyles } from '../../utils/themedStyles';
 import { ChartCard } from '../ui/ChartCard';
 
 const ConsecutiveDaysTable = ({ nodes, loading, onSelectNode, selectedNode }) => {
     const { colors } = useTheme();
-    const S = createThemedStyles(colors);
+    const S = useMemo(() => createThemedStyles(colors), [colors]);
 
     return (
         <ChartCard
@@ -18,19 +18,24 @@ const ConsecutiveDaysTable = ({ nodes, loading, onSelectNode, selectedNode }) =>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                         <tr style={{ background: colors.bg.tertiary, borderBottom: `2px solid ${colors.border.primary}` }}>
-                            <th style={S.tableHeadCell}>Node Name</th>
-                            <th style={{ ...S.tableHeadCell, textAlign: 'center' }}>Consecutive Days</th>
-                            <th style={{ ...S.tableHeadCell, textAlign: 'center' }}>Total Alerts</th>
-                            <th style={{ ...S.tableHeadCell, textAlign: 'right' }}>Date Range</th>
+                            <th scope="col" style={S.tableHeadCell}>Node Name</th>
+                            <th scope="col" style={{ ...S.tableHeadCell, textAlign: 'center' }}>Consecutive Days</th>
+                            <th scope="col" style={{ ...S.tableHeadCell, textAlign: 'center' }}>Total Alerts</th>
+                            <th scope="col" style={{ ...S.tableHeadCell, textAlign: 'right' }}>Date Range</th>
                         </tr>
                     </thead>
                     <tbody>
                         {(nodes || []).map((node, i) => {
                             const isSelected = selectedNode === node.node_name;
+                            const select = () => onSelectNode && onSelectNode(isSelected ? null : node.node_name);
                             return (
                                 <tr
                                     key={i}
-                                    onClick={() => onSelectNode && onSelectNode(isSelected ? null : node.node_name)}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-pressed={isSelected}
+                                    onClick={select}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); } }}
                                     style={{
                                         borderBottom: `1px solid ${colors.border.primary}`,
                                         cursor: 'pointer',
@@ -58,4 +63,4 @@ const ConsecutiveDaysTable = ({ nodes, loading, onSelectNode, selectedNode }) =>
     );
 };
 
-export default ConsecutiveDaysTable;
+export default React.memo(ConsecutiveDaysTable);

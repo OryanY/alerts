@@ -7,14 +7,12 @@ import IncidentDefaultsTab from '../components/IncidentDefaults/IncidentDefaults
 
 import { useTheme } from '../contexts/ThemeContext';
 import { useTopBar } from '../contexts/TopBarContext';
-import { createThemedStyles } from '../utils/themedStyles';
 
 const IncidentManagement = () => {
   const [activeTab, setActiveTab] = useState('mappings'); // 'mappings' | 'rules' | 'defaults'
 
   const { colors } = useTheme();
   const { setTopBarSlots, clearTopBarSlots } = useTopBar();
-  const S = useMemo(() => createThemedStyles(colors), [colors]);
 
   const isMappings = activeTab === 'mappings';
   const isRules = activeTab === 'rules';
@@ -74,28 +72,20 @@ const IncidentManagement = () => {
   }, [setTopBarSlots, clearTopBarSlots, topBarSlots]);
 
   return (
+    // Layout already provides the page shell (background + outer padding via
+    // .ops-main) — this only needs its own card, not a second full-viewport wrapper.
     <div style={{
-      minHeight: '100vh',
-      background: S.page.background || colors.bg.primary,
-      padding: 24,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      maxWidth: '1400px',
+      margin: '0 auto',
+      background: colors.bg.secondary,
+      borderRadius: 24,
+      padding: 32,
+      boxShadow: colors.shadow.xl,
+      border: `1px solid ${colors.border.primary}`,
     }}>
-      {/* Content Box */}
-      <div style={{
-        maxWidth: '1400px',
-        margin: '0 auto',
-        background: colors.bg.secondary,
-        borderRadius: 24,
-        padding: 32,
-        boxShadow: colors.shadow.xl,
-        border: `1px solid ${colors.border.primary}`,
-        minHeight: 'calc(100vh - 300px)'
-      }}>
-        {isMappings && <IncidentMappings />}
-        {isRules && <IncidentRules />}
-        {isDefaults && <IncidentDefaultsTab />}
-      </div>
-
+      {isMappings && <IncidentMappings />}
+      {isRules && <IncidentRules />}
+      {isDefaults && <IncidentDefaultsTab />}
     </div>
   );
 };
