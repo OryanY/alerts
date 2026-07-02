@@ -7,7 +7,7 @@ import {
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
 import { withAlpha } from '../../utils/formatters';
-import { safeJson } from '../../utils/api';
+import { safeJson, authHeaders } from '../../utils/api';
 import MappingFormPatternBuilder from './MappingFormPatternBuilder';
 import TemplateHints from './TemplateHints';
 import MappingServiceNowFields from './MappingServiceNowFields';
@@ -382,7 +382,7 @@ const MappingForm = ({
 
             const res = await fetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify(dataToSave),
                 credentials: 'include'
             });

@@ -6,6 +6,9 @@ const IncidentRuleService = require('../services/incident/IncidentRuleService');
 const IncidentSettingsService = require('../services/incident/IncidentSettingsService');
 const { IncidentController } = require('../controllers/IncidentController');
 const { validateQuery, validateBody } = require('../middleware/validation');
+// Destructive actions (deletes + rule toggle) require a verified LDAP login
+// (POST /api/auth/login) + teametequila membership. POST/PUT stay open.
+const { requireAuth } = require('../middleware/adAuth');
 const {
   alertQuerySchema,
   systemMappingSchema,
@@ -83,13 +86,13 @@ router.put('/settings',
   validateBody(incidentSettingsSchema),
   controller.updateIncidentSettings
 );
-router.delete('/settings', requireSettingsKey, controller.resetIncidentSettings);
+router.delete('/settings', requireAuth, requireSettingsKey, controller.resetIncidentSettings);
 
 // ================== "NEEDS MAPPING" QUEUE ==================
 // Applications that fired an alert with no matching mapping. Self-maintaining
 // (deduped + capped); entries clear automatically when a covering mapping is made.
 router.get('/mapping-queue', controller.getMappingQueue);
-router.delete('/mapping-queue/:id', controller.dismissMappingQueueEntry);
+router.delete('/mapping-queue/:id', requireAuth, controller.dismissMappingQueueEntry);
 
 // ================== SYSTEM MAPPINGS ==================
 router.get('/system-mappings', controller.getSystemMappings);
@@ -108,6 +111,7 @@ router.put('/system-mappings/:id',
   controller.updateSystemMapping
 );
 router.delete('/system-mappings/:id',
+  requireAuth,
   controller.deleteSystemMapping
 );
 
@@ -123,9 +127,12 @@ router.put('/incident-rules/:id',
   controller.updateIncidentRule
 );
 router.delete('/incident-rules/:id',
+  requireAuth,
   controller.deleteIncidentRule
 );
+// Toggling a rule off silently changes prod incident behavior — destructive.
 router.patch('/incident-rules/:id/toggle',
+  requireAuth,
   controller.toggleIncidentRule
 );
 

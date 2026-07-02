@@ -22,7 +22,7 @@ const CONFIG = Object.freeze({
     origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'X-Settings-Key', 'X-Username']
   },
   shifts: {
     dayStart: parseInt(process.env.SHIFT_DAY_START, 10) || 8,

@@ -476,7 +476,7 @@ const PanelResearchPage = () => {
           ) : panelAnalysis ? (
             <>
               {/* Summary Cards */}
-              <ResearchSummaryCards summary={panelAnalysis.summary} />
+              <ResearchSummaryCards summary={panelAnalysis.summary} dailyTrend={panelAnalysis.daily_trend} />
 
               {/* Trend Charts */}
               <ResearchTrendCharts

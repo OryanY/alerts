@@ -12,6 +12,7 @@ const { initializeSqlDatabase, initializeMongoDatabase, closeConnections } = req
 const alertRoutes = require('./routes/alertRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
 const metricsRoutes = require('./routes/metrics');
+const authRoutes = require('./routes/authRoutes');
 // No external error handler needed
 
 // Import utilities
@@ -71,6 +72,7 @@ app.get('/api/health', (req, res) => {
 app.use('/from-grafana', incidentRoutes);
 app.use('/api', alertRoutes);
 app.use('/api/incidents', incidentRoutes);
+app.use('/api/auth', authRoutes);
 
 app.use('/metrics', metricsRoutes);
 

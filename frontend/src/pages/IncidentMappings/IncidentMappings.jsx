@@ -6,7 +6,9 @@ import MappingForm from '../../components/IncidentMappings/MappingForm';
 import MappingQueuePanel from '../../components/IncidentMappings/MappingQueuePanel';
 import IncidentMappingsList from './IncidentMappingsList';
 import IncidentMappingsHeader from '../../components/IncidentMappings/IncidentMappingsHeader';
-import { safeJson } from '../../utils/api';
+import LoginRequiredNote from '../../components/ui/LoginRequiredNote';
+import { useAuthGate } from '../../hooks/useAuthGate';
+import { safeJson, authHeaders } from '../../utils/api';
 
 // Pattern types are semantic only (no colors here)
 export const PATTERN_TYPES = {
@@ -37,6 +39,7 @@ export const PATTERN_TYPES = {
 
 const IncidentMappings = () => {
   const { colors, gradients, PATTERN_COLORS } = useTheme();
+  const { needsLogin } = useAuthGate();
   const formRef = useRef(null);
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -138,10 +141,12 @@ const IncidentMappings = () => {
   };
 
   const handleDelete = async (id) => {
+    if (needsLogin) { setError('מחיקת מיפוי דורשת התחברות — היכנס בהגדרות.'); return; }
     if (!window.confirm('Are you sure you want to delete this mapping?')) return;
     try {
       const res = await fetch(`${API_BASE}/incidents/system-mappings/${id}`, {
         method: 'DELETE',
+        headers: authHeaders(),
         credentials: 'include'
       });
       const data = await safeJson(res);
@@ -314,6 +319,8 @@ const IncidentMappings = () => {
           </button>
         </div>
       )}
+
+      {needsLogin && <LoginRequiredNote action="מחיקת מיפויים" />}
 
       {/* Header */}
       <IncidentMappingsHeader

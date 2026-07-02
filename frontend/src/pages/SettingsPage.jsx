@@ -1,11 +1,12 @@
 // pages/SettingsPage.jsx
 import { useState, useEffect, useMemo } from 'react';
-import { Settings, Save, RotateCcw, Info } from 'lucide-react';
+import { Settings, Save, RotateCcw, Info, User } from 'lucide-react';
 import { DEFAULT_CLIENT_CFG } from '../utils/constants';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import LabeledInput from '../components/ui/LabeledInput';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
+import { fetchApi, getAuth, setAuth, clearAuth } from '../utils/api';
 
 const SettingsPage = () => {
   const { colors } = useTheme();
@@ -21,6 +22,38 @@ const SettingsPage = () => {
   const [localConfig, setLocalConfig] = useState(config);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [validationError, setValidationError] = useState(null);
+  // LDAP login for destructive actions (deletes/toggles). The password is sent
+  // once to /auth/login and never stored; only the returned token persists.
+  const [auth, setAuthState] = useState(getAuth());
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState(null);
+
+  const handleLogin = async () => {
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      const json = await fetchApi('/auth/login', {}, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+      });
+      setAuth(json.data);
+      setAuthState(json.data);
+      setLoginPassword('');
+    } catch (e) {
+      setLoginError(e.message);
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const handleLogout = () => {
+    clearAuth();
+    setAuthState(null);
+    setLoginPassword('');
+  };
 
   useEffect(() => {
     setLocalConfig(config);
@@ -180,6 +213,87 @@ const SettingsPage = () => {
       </div>
 
       <div style={{ display: 'grid', gap: 24 }}>
+        {/* ---------------- USER LOGIN (destructive-action permissions) ---------------- */}
+        <div style={S.card()}>
+          <h3
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 18,
+              fontWeight: 600,
+              margin: '0 0 16px 0',
+            }}
+          >
+            <User size={18} />
+            התחברות (נדרש למחיקות)
+          </h3>
+
+          {auth ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14 }}>
+                מחובר כ-<strong style={{ color: colors.text.primary }}>{auth.username}</strong>
+                <span style={{ color: colors.text.tertiary, fontSize: 12, marginRight: 8 }}>
+                  {' '}· בתוקף עד {new Date(auth.expires_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </span>
+              <button
+                onClick={handleLogout}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  border: `1px solid ${colors.border.primary}`,
+                  background: colors.bg.secondary,
+                  color: colors.text.secondary,
+                  fontSize: 13,
+                }}
+              >
+                התנתק
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, maxWidth: 640 }}>
+                <LabeledInput
+                  label="שם משתמש (AD)"
+                  value={loginUsername}
+                  onChange={setLoginUsername}
+                  type="text"
+                />
+                <LabeledInput
+                  label="סיסמה"
+                  value={loginPassword}
+                  onChange={setLoginPassword}
+                  type="password"
+                />
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <button
+                    onClick={handleLogin}
+                    disabled={loginBusy || !loginUsername || !loginPassword}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: 8,
+                      cursor: loginBusy || !loginUsername || !loginPassword ? 'not-allowed' : 'pointer',
+                      border: 'none',
+                      background: colors.brand.primary,
+                      color: '#fff',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      opacity: loginBusy || !loginUsername || !loginPassword ? 0.6 : 1,
+                    }}
+                  >
+                    {loginBusy ? 'מתחבר…' : 'התחבר'}
+                  </button>
+                </div>
+              </div>
+              <p style={{ margin: '10px 0 0 0', fontSize: 12, color: loginError ? colors.semantic.error : colors.text.tertiary }}>
+                {loginError || 'הזדהות מול AD — הסיסמה נשלחת פעם אחת לאימות ואינה נשמרת. נדרש רק למחיקות ולכיבוי חוקים.'}
+              </p>
+            </>
+          )}
+        </div>
+
         {/* ---------------- SHIFT SETTINGS ---------------- */}
         <div style={S.card()}>
           <h3

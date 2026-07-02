@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Save, RotateCcw, Plus, Trash2, RefreshCw, KeyRound } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { fetchApi } from '../../utils/api';
+import { fetchApi, authHeaders } from '../../utils/api';
+import { useAuthGate } from '../../hooks/useAuthGate';
 
 // Editor for the incident field configuration stored in Mongo
 // (content templates + mandatory-field fillers).
@@ -16,6 +17,7 @@ const entriesOf = (obj) => Object.entries(obj || {});
 
 const IncidentDefaultsTab = () => {
     const { colors, styles: S } = useTheme();
+    const { needsLogin } = useAuthGate();
 
     const [settings, setSettings] = useState(null);
     const [saved, setSaved] = useState(null); // last loaded server state, for dirty check
@@ -69,7 +71,7 @@ const IncidentDefaultsTab = () => {
             SECTION_KEYS.forEach((k) => { payload[k] = settings[k]; });
             const json = await fetchApi('/incidents/settings', {}, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'X-Settings-Key': teamKey },
+                headers: { 'Content-Type': 'application/json', 'X-Settings-Key': teamKey, ...authHeaders() },
                 body: JSON.stringify(payload),
             });
             setSettings(json.data);
@@ -83,13 +85,14 @@ const IncidentDefaultsTab = () => {
     };
 
     const handleReset = async () => {
+        if (needsLogin) { setError('איפוס הגדרות דורש התחברות — היכנס בהגדרות.'); return; }
         if (!window.confirm('Reset ALL incident defaults to the built-in values? This removes every customization.')) return;
         setSaving(true);
         setError(null);
         try {
             const json = await fetchApi('/incidents/settings', {}, {
                 method: 'DELETE',
-                headers: { 'X-Settings-Key': teamKey },
+                headers: { 'X-Settings-Key': teamKey, ...authHeaders() },
             });
             setSettings(json.data);
             setSaved(json.data);

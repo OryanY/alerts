@@ -18,6 +18,7 @@ import { useDurationBands } from '../hooks/useDurationBands';
 import { useClientConfig } from '../contexts/ClientConfigContext';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { MetricCard } from '../components/ui/MetricCard';
+import { Sparkline, RadialGauge, CompareBars } from '../components/ui/kpiViz';
 import { ChartCard } from '../components/ui/ChartCard';
 import { WakeupGauge } from '../components/ui/WakeupGauge';
 import {
@@ -107,6 +108,11 @@ const NocDashboard = () => {
   const heatmapRows = asArray(heatmap.data);
   const timeseriesRows = asArray(timeseries.data);
 
+  // Per-KPI viz inputs: alert-volume series (zero-filled) + day/night true splits.
+  const alertCountSeries = useMemo(() => timeseriesRows.map((r) => r.alert_count || 0), [timeseriesRows]);
+  const dayTrue = shiftRows.find((s) => s.shift === 'Day')?.true_alerts || 0;
+  const nightTrue = shiftRows.find((s) => s.shift === 'Night')?.true_alerts || 0;
+
   // Calculate threshold in minutes for display
   const thresholdMinutes = Math.round((config.falseWakeupThreshold || 120) / 60);
 
@@ -163,6 +169,7 @@ const NocDashboard = () => {
             trend={exec.data?.total_trend_pct}
             trendTooltip={`אינדיקציה למגמת עליה או ירידה בכמות ההתראות בהשוואה ל ${prevPeriodText}.`}
             invertTrend={true}
+            viz={<Sparkline data={alertCountSeries} color={colors.chart.primary} />}
           />
           <MetricCard
             title="יחס התראות לפי זמנים"
@@ -172,6 +179,7 @@ const NocDashboard = () => {
             icon={TrendingUp}
             logoColor="blue"
             loading={exec.loading}
+            viz={<RadialGauge value={exec.data?.signal_ratio || 0} color={colors.semantic.success} />}
           />
           <MetricCard
             title="התראות אמיתיות (לילה)"
@@ -181,6 +189,10 @@ const NocDashboard = () => {
             icon={Moon}
             logoColor="purple"
             loading={exec.loading}
+            viz={<CompareBars items={[
+              { label: 'יום', value: dayTrue, color: colors.chart.primary },
+              { label: 'לילה', value: nightTrue, color: colors.brand.purple },
+            ]} />}
           />
           <MetricCard
             title="אחוז התראות שווא"
@@ -193,6 +205,7 @@ const NocDashboard = () => {
             trend={exec.data?.noise_trend_pct}
             trendTooltip={`אינדיקציה לשינוי באחוז התראות השווא בהשוואה ל ${prevPeriodText}.`}
             invertTrend={true}
+            viz={<RadialGauge value={exec.data?.false_positive_rate_247 || 0} color={colors.semantic.warning} />}
           />
 
           <MetricCard
@@ -202,6 +215,10 @@ const NocDashboard = () => {
             icon={Clock}
             logoColor="green"
             loading={exec.loading}
+            viz={<CompareBars items={[
+              { label: 'ממוצע', value: exec.data?.avg_duration || 0, color: colors.chart.primary },
+              { label: 'חציון', value: exec.data?.median_duration || 0, color: colors.chart.secondary },
+            ]} />}
           />
         </div>
 

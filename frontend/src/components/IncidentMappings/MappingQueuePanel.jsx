@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Inbox, Plus, X, AlertTriangle } from 'lucide-react';
 import { API_BASE } from '../../utils/constants';
 import { useTheme } from '../../contexts/ThemeContext';
-import { safeJson } from '../../utils/api';
+import { safeJson, authHeaders } from '../../utils/api';
+import { useAuthGate } from '../../hooks/useAuthGate';
 
 // Compact "time since" for the last-seen column (e.g. "3h ago", "2d ago").
 const timeAgo = (iso) => {
@@ -23,6 +24,7 @@ const timeAgo = (iso) => {
 // self-maintaining todo list: click "Map" to open the form pre-filled, or dismiss.
 const MappingQueuePanel = ({ refreshSignal, onCreateMapping }) => {
     const { colors } = useTheme();
+    const { needsLogin } = useAuthGate();
     const [queue, setQueue] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -42,10 +44,11 @@ const MappingQueuePanel = ({ refreshSignal, onCreateMapping }) => {
     useEffect(() => { fetchQueue(); }, [fetchQueue, refreshSignal]);
 
     const dismiss = async (id) => {
+        if (needsLogin) return; // gated: the X is shown disabled with a hint
         // Optimistic: drop it locally, then persist.
         setQueue((prev) => prev.filter((q) => q._id !== id));
         try {
-            await fetch(`${API_BASE}/incidents/mapping-queue/${id}`, { method: 'DELETE', credentials: 'include' });
+            await fetch(`${API_BASE}/incidents/mapping-queue/${id}`, { method: 'DELETE', headers: authHeaders(), credentials: 'include' });
         } catch (e) {
             console.warn('Could not dismiss queue entry:', e.message);
             fetchQueue();
@@ -148,12 +151,14 @@ const MappingQueuePanel = ({ refreshSignal, onCreateMapping }) => {
                             <button
                                 type="button"
                                 onClick={() => dismiss(item._id)}
-                                title="Dismiss"
+                                disabled={needsLogin}
+                                title={needsLogin ? 'התחברות נדרשת (הגדרות)' : 'Dismiss'}
                                 style={{
                                     background: 'none',
                                     border: 'none',
                                     color: colors.text.tertiary,
-                                    cursor: 'pointer',
+                                    cursor: needsLogin ? 'not-allowed' : 'pointer',
+                                    opacity: needsLogin ? 0.4 : 1,
                                     padding: 4,
                                     display: 'flex',
                                     flexShrink: 0,

@@ -8,10 +8,13 @@ import IncidentRulesHeader from '../components/IncidentRules/IncidentRulesHeader
 import EmptyState from '../components/IncidentRules/EmptyState';
 import RuleCard from '../components/IncidentRules/RuleCard';
 import RuleForm from '../components/IncidentRules/RuleForm';
-import { safeJson } from '../utils/api';
+import LoginRequiredNote from '../components/ui/LoginRequiredNote';
+import { useAuthGate } from '../hooks/useAuthGate';
+import { safeJson, authHeaders } from '../utils/api';
 
 const IncidentRules = () => {
   const { colors, gradients, PATTERN_COLORS } = useTheme();
+  const { needsLogin } = useAuthGate();
 
   const [rules, setRules] = useState([]);
   const [mappings, setMappings] = useState([]);
@@ -253,7 +256,7 @@ const IncidentRules = () => {
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
         credentials: 'include'
       });
@@ -275,10 +278,12 @@ const IncidentRules = () => {
   };
 
   const del = async (id) => {
+    if (needsLogin) { setError('מחיקת חוק דורשת התחברות — היכנס בהגדרות.'); return; }
     if (!window.confirm('Are you sure you want to delete this rule?')) return;
     try {
       const res = await fetch(`${API_BASE}/incidents/incident-rules/${id}`, {
         method: 'DELETE',
+        headers: authHeaders(),
         credentials: 'include'
       });
       const data = await safeJson(res);
@@ -295,10 +300,11 @@ const IncidentRules = () => {
   };
 
   const toggle = async (id, enabled) => {
+    if (needsLogin) { setError('כיבוי/הפעלת חוק דורשת התחברות — היכנס בהגדרות.'); return; }
     try {
       const res = await fetch(`${API_BASE}/incidents/incident-rules/${id}/toggle`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ enabled }),
         credentials: 'include'
       });
@@ -537,6 +543,8 @@ const IncidentRules = () => {
           </button>
         </div>
       )}
+
+      {needsLogin && <LoginRequiredNote action="מחיקה וכיבוי חוקים" />}
 
       {/* HEADER */}
       <IncidentRulesHeader

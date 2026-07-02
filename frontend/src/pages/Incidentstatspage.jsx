@@ -11,6 +11,7 @@ import { useClientConfig } from '../contexts/ClientConfigContext';
 import { ALL_PANELS } from '../utils/constants';
 import { ChartCard } from '../components/ui/ChartCard';
 import { MetricCard } from '../components/ui/MetricCard';
+import { Sparkline, RadialGauge, CompareBars } from '../components/ui/kpiViz';
 import { useTheme } from '../contexts/ThemeContext';
 import { createThemedStyles } from '../utils/themedStyles';
 import { getChartProps } from '../utils/chartConfig';
@@ -208,6 +209,14 @@ const IncidentStatsPage = () => {
         ? parseFloat((((coverage.alerts_no_incident || 0) * 100) / coverage.total_alerts).toFixed(1))
         : 0;
 
+    // Per-KPI viz inputs, from the zero-filled daily trend.
+    const totalSeries = useMemo(() => daily.map(d => d.total_alerts || 0), [daily]);
+    const incidentsSeries = useMemo(() => daily.map(d => d.unique_incidents || 0), [daily]);
+    const avgPerIncidentSeries = useMemo(
+        () => daily.map(d => (d.unique_incidents > 0 ? d.alerts_covered / d.unique_incidents : 0)),
+        [daily]
+    );
+
     return (
         <div dir="rtl">
             {/* KPIs */}
@@ -218,12 +227,14 @@ const IncidentStatsPage = () => {
                     icon={AlertTriangle} logoColor="orange" loading={loading}
                     tooltip={isClustered ? "סך הכל רצפי התראות שהתקבלו. מנגנון הקיבוץ פעיל: מספר התראות שהגיעו ברצף של פחות מ-15 דקות נספרות כאירוע התראות אחד מתמשך." : "סך כל ההתראות הבודדות שהתקבלו במערכת בתקופת הזמן."}
                     onClick={() => handleDrilldown({})}
+                    viz={<Sparkline data={totalSeries} color={colors.chart.primary} />}
                 />
                 <MetricCard
                     title="תקלות שנפתחו"
                     value={(coverage.unique_incidents ?? 0).toLocaleString()}
                     icon={FileText} logoColor="blue" loading={loading}
                     tooltip="מספר התקלות הייחודיות (Tickets) שנפתחו ב-ServiceNow כתוצאה מהתראות אלו."
+                    viz={<Sparkline data={incidentsSeries} color={colors.brand.purple} />}
                 />
                 <MetricCard
                     title="קושרו לתקלה"
@@ -232,6 +243,7 @@ const IncidentStatsPage = () => {
                     icon={TrendingUp} logoColor="green" loading={loading}
                     tooltip={isClustered ? "מספר רצפי ההתראות שקושרו בהצלחה לפחות לתקלה אחת. (הספירה מונה אירועים מתמשכים ולא כל התראה בנפרד)." : "מספר ההתראות הבודדות שקובצו וקושרו בהצלחה לתקלה קיימת."}
                     onClick={() => handleDrilldown({ has_inc: 'true' })}
+                    viz={<RadialGauge value={coverage.coverage_pct || 0} color={colors.semantic.success} />}
                 />
                 <MetricCard
                     title="התראות ללא תקלה"
@@ -240,12 +252,17 @@ const IncidentStatsPage = () => {
                     icon={Zap} logoColor="red" loading={loading}
                     tooltip={isClustered ? "רצפי התראות שלמים שהסתיימו מבלי שנפתחה עבורם אף תקלה במערכת." : "התראות בודדות שלא נפתחה עבורן תקלה."}
                     onClick={() => handleDrilldown({ has_inc: 'false' })}
+                    viz={<CompareBars items={[
+                        { label: 'קושרו', value: coverage.alerts_covered || 0, color: colors.semantic.success },
+                        { label: 'ללא', value: coverage.alerts_no_incident || 0, color: colors.semantic.error },
+                    ]} />}
                 />
                 <MetricCard
                     title="ממוצע התראות לתקלה"
                     value={coverage.avg_alerts_per_incident ?? '—'}
                     icon={Layers} logoColor="purple" loading={loading}
                     tooltip={isClustered ? "מדד צפיפות - ממוצע רצפי ההתראות הקיימים בתוך כל תקלה שנפתחה." : "מדד טיפוסי - כמה התראות בודדות ממוצעות קיימות בתוך כל תקלה."}
+                    viz={<Sparkline data={avgPerIncidentSeries} color={colors.chart.tertiary} />}
                 />
             </div>
 
