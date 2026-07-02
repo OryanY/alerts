@@ -15,30 +15,52 @@ const ResearchAlertTimeline = ({ alerts = [], colorByDuration, bands = [], color
   const [hover, setHover] = useState(null); // { left, alert }
 
   const { points, ticks } = useMemo(() => {
-    const times = alerts
-      .map((a) => ({ a, t: new Date(a.time_fired).getTime() }))
+    const PAD = 3; // % inset so edge dots aren't clipped by the card
+    const spread = (frac) => PAD + Math.max(0, Math.min(1, frac)) * (100 - 2 * PAD);
+    const bySize = (x, y) => (x.a.cluster_count || 1) - (y.a.cluster_count || 1);
+
+    // Tolerant parse: backend sends "YYYY-MM-DDTHH:mm:ss.SSS", but some engines
+    // choke on a space separator or a trailing zone — normalize before Date.
+    const parseTime = (v) => {
+      if (!v) return NaN;
+      const s = String(v).trim();
+      let ms = new Date(s).getTime();
+      if (Number.isNaN(ms)) ms = new Date(s.replace(' ', 'T')).getTime();
+      return ms;
+    };
+
+    const valid = alerts
+      .map((a) => ({ a, t: parseTime(a.time_fired) }))
       .filter((p) => Number.isFinite(p.t));
 
-    // Fit the axis to the span of the shown alerts so the 100 dots spread across
-    // the full width. (Pinning to a wide selected range crams them into a corner.)
-    const ts = times.map((p) => p.t);
-    let start = ts.length ? Math.min(...ts) : Date.now();
-    let end = ts.length ? Math.max(...ts) : Date.now();
-    if (end === start) { start -= 3600000; end += 3600000; }
-    const span = end - start || 1;
+    // Real time axis when we have a usable range.
+    if (valid.length >= 2) {
+      const ts = valid.map((p) => p.t);
+      let start = Math.min(...ts);
+      let end = Math.max(...ts);
+      if (end === start) { start -= 3600000; end += 3600000; }
+      const span = end - start;
 
-    const PAD = 3; // % inset so edge dots aren't clipped by the card
-    const pts = times
-      .map(({ a, t }) => ({ a, left: PAD + ((t - start) / span) * (100 - 2 * PAD) }))
-      // Draw bigger storms last so they sit on top of the noise.
-      .sort((x, y) => (x.a.cluster_count || 1) - (y.a.cluster_count || 1));
+      const pts = valid.map(({ a, t }) => ({ a, left: spread((t - start) / span) })).sort(bySize);
 
-    const tk = [];
-    for (let i = 0; i <= 4; i++) {
-      const d = new Date(start + (span * i) / 4);
-      tk.push(d.toLocaleDateString('en-IL', { day: 'numeric', month: 'short' }));
+      // Adaptive labels: include the time when the whole span is within a few
+      // days, otherwise the 5 date labels would all read the same.
+      const spanDays = span / 86400000;
+      const fmt = spanDays > 3
+        ? (ms) => new Date(ms).toLocaleDateString('en-IL', { day: 'numeric', month: 'short' })
+        : (ms) => new Date(ms).toLocaleString('en-IL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      const tk = [];
+      for (let i = 0; i <= 4; i++) tk.push(fmt(start + (span * i) / 4));
+      return { points: pts, ticks: tk };
     }
-    return { points: pts, ticks: tk };
+
+    // Fallback: timestamps unusable — space dots by recency so they never vanish.
+    // alerts arrive newest-first, so map the newest to the right.
+    const n = alerts.length;
+    const pts = alerts
+      .map((a, i) => ({ a, left: spread(n > 1 ? (n - 1 - i) / (n - 1) : 0.5) }))
+      .sort(bySize);
+    return { points: pts, ticks: ['ישן יותר', '', '', '', 'עדכני'] };
   }, [alerts]);
 
   const tipLeft = hover ? Math.min(88, Math.max(12, hover.left)) : 0;
@@ -85,7 +107,7 @@ const ResearchAlertTimeline = ({ alerts = [], colorByDuration, bands = [], color
                 style={{
                   position: 'absolute', left: `${left}%`, top: '50%',
                   width: size, height: size, marginLeft: -size / 2, marginTop: -size / 2,
-                  borderRadius: '50%', background: colorByDuration(a.duration_sec),
+                  borderRadius: '50%', background: colorByDuration(Number(a.duration_sec)),
                   border: `1px solid ${colors.bg.secondary}`, cursor: 'pointer',
                   opacity: hover && hover.alert !== a ? 0.55 : 0.9,
                 }}
